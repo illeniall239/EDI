@@ -1,0 +1,8 @@
+-unfreeze row
+-scroll 
+-save download, session management, caching mechanism.
+-scroll to top button
+-user guide
+-column selection in formula (done)
+-dataset creation
+-search the web

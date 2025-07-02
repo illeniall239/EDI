@@ -1,0 +1,54 @@
+2025-05-23 21:44:36,941 - AgentServices - DEBUG - Setting visualization directory to: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:44:36,941 - AgentServices - DEBUG - Directory already exists: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:44:36,941 - AgentServices - INFO - Confirmed write permissions for: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:44:36,942 - GoogleSheetsService - WARNING - No valid credentials found. Please set up Google OAuth.
+2025-05-23 21:44:36,943 - FlaskAPI - INFO - Starting EDI Flask API server...
+2025-05-23 21:44:36,963 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8000
+ * Running on http://192.168.1.3:8000
+2025-05-23 21:44:36,964 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-23 21:44:36,965 - werkzeug - INFO -  * Restarting with stat
+2025-05-23 21:44:39,242 - AgentServices - DEBUG - Setting visualization directory to: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:44:39,242 - AgentServices - DEBUG - Directory already exists: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:44:39,242 - AgentServices - INFO - Confirmed write permissions for: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:44:39,244 - GoogleSheetsService - WARNING - No valid credentials found. Please set up Google OAuth.
+2025-05-23 21:44:39,245 - FlaskAPI - INFO - Starting EDI Flask API server...
+2025-05-23 21:44:39,251 - werkzeug - WARNING -  * Debugger is active!
+2025-05-23 21:44:39,253 - werkzeug - INFO -  * Debugger PIN: 156-742-977
+2025-05-23 21:46:27,346 - werkzeug - INFO -  * Detected change in 'D:\\Stuff\\WORK\\EDI.ai\\EDI.ai1\\EDI.ai\\google_sheets_service.py', reloading
+2025-05-23 21:46:29,667 - werkzeug - INFO -  * Restarting with stat
+2025-05-23 21:46:32,055 - AgentServices - DEBUG - Setting visualization directory to: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:46:32,057 - AgentServices - DEBUG - Directory already exists: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:46:32,057 - AgentServices - INFO - Confirmed write permissions for: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:46:32,062 - requests_oauthlib.oauth2_session - DEBUG - Generated new state uSJdwLthuZssQWvQyQ9RLJHyCGF2SU.
+2025-05-23 21:51:58,327 - AgentServices - DEBUG - Setting visualization directory to: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:51:58,327 - AgentServices - DEBUG - Directory already exists: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:51:58,328 - AgentServices - INFO - Confirmed write permissions for: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:51:58,332 - requests_oauthlib.oauth2_session - DEBUG - Generated new state picvKt15WGUXcbXjvGHQ8pqnYl0bEi.
+2025-05-23 21:55:16,178 - AgentServices - DEBUG - Setting visualization directory to: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:55:16,178 - AgentServices - DEBUG - Directory already exists: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:55:16,178 - AgentServices - INFO - Confirmed write permissions for: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:55:16,181 - GoogleSheetsService - ERROR - Authentication failed: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted
+2025-05-23 21:55:16,181 - GoogleSheetsService - ERROR - Make sure credentials.json is valid and Google Sheets API is enabled
+2025-05-23 21:55:16,182 - FlaskAPI - INFO - Starting EDI Flask API server...
+2025-05-23 21:55:16,191 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8000
+ * Running on http://192.168.1.3:8000
+2025-05-23 21:55:16,191 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-23 21:55:16,192 - werkzeug - INFO -  * Restarting with stat
+2025-05-23 21:55:18,452 - AgentServices - DEBUG - Setting visualization directory to: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:55:18,452 - AgentServices - DEBUG - Directory already exists: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:55:18,453 - AgentServices - INFO - Confirmed write permissions for: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:55:18,455 - GoogleSheetsService - ERROR - Authentication failed: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted
+2025-05-23 21:55:18,455 - GoogleSheetsService - ERROR - Make sure credentials.json is valid and Google Sheets API is enabled
+2025-05-23 21:55:18,456 - FlaskAPI - INFO - Starting EDI Flask API server...
+2025-05-23 21:55:18,462 - werkzeug - WARNING -  * Debugger is active!
+2025-05-23 21:55:18,464 - werkzeug - INFO -  * Debugger PIN: 156-742-977
+2025-05-23 21:55:59,704 - werkzeug - INFO -  * Detected change in 'D:\\Stuff\\WORK\\EDI.ai\\EDI.ai1\\EDI.ai\\google_sheets_service.py', reloading
+2025-05-23 21:56:02,044 - werkzeug - INFO -  * Restarting with stat
+2025-05-23 21:56:04,334 - AgentServices - DEBUG - Setting visualization directory to: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:56:04,334 - AgentServices - DEBUG - Directory already exists: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:56:04,335 - AgentServices - INFO - Confirmed write permissions for: D:\Stuff\WORK\EDI.ai\EDI.ai1\EDI.ai\static
+2025-05-23 21:56:04,339 - requests_oauthlib.oauth2_session - DEBUG - Generated new state R6ft6mag3LwoLwJPdZ6iseZbxPts6a.

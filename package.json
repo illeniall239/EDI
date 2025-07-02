@@ -1,0 +1,20 @@
+{
+  "dependencies": {
+    "@headlessui/react": "^2.2.4",
+    "@heroicons/react": "^2.2.0",
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/supabase-js": "^2.49.6",
+    "@types/react-data-grid": "^4.0.12",
+    "axios": "^1.10.0",
+    "date-fns": "^4.1.0",
+    "framer-motion": "^12.12.1",
+    "react-dropzone": "^14.3.8",
+    "react-type-animation": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.19",
+    "@types/react": "^19.1.4",
+    "@types/react-dom": "^19.1.5",
+    "next": "^15.3.2"
+  }
+}

@@ -1,0 +1,260 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #064e3b;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Markdown Specific Styles */
+.prose {
+  color: inherit;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6 {
+  color: inherit;
+  margin-top: 1.5em;
+  margin-bottom: 0.75em;
+}
+
+.prose strong {
+  color: inherit;
+  font-weight: 600;
+}
+
+.prose ul,
+.prose ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.prose li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.prose code {
+  color: inherit;
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: 0.2em 0.4em;
+  border-radius: 0.25em;
+}
+
+.prose pre {
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: 1em;
+  border-radius: 0.5em;
+  overflow-x: auto;
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 0.5em;
+}
+
+.gradient-text {
+  background: linear-gradient(
+    300deg,
+    #00ff87 0%,
+    #60efff 30%,
+    #0061ff 50%,
+    #60efff 70%,
+    #00ff87 100%
+  );
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradientMove 8s ease infinite;
+}
+
+@keyframes gradientMove {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.gradient-text-subtle {
+  background: linear-gradient(
+    300deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.8) 50%,
+    rgba(255, 255, 255, 0.95) 100%
+  );
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradientMove 6s ease infinite;
+}
+
+/* Luckysheet specific styles */
+#luckysheet-container {
+  font-family: Arial, sans-serif;
+}
+
+/* Ensure Luckysheet toolbar is visible */
+.luckysheet-wa-editor {
+  z-index: 1000 !important; /* Main editor should be on top */
+  color: #000000 !important;
+  background-color: #ffffff !important;
+  border: none !important;
+  border-radius: 4px !important;
+}
+
+/* Fix cell input text color in edit mode */
+.luckysheet-wa-editor input,
+.luckysheet-wa-editor textarea,
+.luckysheet-cell-input,
+.luckysheet-input-box,
+.luckysheet-formula-input,
+[class*="luckysheet"][class*="input"],
+[class*="luckysheet"][class*="editor"] input,
+[class*="luckysheet"][class*="editor"] textarea {
+  color: #000000 !important;
+  background-color: #ffffff !important;
+  border: 1px solid #cccccc !important;
+}
+
+/* Fix overlapping input boxes in edit mode */
+.luckysheet-wa-editor ~ .luckysheet-wa-editor,
+.luckysheet-wa-editor + input,
+.luckysheet-wa-editor + textarea {
+  display: none !important; /* Hide duplicate editors */
+}
+
+/* Ensure the formula bar input is properly styled and positioned */
+.luckysheet-wa-formulaInput,
+.luckysheet-formula-functionrange-select,
+.luckysheet-formula-help-c input {
+  z-index: 999 !important;
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid #d1d5db !important;
+}
+
+/* Fix the in-cell editor specifically */
+.luckysheet-cell-selected .luckysheet-wa-editor {
+  position: absolute !important;
+  z-index: 1001 !important;
+  min-height: 20px !important;
+  min-width: 50px !important;
+  border: none !important;
+  background: #ffffff !important;
+  color: #000000 !important;
+  font-size: 12px !important;
+  padding: 2px 4px !important;
+}
+
+/* Hide any background/shadow input elements */
+.luckysheet-input-box-index,
+.luckysheet-wa-editor-backup,
+[class*="luckysheet"][class*="shadow"],
+[class*="luckysheet"][class*="bg"][class*="input"] {
+  display: none !important;
+}
+
+/* Ensure all luckysheet text inputs are visible */
+#luckysheet-container input,
+#luckysheet-container textarea,
+#luckysheet-container [contenteditable="true"] {
+  color: #000000 !important;
+  background-color: #ffffff !important;
+}
+
+/* Fix any focus states that might be causing the issue */
+.luckysheet-wa-editor:focus,
+.luckysheet-wa-editor input:focus,
+.luckysheet-wa-editor textarea:focus,
+.luckysheet-cell-input:focus,
+.luckysheet-input-box:focus,
+.luckysheet-formula-input:focus {
+  color: #000000 !important;
+  background-color: #ffffff !important;
+  outline: 2px solid #3b82f6 !important;
+}
+
+/* Fix any potential z-index conflicts */
+.luckysheet-modal {
+  z-index: 9999 !important;
+}
+
+.luckysheet-tooltip {
+  z-index: 9998 !important;
+}
+
+/* Ensure proper sizing */
+#luckysheet-container .luckysheet-grid-container {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Hide all Luckysheet logos and branding */
+.luckysheet-wa-logo,
+.luckysheet-logo,
+.luckysheet-wa-logo img,
+.luckysheet-logo img,
+.luckysheet-wa-logo-img,
+.luckysheet-logo-img,
+.luckysheet-wa-logo-text,
+.luckysheet-logo-text,
+.luckysheet-wa-logo-container,
+.luckysheet-logo-container,
+.luckysheet-wa-logo-link,
+.luckysheet-logo-link,
+.luckysheet-wa-logo-area,
+.luckysheet-logo-area,
+.luckysheet-wa-logo-box,
+.luckysheet-logo-box,
+[class*="luckysheet"][class*="logo"],
+[id*="luckysheet"][id*="logo"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  position: absolute !important;
+  left: -9999px !important;
+}
+
+/* Hide any text or images containing "Luckysheet" */
+img[src*="luckysheet" i],
+img[alt*="luckysheet" i],
+img[title*="luckysheet" i],
+[title*="luckysheet" i],
+[alt*="luckysheet" i] {
+  display: none !important;
+  visibility: hidden !important;
+}
