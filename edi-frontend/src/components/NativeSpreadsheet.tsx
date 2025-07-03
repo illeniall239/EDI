@@ -462,11 +462,15 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
   const handleFormulaError = useCallback(async (cellInfo: any) => {
     if (!isSheetFullyLoaded) return;
 
+    console.log('🚨 handleFormulaError called with:', cellInfo);
+
     // Extract cell information
     const row = cellInfo.r ?? cellInfo.row;
     const col = cellInfo.c ?? cellInfo.col;
     const value = cellInfo.v ?? cellInfo.value;
-    const formula = cellInfo.f ?? cellInfo.formula ?? '';
+    let formula = cellInfo.f ?? cellInfo.formula ?? '';
+    
+    console.log('📋 Extracted cell info:', { row, col, value, formula });
     
     // Additional validation
     if (!value || typeof value !== 'string' || !value.startsWith('#')) return;
@@ -476,10 +480,67 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     
     const errorType = errorMatch[1];
     const cellRef = `${String.fromCharCode(65 + col)}${row + 1}`;
+    
+    console.log('🔍 Error details:', { errorType, cellRef, value });
+
+    // If formula is empty or contains error result, try to get actual formula from Luckysheet
+    console.log('🔍 Formula retrieval debug:', {
+      originalFormula: formula,
+      cellValue: value,
+      cellRef,
+      needsRetrieval: !formula || formula.startsWith('#') || formula === value
+    });
+    
+    if (!formula || formula.startsWith('#') || formula === value) {
+      try {
+        // Try multiple methods to get the formula
+        const methods = [
+          () => window.luckysheet.getCellValue(row, col, 'f'),
+          () => window.luckysheet.getSheetData()[row][col]?.f,
+          () => window.luckysheet.getSheetData()[row]?.[col]?.f,
+          () => {
+            const cellData = window.luckysheet.getSheetData()?.[row]?.[col];
+            return cellData?.f || cellData?.formula;
+          }
+        ];
+        
+        let actualFormula = null;
+        for (let i = 0; i < methods.length; i++) {
+          try {
+            const result = methods[i]();
+            console.log(`🔧 Method ${i + 1} result:`, result);
+            if (result && !result.startsWith('#') && result !== value) {
+              actualFormula = result;
+              console.log(`✅ Found formula using method ${i + 1}:`, actualFormula);
+              break;
+            }
+          } catch (methodErr) {
+            console.log(`❌ Method ${i + 1} failed:`, methodErr);
+          }
+        }
+        
+        if (actualFormula) {
+          formula = actualFormula;
+          console.log('✅ Retrieved actual formula from Luckysheet:', actualFormula);
+        } else {
+          console.warn('⚠️ Could not retrieve actual formula from any method');
+        }
+      } catch (err) {
+        console.log('❌ Could not retrieve formula from Luckysheet:', err);
+      }
+    } else {
+      console.log('✅ Using original formula:', formula);
+    }
 
     // Clean up the formula by removing any internal Luckysheet function prefixes
     const cleanFormula = formula.replace(/luckysheet_function\.|\.f/g, '');
-    const displayFormula = cleanFormula.startsWith('=') ? cleanFormula : `=${cleanFormula}`;
+    let displayFormula = cleanFormula.startsWith('=') ? cleanFormula : `=${cleanFormula}`;
+    
+    // Final validation - if we still don't have a valid formula, create a placeholder
+    if (!formula || formula.startsWith('#') || displayFormula === '=' || displayFormula === `=#${errorType}?`) {
+      displayFormula = `=UNKNOWN_FORMULA_${cellRef}()`;
+      console.warn('Could not determine original formula for error analysis, using placeholder');
+    }
     
     // Create unique error identifier
     const errorId = `${cellRef}-${displayFormula}-${errorType}`;
@@ -645,12 +706,76 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     console.log('Cell Update:', { row: r, col: c, value: v });
     
     // Check for formula errors
-    if (v) {
-      // Handle both direct cell value and cell object formats
-      const cellValue = typeof v === 'object' ? v : { v: v, f: v };
-      handleFormulaError(cellValue);
+    if (v && typeof v === 'string' && v.startsWith('#')) {
+      // Get the actual formula from Luckysheet instead of using the error value
+      try {
+        const actualFormula = window.luckysheet.getCellValue(r, c, 'f');
+        console.log('Cell error detected:', { r, c, value: v, actualFormula });
+        
+        if (actualFormula) {
+          handleFormulaError({
+            r,
+            c,
+            v: v,
+            f: actualFormula
+          });
+        }
+      } catch (err) {
+        console.log('Could not get actual formula for error cell:', err);
+      }
     }
   }, [handleFormulaError]);
+
+  // Helper function to detect actual data range for columns
+  const getDataRangeInfo = () => {
+    if (!data || data.length === 0) return null;
+    
+    const headers = Object.keys(data[0]);
+    const dataStartRow = 2; // Row 2 (after header in row 1)
+    
+    // For each column, find the last row that actually contains data
+    const columnRanges = headers.map((header, idx) => {
+      const columnLetter = String.fromCharCode(65 + idx);
+      
+      // Find the last row with actual data in this column
+      let lastDataRow = dataStartRow - 1; // Start before data begins
+      for (let i = 0; i < data.length; i++) {
+        const cellValue = data[i][header];
+        // Check if cell has meaningful data (not null, undefined, empty string, or just whitespace)
+        if (cellValue !== null && 
+            cellValue !== undefined && 
+            cellValue !== '' && 
+            (typeof cellValue !== 'string' || cellValue.trim() !== '')) {
+          lastDataRow = i + dataStartRow; // +2 because: i is 0-based, +1 for 1-based row numbers, +1 for header
+        }
+      }
+      
+      // If no data found, still provide a minimal range
+      const dataEndRow = Math.max(lastDataRow, dataStartRow);
+      const hasData = lastDataRow >= dataStartRow;
+      
+      return {
+        name: header,
+        letter: columnLetter,
+        range: hasData ? `${columnLetter}${dataStartRow}:${columnLetter}${dataEndRow}` : `${columnLetter}${dataStartRow}`,
+        startRow: dataStartRow,
+        endRow: dataEndRow,
+        hasData,
+        dataCount: hasData ? (dataEndRow - dataStartRow + 1) : 0
+      };
+    });
+    
+    const totalDataRows = data.length;
+    const maxDataEndRow = Math.max(...columnRanges.map(col => col.endRow));
+    
+    return {
+      totalDataRows,
+      dataStartRow,
+      dataEndRow: maxDataEndRow,
+      columnRanges,
+      summary: `Data spans from row ${dataStartRow} to row ${maxDataEndRow} (${totalDataRows} total rows, excluding header). Each column may have different data endpoints.`
+    };
+  };
 
   // --- Formula Generation Handler ---
   const generateFormula = async (input: string, row: number, col: number, columns: string[]) => {
@@ -659,14 +784,36 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     try {
       let formula = '';
       let usedProcessor = false;
-      // Map selected columns to 'name (Letter)' format
+      
+      // Get data range information
+      const dataRangeInfo = getDataRangeInfo();
+      
+      // Map selected columns to 'name (Letter)' format with range information
       const columnsWithLetters = columns.map(col => {
         const idx = allColumns.indexOf(col);
+        if (idx !== -1 && dataRangeInfo) {
+          const rangeInfo = dataRangeInfo.columnRanges[idx];
+          return `${col} (${rangeInfo.letter}, data range: ${rangeInfo.range})`;
+        }
         return idx !== -1 ? `${col} (${columnLetter(idx)})` : col;
       });
+      
       let prompt = input;
       if (columnsWithLetters.length > 0) {
         prompt += ` (columns: ${columnsWithLetters.join(', ')})`;
+      }
+      
+      // Add data range context to the prompt
+      if (dataRangeInfo) {
+        console.log('📊 Detected data ranges:', dataRangeInfo);
+        
+        // Create a detailed column mapping
+        const columnDetails = dataRangeInfo.columnRanges
+          .filter(col => col.hasData)
+          .map(col => `${col.name} (${col.letter}): ${col.range} [${col.dataCount} data rows]`)
+          .join('\n  - ');
+        
+        prompt += `\n\nIMPORTANT DATA CONTEXT:\n- ${dataRangeInfo.summary}\n- Column data ranges:\n  - ${columnDetails}\n- ALWAYS use specific ranges (e.g., ${dataRangeInfo.columnRanges[0]?.range}) instead of entire columns (e.g., ${dataRangeInfo.columnRanges[0]?.letter}:${dataRangeInfo.columnRanges[0]?.letter})\n- Header is in row 1, actual data starts from row ${dataRangeInfo.dataStartRow}\n- Do not include the header row in calculations`;
       }
       if (commandProcessorRef.current) {
         const cmd = await commandProcessorRef.current.processLLMCommand(prompt);
@@ -676,9 +823,10 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
         }
       }
       if (!usedProcessor) {
-        const response = await commandService.processSpreadsheetCommand(
-          `Write a spreadsheet formula for: ${prompt} (for cell ${String.fromCharCode(65+col)}${row+1})`
-        );
+        const fullPrompt = `Write a spreadsheet formula for: ${prompt} (for cell ${String.fromCharCode(65+col)}${row+1})`;
+        console.log('🧠 Sending enhanced prompt to LLM:', fullPrompt);
+        
+        const response = await commandService.processSpreadsheetCommand(fullPrompt);
         if (!response) throw new Error('No response from backend.');
         if (response.message) {
           const match = response.message.match(/=.+/);
@@ -865,13 +1013,42 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     setChatMessages(prev => [...prev, userMessage]);
     console.log('✅ User message added to chat');
     
+    const inputCommand = chatInput.trim();
     setChatInput('');
     console.log('🧹 Input field cleared');
     
     setIsChatProcessing(true);
     console.log('⏳ Processing state set to true');
 
-    // Add typing indicator
+    // Check if this looks like a simple command that can be handled locally
+    const isSimpleCommand = /^(autofit|undo|redo|format|bold|italic|underline|remove duplicates?|deduplicate|sort|filter)$/i.test(inputCommand) ||
+                           /^(autofit columns?|autofit rows?|fit columns?|fit rows?)$/i.test(inputCommand) ||
+                           /^(autofit|fit)\s+(columns?|rows?|all)$/i.test(inputCommand) ||
+                           /autofit/i.test(inputCommand) && inputCommand.length < 20;
+
+    if (isSimpleCommand) {
+      console.log('🔧 === PROCESSING AS SIMPLE COMMAND ===');
+      try {
+        // Process through voice command handler (which handles local commands)
+        await handleVoiceCommand(inputCommand);
+        
+        // Add success message to chat
+        const commandMessage = {
+          id: `command-${Date.now()}`,
+          type: 'assistant' as const,
+          content: `✅ Command "${inputCommand}" executed successfully.`,
+          timestamp: new Date()
+        };
+        setChatMessages(prev => [...prev, commandMessage]);
+        setIsChatProcessing(false);
+        return;
+      } catch (error) {
+        console.log('⚠️ Simple command failed, falling back to AI analysis');
+        // Continue to AI analysis if command fails
+      }
+    }
+
+    // Add typing indicator for AI analysis
     const typingId = `typing-${Date.now()}`;
     setChatMessages(prev => [...prev, {
       id: typingId,
@@ -885,7 +1062,7 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     try {
       console.log('🚀 === BACKEND COMMUNICATION STARTED ===');
       console.log('🌐 Target endpoint:', 'http://localhost:8000/api/query');
-      console.log('📤 Preparing request for:', userMessage.content);
+      console.log('📤 Preparing request for:', inputCommand);
       
       // Send to backend for analysis using the updated commandService
       let response;
@@ -900,13 +1077,13 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
         console.log('📋 Sample data (first 3 rows):', dataRows.slice(0, 3));
         
         console.log('📡 Calling commandService.analyzeData...');
-        response = await commandService.analyzeData(userMessage.content, dataRows);
+        response = await commandService.analyzeData(inputCommand, dataRows);
         console.log('✅ analyzeData completed');
       } else {
         console.log('⚠️ === NO DATA CONTEXT ===');
         console.log('📡 Calling commandService.processComplexCommand without data...');
         response = await commandService.processComplexCommand({
-          command: userMessage.content,
+          command: inputCommand,
           context: { sheetInfo: { message: 'No data currently loaded' } }
         });
         console.log('✅ processComplexCommand completed');
@@ -2930,53 +3107,25 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
         {/* Header */}
         <div className={`${sidebarCollapsed ? 'p-3' : 'p-6'} border-b border-blue-900/30 transition-all duration-300`}>
           {!sidebarCollapsed && (
-            <div className="flex flex-col mb-6">
-              {/* Logo Section */}
-              <div className="flex justify-center pb-4">
-                <button
-                  onClick={() => router.push('/')}
-                  className="transition-all duration-300 hover:scale-110 hover:drop-shadow-[0_0_15px_rgba(59,130,246,0.4)] cursor-pointer p-2"
-                  title="Go to Home"
-                >
-                  <div 
-                    className="h-18 w-auto"
-                    style={{
-                      background: 'linear-gradient(135deg, #ffffff 0%, #ffffff 30%, #3b82f6 60%, #1d4ed8 80%, #1e40af 100%)',
-                      mask: 'url(/logo.svg) no-repeat center',
-                      maskSize: 'contain',
-                      WebkitMask: 'url(/logo.svg) no-repeat center',
-                      WebkitMaskSize: 'contain',
-                      width: '72px',
-                      height: '72px'
-                    }}
-                    aria-label="EDI.ai Logo"
-                  />
-                </button>
-              </div>
-              
-              {/* Subtle Divider */}
-              <div className="border-b border-blue-900/20 mb-4"></div>
-              
+            <div className="flex justify-between items-center mb-6">
               {/* User Profile Section */}
-              <div className="flex justify-between items-center">
-                <UserProfile variant="dark" />
-                
-                {/* Collapse Toggle Button */}
-                <button
-                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                  className="flex items-center justify-center p-2 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group"
-                  title="Collapse Sidebar"
+              <UserProfile variant="dark" />
+              
+              {/* Collapse Toggle Button */}
+              <button
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                className="flex items-center justify-center p-2 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group"
+                title="Collapse Sidebar"
+              >
+                <svg 
+                  className="w-5 h-5 text-blue-400 group-hover:text-blue-300 transition-transform duration-200" 
+                  fill="none" 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor"
                 >
-                  <svg 
-                    className="w-5 h-5 text-blue-400 group-hover:text-blue-300 transition-transform duration-200" 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-              </div>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
             </div>
           )}
           
@@ -3142,15 +3291,46 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
               <button
                 onClick={() => setShowChatInterface(true)}
                 className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group`}
-                title={sidebarCollapsed ? 'AI Insights' : ''}
+                title={sidebarCollapsed ? 'AI Commands & Chat' : ''}
               >
                 <svg className="w-5 h-5 text-blue-400 group-hover:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
-                {!sidebarCollapsed && <span className="text-blue-200 group-hover:text-blue-100">AI Insights</span>}
+                {!sidebarCollapsed && <span className="text-blue-200 group-hover:text-blue-100">AI Commands & Chat</span>}
               </button>
               <button
-                onClick={() => setShowFormulaDialog(true)}
+                onClick={() => {
+                  // Initialize dialog state similar to keyboard shortcut
+                  let row = 0, col = 0;
+                  if (window.luckysheet && typeof window.luckysheet.getRange === 'function') {
+                    const range = window.luckysheet.getRange();
+                    if (range && range.length > 0) {
+                      row = Array.isArray(range[0].row) ? range[0].row[0] : range[0].row;
+                      col = Array.isArray(range[0].column) ? range[0].column[0] : range[0].column;
+                      let pos = null;
+                      try {
+                        const cellDom = document.querySelector(
+                          `.luckysheet-cell-row-${row} .luckysheet-cell-column-${col}`
+                        ) as HTMLElement;
+                        if (cellDom) {
+                          const rect = cellDom.getBoundingClientRect();
+                          pos = { top: rect.bottom + window.scrollY, left: rect.left + window.scrollX };
+                        }
+                      } catch {}
+                      setFormulaDialogPos(pos);
+                    } else {
+                      setFormulaDialogPos(null);
+                    }
+                  } else {
+                    setFormulaDialogPos(null);
+                  }
+                  setShowFormulaDialog(true);
+                  setFormulaInput('');
+                  setGeneratedFormula(null);
+                  setFormulaError(null);
+                  setFormulaCell({ row, col });
+                  setSelectedColumns([]);
+                }}
                 className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group`}
                 title={sidebarCollapsed ? 'AI Formula Generation' : ''}
               >
@@ -3170,30 +3350,6 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
             </div>
           </div>
 
-          {/* Quick Command */}
-          {!sidebarCollapsed && (
-            <div className="p-6">
-              <h3 className="text-sm font-medium text-blue-300 mb-4 uppercase tracking-wider">Quick Command</h3>
-              <div className="space-y-3">
-                <form onSubmit={handleTextCommand} className="space-y-3">
-                  <input
-                    value={voiceCommand}
-                    onChange={(e) => setVoiceCommand(e.target.value)}
-                    placeholder="Type command..."
-                    className="w-full px-3 py-2 bg-blue-900/20 border border-blue-700/30 rounded-md text-blue-100 placeholder-blue-300/50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    disabled={isProcessingCommand}
-                  />
-                  <button
-                    type="submit"
-                    disabled={!voiceCommand.trim() || isProcessingCommand}
-                    className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    Execute Command
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -3331,8 +3487,8 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                     </svg>
                   </div>
                   <div>
-                    <h2 className="text-xl font-semibold text-white">Data Insights Chat</h2>
-                    <p className="text-blue-300/80 text-sm">AI-powered analysis of your spreadsheet data</p>
+                    <h2 className="text-xl font-semibold text-white">AI Commands & Chat</h2>
+                    <p className="text-blue-300/80 text-sm">Execute commands instantly or get AI-powered data analysis</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -3872,6 +4028,29 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
               Natural Language Formula
             </div>
             <div style={{ fontSize: 15, color: '#94a3b8', marginBottom: 18 }}>Describe your calculation or select columns to generate a spreadsheet formula.</div>
+            
+            {/* Data Context Info */}
+            {data && data.length > 0 && (() => {
+              const dataRangeInfo = getDataRangeInfo();
+              return dataRangeInfo ? (
+                <div style={{
+                  background: 'rgba(59,130,246,0.1)',
+                  border: '1px solid rgba(59,130,246,0.3)',
+                  borderRadius: 6,
+                  padding: 10,
+                  marginBottom: 18,
+                  fontSize: 12,
+                  lineHeight: 1.4
+                }}>
+                  <div style={{ fontWeight: 600, color: '#60a5fa', marginBottom: 4 }}>📊 Data Context</div>
+                  <div style={{ color: '#94a3b8' }}>
+                    {dataRangeInfo.summary}<br/>
+                    Formulas will use precise ranges instead of entire columns for better performance.
+                  </div>
+                </div>
+              ) : null;
+            })()}
+            
             {/* Column selection with checkboxes */}
             <div style={{ marginBottom: 18 }}>
               <label style={{ fontWeight: 600, marginBottom: 6, display: 'block', color: '#e0e6f0', fontSize: 15 }}>Select column(s):</label>
@@ -3889,36 +4068,52 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
               }}>
                 {allColumns.map((col, idx) => {
                   const checked = selectedColumns.includes(col);
+                  const dataRangeInfo = getDataRangeInfo();
+                  const columnRange = dataRangeInfo?.columnRanges[idx];
+                  const rangeText = columnRange?.hasData 
+                    ? `${columnRange.range} [${columnRange.dataCount} rows]`
+                    : `${columnLetter(idx)}${dataRangeInfo?.dataStartRow || 2} [no data]`;
+                  
                   return (
                     <label key={col} style={{
                       display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
+                      flexDirection: 'column',
+                      gap: 2,
                       fontWeight: checked ? 700 : 500,
                       color: checked ? '#60a5fa' : '#94a3b8',
                       background: checked ? 'rgba(59,130,246,0.1)' : 'transparent',
                       borderRadius: 4,
-                      padding: '2px 4px',
+                      padding: '6px 8px',
                       cursor: 'pointer',
                       transition: 'background 0.2s, color 0.2s',
                     }}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={e => {
-                          if (e.target.checked) {
-                            setSelectedColumns([...selectedColumns, col]);
-                            if (selectedColumns.length === 0 && !formulaInput) {
-                              setFormulaInput(`sum all values in ${col} (${columnLetter(idx)})`);
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setSelectedColumns([...selectedColumns, col]);
+                              if (selectedColumns.length === 0 && !formulaInput && columnRange?.hasData) {
+                                setFormulaInput(`sum all values in ${col} (${columnRange.range})`);
+                              }
+                            } else {
+                              setSelectedColumns(selectedColumns.filter(c => c !== col));
                             }
-                          } else {
-                            setSelectedColumns(selectedColumns.filter(c => c !== col));
-                          }
-                        }}
-                        style={{ accentColor: '#3b82f6', width: 16, height: 16 }}
-                        aria-label={`Select column ${col}`}
-                      />
-                      <span>{`${col} (${columnLetter(idx)})`}</span>
+                          }}
+                          style={{ accentColor: '#3b82f6', width: 16, height: 16 }}
+                          aria-label={`Select column ${col}`}
+                        />
+                        <span style={{ fontSize: '14px' }}>{`${col} (${columnLetter(idx)})`}</span>
+                      </div>
+                      <div style={{ 
+                        fontSize: '11px', 
+                        color: checked ? 'rgba(96,165,250,0.7)' : 'rgba(148,163,184,0.7)',
+                        marginLeft: '24px',
+                        fontFamily: 'monospace'
+                      }}>
+                        {rangeText}
+                      </div>
                     </label>
                   );
                 })}
