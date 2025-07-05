@@ -160,6 +160,94 @@ export async function resetState(workspaceId?: string): Promise<void> {
     }
 }
 
+export async function saveWorkspaceData(workspaceId: string, data: any[], filename?: string): Promise<void> {
+    try {
+        const { supabase } = await import('@/utils/supabase');
+        
+        // Extract column order from data
+        const columnOrder = data && data.length > 0 ? Object.keys(data[0]) : [];
+        
+        console.log('💾 Saving workspace data with column order:', columnOrder);
+        
+        const { error } = await supabase
+            .from('workspaces')
+            .update({ 
+                data: data,
+                filename: filename || null,
+                column_order: columnOrder,
+                last_modified: new Date().toISOString()
+            })
+            .eq('id', workspaceId);
+
+        if (error) {
+            console.error('Error saving workspace data:', error);
+            throw new Error('Failed to save workspace data');
+        }
+        
+        console.log('✅ Workspace data saved successfully with column order');
+    } catch (error) {
+        console.error('Error in saveWorkspaceData:', error);
+        throw error;
+    }
+}
+
+export async function loadWorkspaceData(workspaceId: string): Promise<{ data: any[], filename?: string } | null> {
+    try {
+        const { supabase } = await import('@/utils/supabase');
+        
+        const { data: workspace, error } = await supabase
+            .from('workspaces')
+            .select('data, filename, column_order')
+            .eq('id', workspaceId)
+            .single();
+
+        if (error) {
+            console.error('Error loading workspace data:', error);
+            return null;
+        }
+
+        if (!workspace?.data) {
+            console.log('No data found in workspace');
+            return null;
+        }
+
+        let loadedData = workspace.data;
+        
+        // Restore column order if available
+        if (workspace.column_order && workspace.column_order.length > 0 && loadedData.length > 0) {
+            console.log('🔄 Restoring column order:', workspace.column_order);
+            
+            loadedData = loadedData.map((row: any) => {
+                const orderedRow: any = {};
+                workspace.column_order.forEach((column: string) => {
+                    if (row.hasOwnProperty(column)) {
+                        orderedRow[column] = row[column];
+                    }
+                });
+                return orderedRow;
+            });
+            
+            console.log('✅ Column order restored successfully');
+        } else {
+            console.log('⚠️ No column order saved, using data as-is');
+        }
+
+        console.log('✅ Workspace data loaded successfully', {
+            rows: loadedData.length,
+            filename: workspace.filename,
+            columnOrder: workspace.column_order
+        });
+
+        return {
+            data: loadedData,
+            filename: workspace.filename || undefined
+        };
+    } catch (error) {
+        console.error('Error in loadWorkspaceData:', error);
+        return null;
+    }
+}
+
 export async function checkReportStatus(reportId: string): Promise<{ status: 'generating' | 'ready' | 'error', error?: string }> {
     try {
         // Use a regular GET request with a special query parameter to check if the file exists

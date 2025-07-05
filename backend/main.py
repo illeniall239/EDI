@@ -49,6 +49,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__
 data_handler = DataHandler()
 speech_util = SpeechUtil(api_key=settings.AZURE_SPEECH_KEY, region=settings.AZURE_SERVICE_REGION)
 agent_services = AgentServices(llm=settings.LLM, speech_util_instance=speech_util, charts_dir=CHARTS_DIR)
+agent_services.initialize_agents(data_handler)
 report_generator = ReportGenerator(
     data_handler=data_handler,
     agent_services_instance=agent_services
@@ -156,6 +157,10 @@ async def process_query(query: Dict[str, Any]):
             df = data_handler.get_df()
             print(f"📊 Data shape: {df.shape}")
             print(f"🏷️ Data columns: {df.columns.tolist()}")
+        
+        # Ensure AgentServices is always linked to an active DataHandler (covers direct page refresh w/ saved data)
+        if agent_services.data_handler is None:
+            agent_services.initialize_agents(data_handler)
         
         response, visualization = agent_services.process_query(question, is_speech)
         

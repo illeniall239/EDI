@@ -6,7 +6,7 @@ import { supabase } from '@/utils/supabase';
 import NativeSpreadsheet from '@/components/NativeSpreadsheet';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { DataPreview } from '@/types';
-import { uploadFile } from '@/utils/api';
+import { uploadFile, saveWorkspaceData, loadWorkspaceData } from '@/utils/api';
 
 interface Workspace {
     id: string;
@@ -23,6 +23,7 @@ export default function WorkspacePage() {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any[]>([]);
     const [isCreatingSheet, setIsCreatingSheet] = useState(false);
+    const [currentFilename, setCurrentFilename] = useState<string | undefined>();
     const { setCurrentWorkspace } = useWorkspace();
 
     useEffect(() => {
@@ -62,6 +63,9 @@ export default function WorkspacePage() {
                 console.log('🔄 Setting new data to state...');
                 setData(newData);
                 console.log('✅ Data state updated');
+                
+                // Save updated data to workspace
+                saveDataToWorkspace(newData, currentFilename);
             } else {
                 console.warn('⚠️ Data update event received but no data found in event');
             }
@@ -75,6 +79,19 @@ export default function WorkspacePage() {
             window.removeEventListener('dataUpdate', handleDataUpdate as EventListener);
         };
     }, [data]);
+
+    // Helper function to save data to workspace
+    const saveDataToWorkspace = async (newData: any[], filename?: string) => {
+        if (!workspaceId) return;
+        
+        try {
+            await saveWorkspaceData(workspaceId, newData, filename);
+            console.log('💾 Data saved to workspace successfully');
+        } catch (error) {
+            console.error('❌ Failed to save data to workspace:', error);
+            // Don't show error to user as this is auto-save
+        }
+    };
 
     const fetchWorkspace = async () => {
         try {
@@ -92,6 +109,44 @@ export default function WorkspacePage() {
 
             setWorkspace(workspaceData);
             setCurrentWorkspace(workspaceData);
+
+            // Load saved data if it exists
+            console.log('🔄 Loading workspace data...');
+            const savedData = await loadWorkspaceData(workspaceId);
+            if (savedData && savedData.data.length > 0) {
+                console.log('✅ Found saved data, restoring...', {
+                    rows: savedData.data.length,
+                    filename: savedData.filename
+                });
+                
+                // Initialize backend data handler with saved data
+                try {
+                    // Convert data array to CSV string
+                    const headers = Object.keys(savedData.data[0]).join(',');
+                    const rows = savedData.data.map(row => 
+                        Object.values(row).map(val => 
+                            typeof val === 'string' ? `"${val.replace(/"/g, '""')}"` : val
+                        ).join(',')
+                    );
+                    const csvContent = [headers, ...rows].join('\n');
+                    
+                    // Create CSV file
+                    const blob = new Blob([csvContent], { type: 'text/csv' });
+                    const file = new File([blob], savedData.filename || 'workspace_data.csv', { type: 'text/csv' });
+                    
+                    // Upload to backend to initialize data handler
+                    console.log('🔄 Initializing backend data handler...');
+                    await uploadFile(file, workspaceId);
+                    console.log('✅ Backend data handler initialized');
+                } catch (error) {
+                    console.error('❌ Failed to initialize backend:', error);
+                }
+
+                setData(savedData.data);
+                setCurrentFilename(savedData.filename);
+            } else {
+                console.log('📭 No saved data found in workspace');
+            }
         } catch (error) {
             console.error('Error:', error);
             router.push('/workspaces');
@@ -114,6 +169,10 @@ export default function WorkspacePage() {
                 console.log('File uploaded successfully, data preview:', result.preview);
                 console.log(`Successfully loaded ${result.data.length} rows from ${file.name}`);
                 setData(result.data);
+                setCurrentFilename(file.name);
+                
+                // Save data to workspace
+                await saveDataToWorkspace(result.data, file.name);
             } else {
                 console.error('No data received from upload');
                 alert('Failed to process the uploaded file. Please try again.');
@@ -128,8 +187,12 @@ export default function WorkspacePage() {
         }
     };
 
-    const handleClearData = () => {
+    const handleClearData = async () => {
         setData([]);
+        setCurrentFilename(undefined);
+        
+        // Save empty state to workspace
+        await saveDataToWorkspace([], undefined);
     };
 
     const handleSpreadsheetCommand = async (command: string) => {

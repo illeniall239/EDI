@@ -1936,7 +1936,8 @@ ONLY output the formula, nothing else.
                 keep_strategy = 'first'  # Default value to avoid variable scope issues
                 reasoning = "Extracted from question using pattern matching."
                 
-                column_match = re.search(r'(?:based on|using|with|for|in|from|of|by)\s+(?:column(?:s)?\s+)?([A-Za-z0-9_,\s]+)', question.lower())
+            # Move column_match outside the try block to fix scope issue
+            column_match = re.search(r'(?:based on|using|with|for|in|from|of|by)\s+(?:column(?:s)?\s+)?([A-Za-z0-9_,\s]+)', question.lower())
             
             if column_match:
                 # Extract column names or references

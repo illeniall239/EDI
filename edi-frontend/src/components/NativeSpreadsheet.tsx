@@ -293,6 +293,203 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
   // Helper: Map column index to letter (A, B, ...)
   const columnLetter = (index: number) => String.fromCharCode(65 + index);
 
+  // Convert Luckysheet data back to array format
+  const convertLuckysheetToArrayData = (sheetData: any[][]): any[] => {
+    if (!sheetData || sheetData.length === 0) return [];
+    
+    try {
+      // Find the first non-empty row to get headers
+      let headerRow: any[] | null = null;
+      let headerRowIndex = 0;
+      
+      for (let i = 0; i < Math.min(sheetData.length, 10); i++) {
+        if (sheetData[i] && sheetData[i].some(cell => cell !== null && cell !== undefined && cell !== '')) {
+          headerRow = sheetData[i];
+          headerRowIndex = i;
+          break;
+        }
+      }
+      
+      if (!headerRow) return [];
+      
+      // Find the last column with actual header data (stop at first empty header)
+      let lastValidColumn = -1;
+      for (let i = 0; i < headerRow.length; i++) {
+        const cell = headerRow[i];
+        const value = cell && typeof cell === 'object' && cell.v !== undefined ? cell.v : cell;
+        
+        if (value && value !== '' && value !== null && value !== undefined) {
+          // Only include headers that don't match auto-generated pattern
+          if (!String(value).match(/^Column \d+$/)) {
+            lastValidColumn = i;
+          }
+        } else {
+          // Stop at first empty header
+          break;
+        }
+      }
+      
+      if (lastValidColumn === -1) return [];
+      
+      // Extract only valid headers (up to lastValidColumn + 1)
+      const headers: string[] = [];
+      for (let i = 0; i <= lastValidColumn; i++) {
+        const cell = headerRow[i];
+        let value = cell && typeof cell === 'object' && cell.v !== undefined ? cell.v : cell;
+        
+        // Skip auto-generated column names
+        if (value && !String(value).match(/^Column \d+$/)) {
+          headers.push(String(value));
+        } else if (value) {
+          // If we encounter an auto-generated name, stop here
+          break;
+        }
+      }
+      
+      if (headers.length === 0) return [];
+      
+      console.log('🔍 Extracted headers:', headers, 'from column range 0-' + lastValidColumn);
+      
+      // Convert data rows (only use the valid column range)
+      const dataRows: any[] = [];
+      for (let i = headerRowIndex + 1; i < sheetData.length; i++) {
+        if (!sheetData[i]) continue;
+        
+        const rowData: any = {};
+        let hasData = false;
+        
+        // Use original column order if available, otherwise use extracted headers
+        const columnOrder = originalColumnOrder.length > 0 ? originalColumnOrder : headers;
+        
+        for (let j = 0; j < headers.length; j++) {
+          const header = headers[j];
+          const cell = sheetData[i][j];
+          let value = '';
+          
+          if (cell && typeof cell === 'object' && cell.v !== undefined) {
+            value = cell.v;
+          } else if (cell !== null && cell !== undefined) {
+            value = cell;
+          }
+          
+          rowData[header] = value;
+          if (value !== '' && value !== null && value !== undefined) {
+            hasData = true;
+          }
+        }
+        
+        if (hasData) {
+          // Reorder the row data according to original column order
+          if (originalColumnOrder.length > 0) {
+            const orderedRowData: any = {};
+            originalColumnOrder.forEach(col => {
+              if (rowData.hasOwnProperty(col)) {
+                orderedRowData[col] = rowData[col];
+              }
+            });
+            dataRows.push(orderedRowData);
+          } else {
+            dataRows.push(rowData);
+          }
+        }
+      }
+      
+      console.log('🔄 Converted', dataRows.length, 'rows with', headers.length, 'columns');
+      return dataRows;
+    } catch (error) {
+      console.error('Error converting Luckysheet data to array format:', error);
+      return [];
+    }
+  };
+
+  // Import saveWorkspaceData function
+  const { saveWorkspaceData } = require('@/utils/api');
+  
+  // Manual save function
+  const saveCurrentState = useCallback(async (operation: string = 'Manual Save') => {
+    if (!window.luckysheet || !luckysheetInitialized) {
+      console.log('Luckysheet not ready for saving');
+      return false;
+    }
+    
+    if (!currentWorkspace?.id) {
+      console.log('No workspace ID available');
+      return false;
+    }
+    
+    try {
+      const currentSheetData = window.luckysheet.getSheetData();
+      if (!currentSheetData || currentSheetData.length === 0) {
+        console.log('No data to save');
+        return false;
+      }
+      
+      const convertedData = convertLuckysheetToArrayData(currentSheetData);
+      const dataString = JSON.stringify(convertedData);
+      
+      // Only save if data has actually changed
+      if (dataString === lastSavedDataRef.current) {
+        console.log('No changes to save');
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+        return true;
+      }
+      
+      console.log('💾 Saving workspace data...', {
+        operation,
+        rows: convertedData.length,
+        workspaceId: currentWorkspace.id
+      });
+      
+      setSaveStatus('saving');
+      
+      // Ensure data uses original column order before saving
+      const orderedData = convertedData.map(row => {
+        if (originalColumnOrder.length > 0) {
+          const orderedRow: any = {};
+          originalColumnOrder.forEach(col => {
+            if (row.hasOwnProperty(col)) {
+              orderedRow[col] = row[col];
+            }
+          });
+          return orderedRow;
+        }
+        return row;
+      });
+      
+      // Save directly to workspace without triggering component refresh
+      await saveWorkspaceData(currentWorkspace.id, orderedData);
+      
+      lastSavedDataRef.current = dataString;
+      setSaveStatus('saved');
+      setLastSaveTime(new Date());
+      setHasUnsavedChanges(false);
+      
+      // Reset status after 3 seconds
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 3000);
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Save failed:', error);
+      setSaveStatus('error');
+      
+      // Reset status after 4 seconds
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 4000);
+      
+      return false;
+    }
+  }, [luckysheetInitialized, currentWorkspace?.id, convertLuckysheetToArrayData]);
+
+  // Function to track changes without auto-saving
+  const trackDataChange = useCallback((operation: string = 'Change') => {
+    console.log('📝 Data change detected:', operation);
+    setHasUnsavedChanges(true);
+  }, []);
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -313,6 +510,15 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
   
   // Add state for column extraction dialog
   const [showColumnExtraction, setShowColumnExtraction] = useState(false);
+
+  // Manual save functionality
+  const lastSavedDataRef = useRef<string>('');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  
+  // Track original column order to preserve it throughout operations
+  const [originalColumnOrder, setOriginalColumnOrder] = useState<string[]>([]);
 
   // Load error history when component mounts
   useEffect(() => {
@@ -1473,7 +1679,9 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
       };
 
     if (dataArray && dataArray.length > 0) {
-      const headers = Object.keys(dataArray[0]);
+      // Preserve original column order using our helper function
+      const headers = getOriginalColumnOrder(dataArray);
+      console.log('📋 prepareLuckysheetData using column order:', headers);
           const celldata: any[] = [];
 
           // Add headers
@@ -1588,6 +1796,15 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
       console.error('❌ Error in refreshLuckysheetData:', error);
     }
   };
+
+  // Set original column order when data is first loaded
+  useEffect(() => {
+    if (data && data.length > 0 && originalColumnOrder.length === 0) {
+      const columnOrder = Object.keys(data[0]);
+      setOriginalColumnOrder(columnOrder);
+      console.log('📋 Set original column order:', columnOrder);
+    }
+  }, [data, originalColumnOrder]);
 
   // Watch for data changes from props and initialize history if needed
   useEffect(() => {
@@ -1931,8 +2148,10 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
           cellEditEnd: function(r: number, c: number, oldValue: any, newValue: any) {
             console.log('Cell edit completed:', { r, c, oldValue, newValue });
             
-            // Check if the new value is a formula that resulted in an error
+            // Track the changes
             setTimeout(() => {
+              trackDataChange('Cell Edit');
+              
               const cellData = window.luckysheet.getCellValue(r, c);
               const formula = window.luckysheet.getCellValue(r, c, 'f');
               
@@ -1952,6 +2171,13 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
           },
           cellUpdated: (r: number, c: number, oldValue: any, newValue: any, isRefresh: boolean) => {
             console.log('Cell Updated:', { r, c, oldValue, newValue, isRefresh });
+            
+            // Track changes (but not during refresh operations)
+            if (!isRefresh) {
+              setTimeout(() => {
+                trackDataChange('Cell Update');
+              }, 50);
+            }
             
             // Enhanced error detection for manual input
             setTimeout(() => {
@@ -2004,10 +2230,12 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
           onRangeSort: function() {
             const currentData = window.luckysheet.getSheetData();
             pushToDataHistory(currentData, 'Range Sort');
+            trackDataChange('Range Sort');
           },
           onRangeFilter: function() {
             const currentData = window.luckysheet.getSheetData();
             pushToDataHistory(currentData, 'Range Filter');
+            trackDataChange('Range Filter');
           }
         }
       };
@@ -2029,13 +2257,84 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
 
   // Watch for data changes and refresh Luckysheet
   useEffect(() => {
-    if (luckysheetInitialized && data && data.length > 0) {
+    if (luckysheetInitialized && data !== null) {
+      if (data.length > 0) {
       console.log('🔄 Data changed, refreshing Luckysheet...', {
         dataLength: data.length,
         firstRow: data[0] ? Object.keys(data[0]) : 'no data',
         luckysheetInitialized
       });
       refreshLuckysheetData(data, 'Data Update from Props');
+        
+        // Update saved data reference when data loads
+        lastSavedDataRef.current = JSON.stringify(data);
+      } else {
+        console.log('🧹 Data cleared, clearing Luckysheet...', {
+          dataLength: data.length,
+          luckysheetInitialized
+        });
+        // Clear Luckysheet when data is empty
+        if (window.luckysheet && containerRef.current) {
+          try {
+            window.luckysheet.destroy();
+            containerRef.current.innerHTML = '';
+            
+            // Reinitialize with empty data
+            const containerId = `luckysheet-${Date.now()}`;
+            containerRef.current.id = containerId;
+            
+            const emptySheetData = {
+              name: 'Sheet1',
+              index: 0,
+              status: 1,
+              order: 0,
+              celldata: [],
+              config: {},
+              scrollLeft: 0,
+              scrollTop: 0,
+              luckysheet_select_save: [],
+              calcChain: [],
+              isPivotTable: false,
+              pivotTable: {},
+              filter_select: {},
+              filter: null,
+              luckysheet_alternateformat_save: [],
+              luckysheet_alternateformat_save_modelCustom: [],
+              luckysheet_conditionformat_save: {},
+              frozen: {},
+              chart: [],
+              zoomRatio: 1,
+              image: [],
+              showGridLines: 1,
+              dataVerification: {},
+            };
+            
+            window.luckysheet.create({
+              container: containerId,
+              title: currentWorkspace?.name || 'EDI Spreadsheet',
+              lang: 'en',
+              data: [emptySheetData],
+              showtoolbar: true,
+              showinfobar: true,
+              showsheetbar: true,
+              showstatisticBar: true,
+              enableAddRow: true,
+              enableAddCol: true,
+              allowEdit: true,
+              allowCopy: true,
+              allowPaste: true,
+              hook: {
+                workbookCreateAfter: function() {
+                  console.log('✅ Luckysheet cleared and reinitialized with empty data');
+                  setLuckysheetInitialized(true);
+                }
+              }
+            });
+          } catch (error) {
+            console.error('❌ Error clearing Luckysheet:', error);
+          }
+        }
+      }
     }
   }, [data, luckysheetInitialized]);
 
@@ -2389,6 +2688,21 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     }
   };
   
+  // Helper function to get original column order
+  const getOriginalColumnOrder = useCallback((dataArray: any[]): string[] => {
+    // Use tracked column order if available
+    if (originalColumnOrder.length > 0) {
+      return originalColumnOrder;
+    }
+    
+    // Fallback to Object.keys if no tracked order exists
+    if (dataArray && dataArray.length > 0) {
+      return Object.keys(dataArray[0]);
+    }
+    
+    return [];
+  }, [originalColumnOrder]);
+  
   // Extract duplicate removal logic to a separate function
   const handleDuplicateRemoval = async (command: string) => {
     console.log('🧹 Detected duplicate removal command, sending directly to backend');
@@ -2398,8 +2712,12 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     
     if (data && data.length > 0) {
       console.log('📊 Data available for duplicate removal');
-      const headers = Object.keys(data[0]);
-      const dataRows = data.map(row => headers.map(header => row[header]));
+      
+      // Preserve original column order
+      const originalHeaders = getOriginalColumnOrder(data);
+      console.log('📋 Original column order:', originalHeaders);
+      
+      const dataRows = data.map(row => originalHeaders.map(header => row[header]));
       
       try {
         // Capture the pre-operation state immediately
@@ -2417,8 +2735,8 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
             currentData: dataRows,
             sheetInfo: {
               rows: dataRows.length,
-              columns: headers.length,
-              headers
+              columns: originalHeaders.length,
+              headers: originalHeaders
             }
           }
         });
@@ -2427,7 +2745,19 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
         
         // Check if data was updated
         if (response.data_updated && response.updated_data && onDataUpdate) {
-          const newData = response.updated_data.data;
+          let newData = response.updated_data.data;
+          
+          // Ensure column order is preserved
+          if (newData && newData.length > 0) {
+            newData = newData.map((row: any) => {
+              const orderedRow: any = {};
+              originalHeaders.forEach(header => {
+                orderedRow[header] = row[header];
+              });
+              return orderedRow;
+            });
+          }
+          
           const newRowCount = newData.length;
           
           console.log(`📊 New data has ${newRowCount} rows`);
@@ -2448,6 +2778,9 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
             
             // Refresh Luckysheet with the new data WITHOUT creating a new history entry
             refreshLuckysheetDataWithoutHistory(newData);
+            
+            // Update the saved data reference to prevent duplicate saves
+            lastSavedDataRef.current = JSON.stringify(newData);
             
             // Ensure undo is available
             console.log(`📚 History state after duplicate removal: index=${historyState.currentHistoryIndex}, entries=${historyState.dataHistory.length}`);
@@ -2740,6 +3073,8 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     const afterData = window.luckysheet.getSheetData();
     if (JSON.stringify(beforeData) !== JSON.stringify(afterData)) {
       pushToDataHistory(afterData, operationName);
+      // Track the changes
+      trackDataChange(operationName);
     } else {
       console.log(`[HISTORY] No change detected for operation: ${operationName}`);
     }
@@ -2947,6 +3282,20 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     }
     fetchWorkspaces();
   }, []);
+
+  // Ctrl+S save functionality
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        console.log('Ctrl+S pressed - saving workspace...');
+        saveCurrentState('Manual Save (Ctrl+S)');
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [saveCurrentState]);
 
   // Removed all custom cell styling
 
@@ -3188,6 +3537,72 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                   )}
                 </div>
               )}
+            </div>
+          )}
+          
+          {/* Manual Save Button */}
+          {!sidebarCollapsed && (
+            <div className="mt-3">
+              <button
+                onClick={() => saveCurrentState('Manual Save')}
+                disabled={saveStatus === 'saving'}
+                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                {saveStatus === 'saving' ? (
+                  <>
+                    <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    Save Workspace {hasUnsavedChanges ? '(Ctrl+S)' : ''}
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Save Status Indicator */}
+          {!sidebarCollapsed && (saveStatus !== 'idle' || hasUnsavedChanges) && (
+            <div className="mt-3 px-3 py-2 bg-gray-900/40 rounded-lg border border-gray-600/30">
+              <div className="flex items-center gap-2">
+                {hasUnsavedChanges && saveStatus === 'idle' && (
+                  <>
+                    <div className="w-3 h-3 bg-orange-400 rounded-full"></div>
+                    <span className="text-xs text-orange-300">Unsaved changes</span>
+                  </>
+                )}
+                {saveStatus === 'saving' && (
+                  <>
+                    <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-xs text-blue-300">Saving...</span>
+                  </>
+                )}
+                {saveStatus === 'saved' && (
+                  <>
+                    <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-xs text-green-300">
+                      Saved {lastSaveTime && new Date().getTime() - lastSaveTime.getTime() < 60000 
+                        ? 'just now' 
+                        : lastSaveTime?.toLocaleTimeString()
+                      }
+                    </span>
+                  </>
+                )}
+                {saveStatus === 'error' && (
+                  <>
+                    <svg className="w-3 h-3 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                    <span className="text-xs text-red-300">Save failed - try again</span>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -4088,22 +4503,22 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                       transition: 'background 0.2s, color 0.2s',
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={e => {
-                            if (e.target.checked) {
-                              setSelectedColumns([...selectedColumns, col]);
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setSelectedColumns([...selectedColumns, col]);
                               if (selectedColumns.length === 0 && !formulaInput && columnRange?.hasData) {
                                 setFormulaInput(`sum all values in ${col} (${columnRange.range})`);
-                              }
-                            } else {
-                              setSelectedColumns(selectedColumns.filter(c => c !== col));
                             }
-                          }}
-                          style={{ accentColor: '#3b82f6', width: 16, height: 16 }}
-                          aria-label={`Select column ${col}`}
-                        />
+                          } else {
+                            setSelectedColumns(selectedColumns.filter(c => c !== col));
+                          }
+                        }}
+                        style={{ accentColor: '#3b82f6', width: 16, height: 16 }}
+                        aria-label={`Select column ${col}`}
+                      />
                         <span style={{ fontSize: '14px' }}>{`${col} (${columnLetter(idx)})`}</span>
                       </div>
                       <div style={{ 
