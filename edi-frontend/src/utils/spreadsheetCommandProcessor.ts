@@ -463,6 +463,68 @@ export class SpreadsheetCommandProcessor {
       }
     }
 
+    // --- Text Extraction Pattern Matching ---
+    // e.g. extract first word from column, get first part, split by delimiter
+    const textExtractionRegex = /(?:extract|get)(?:\s+(?:the|first))?\s+(?:first\s+)?(?:word|part|element)(?:\s+from)?(?:\s+(?:the|column|in))?\s+([\w\s]+)(?:\s+column)?/i;
+    const textExtractionMatch = command.match(textExtractionRegex);
+    if (textExtractionMatch) {
+      let colName = textExtractionMatch[1]?.trim();
+      if (colName) {
+        colName = colName.replace(/ column$/i, '').trim();
+        const colIndex = this.findColumnByName(colName);
+        if (colIndex !== null && this.currentData.length > 1) {
+          const colLetter = indexToColumnLetter(colIndex);
+          
+          // Analyze sample data to detect delimiter
+          let sampleData: string[] = [];
+          for (let r = 1; r < Math.min(this.currentData.length, 6); r++) {
+            if (this.currentData[r] && this.currentData[r][colIndex] && 
+                typeof this.currentData[r][colIndex] === 'string') {
+              sampleData.push(this.currentData[r][colIndex]);
+            }
+          }
+          
+          // Detect most common delimiter
+          const commonDelimiters = [' ', ':', ',', ';', '|', '-', '_', '/', '\\'];
+          const delimiterCounts: {[key: string]: number} = {};
+          
+          sampleData.forEach(sample => {
+            commonDelimiters.forEach(delimiter => {
+              if (sample.includes(delimiter)) {
+                delimiterCounts[delimiter] = (delimiterCounts[delimiter] || 0) + 1;
+              }
+            });
+          });
+          
+          let mostCommonDelimiter = ' '; // default
+          let maxCount = 0;
+          Object.entries(delimiterCounts).forEach(([delimiter, count]) => {
+            if (count > maxCount) {
+              maxCount = count;
+              mostCommonDelimiter = delimiter;
+            }
+          });
+          
+          console.log('🔍 Text extraction analysis:', {
+            colName,
+            sampleData: sampleData.slice(0, 3),
+            delimiterCounts,
+            mostCommonDelimiter
+          });
+          
+          // Generate appropriate formula with error handling
+          const formula = `=IFERROR(LEFT(${colLetter}2,FIND("${mostCommonDelimiter}",${colLetter}2)-1),${colLetter}2)`;
+          
+          return {
+            action: 'setCellValue',
+            params: { formula, column: colIndex },
+            target: { type: 'column', identifier: colIndex },
+            success_message: `✅ Inserted text extraction formula: ${formula} (using delimiter "${mostCommonDelimiter}")`
+          };
+        }
+      }
+    }
+
     // Handle clearing filters
     const clearFilterRegex = /(?:clear|remove|reset)(?:\s+(?:all|the))?\s+(?:filter|filters)/i;
     if (clearFilterRegex.test(command)) {

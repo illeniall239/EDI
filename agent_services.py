@@ -817,8 +817,11 @@ Only output the category name, nothing else.
             "formula", "sum", "average", "vlookup", "if(", "count", "min", "max", "lookup", "match", "index", "concatenate", "concat", "split", "left(", "right(", "mid(", "total", "add up", "subtract", "divide", "multiply"
         ]
         if any(word in question.lower() for word in formula_keywords):
+            # Enhanced prompt with data-aware analysis
             prompt = f'''
 You are an expert spreadsheet assistant. Given a user's natural language request, generate the correct spreadsheet formula for the specified cell.
+
+CRITICAL: When dealing with text extraction (like extracting first word, splitting text, etc.), you MUST analyze the actual data structure to determine the correct delimiter. DO NOT assume spaces are the separator.
 
 - Use Excel/Google Sheets formula syntax (e.g., =SUM(B1:B5)).
 - Do NOT include any explanation, just output the formula.
@@ -830,6 +833,13 @@ You are an expert spreadsheet assistant. Given a user's natural language request
 - If the user says "count all non-empty cells in column A", generate =COUNTA(A:A).
 - If the user says "sum values in C2 to C10", generate =SUM(C2:C10).
 - If the user says "find the maximum in range D1:D20", generate =MAX(D1:D20).
+
+FOR TEXT EXTRACTION (extracting first word, splitting text, etc.):
+- First analyze the data to determine the actual delimiter (could be space, colon, comma, semicolon, pipe, etc.)
+- For "extract first word" from data like "windows:mac:linux", use =LEFT(G2,FIND(":",G2)-1) NOT =LEFT(G2,FIND(" ",G2)-1)
+- For "extract first word" from data like "apple,orange,banana", use =LEFT(G2,FIND(",",G2)-1)
+- For "extract first word" from data like "hello world test", use =LEFT(G2,FIND(" ",G2)-1)
+- Handle cases where delimiter might not exist with IFERROR: =IFERROR(LEFT(G2,FIND(":",G2)-1),G2)
 
 USER REQUEST: {question}
 
@@ -1937,7 +1947,7 @@ ONLY output the formula, nothing else.
                 reasoning = "Extracted from question using pattern matching."
                 
             # Move column_match outside the try block to fix scope issue
-            column_match = re.search(r'(?:based on|using|with|for|in|from|of|by)\s+(?:column(?:s)?\s+)?([A-Za-z0-9_,\s]+)', question.lower())
+                column_match = re.search(r'(?:based on|using|with|for|in|from|of|by)\s+(?:column(?:s)?\s+)?([A-Za-z0-9_,\s]+)', question.lower())
             
             if column_match:
                 # Extract column names or references

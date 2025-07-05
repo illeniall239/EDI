@@ -423,12 +423,33 @@ async def analyze_formula_error(request: Request):
             "CALC": "There is a general calculation error in the formula"
         }
 
-        # Construct the prompt for formula error analysis
-        prompt = f"""Analyze this spreadsheet formula error and provide a solution:
+        # Enhanced prompt for formula error analysis with delimiter intelligence
+        base_prompt = f"""Analyze this spreadsheet formula error and provide a solution:
         Formula: {formula}
         Error Type: #{error_type}? ({error_descriptions.get(error_type, "Unknown error type")})
         Cell Reference: {cell_ref}
 
+        """
+
+        # Special handling for VALUE errors with text extraction functions
+        if error_type == "VALUE" and any(func in formula.upper() for func in ["LEFT", "FIND", "RIGHT", "MID"]):
+            base_prompt += """
+SPECIAL FOCUS - This appears to be a text extraction formula with a VALUE error, likely due to incorrect delimiter detection.
+
+Common causes and solutions:
+1. FIND function looking for wrong delimiter (e.g., looking for space " " when data uses colon ":")
+2. Data doesn't contain the expected delimiter
+3. Need to use IFERROR to handle cases where delimiter isn't found
+
+For formulas like =LEFT(cell,FIND(" ",cell)-1):
+- If data is "windows:mac:linux", use =LEFT(cell,FIND(":",cell)-1)
+- If data is "apple,orange,banana", use =LEFT(cell,FIND(",",cell)-1) 
+- Always wrap in IFERROR: =IFERROR(LEFT(cell,FIND(":",cell)-1),cell)
+
+ANALYZE THE FORMULA CAREFULLY to identify what delimiter it's looking for versus what the actual data likely contains.
+"""
+        
+        prompt = base_prompt + """
         Provide a clear and concise response with:
         1. The exact cause of the error
         2. How to fix it

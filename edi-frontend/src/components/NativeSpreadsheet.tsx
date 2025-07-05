@@ -1021,6 +1021,63 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
         
         prompt += `\n\nIMPORTANT DATA CONTEXT:\n- ${dataRangeInfo.summary}\n- Column data ranges:\n  - ${columnDetails}\n- ALWAYS use specific ranges (e.g., ${dataRangeInfo.columnRanges[0]?.range}) instead of entire columns (e.g., ${dataRangeInfo.columnRanges[0]?.letter}:${dataRangeInfo.columnRanges[0]?.letter})\n- Header is in row 1, actual data starts from row ${dataRangeInfo.dataStartRow}\n- Do not include the header row in calculations`;
       }
+      
+      // Enhanced data sample analysis for text extraction formulas
+      const isTextExtractionRequest = /extract|first.*word|split|left|right|middle|substring|part.*of/i.test(input);
+      if (isTextExtractionRequest && data && data.length > 0) {
+        console.log('🔍 Detected text extraction request, analyzing data structure...');
+        
+        // Get sample data from the specified columns or current cell column
+        let sampleData: string[] = [];
+        
+        if (columns.length > 0) {
+          // Use selected columns
+          columns.forEach(colName => {
+            const values = data.slice(0, 5).map(row => row[colName]).filter(val => val && typeof val === 'string');
+            sampleData.push(...values);
+          });
+        } else {
+          // Use current cell's column
+          const currentColumnName = allColumns[col];
+          if (currentColumnName) {
+            sampleData = data.slice(0, 5).map(row => row[currentColumnName]).filter(val => val && typeof val === 'string');
+          }
+        }
+        
+        // Analyze delimiters in the sample data
+        const commonDelimiters = [' ', ':', ',', ';', '|', '-', '_', '/', '\\', '.'];
+        const delimiterCounts: {[key: string]: number} = {};
+        
+        sampleData.forEach(sample => {
+          commonDelimiters.forEach(delimiter => {
+            if (sample.includes(delimiter)) {
+              delimiterCounts[delimiter] = (delimiterCounts[delimiter] || 0) + 1;
+            }
+          });
+        });
+        
+        // Find the most common delimiter
+        let mostCommonDelimiter = ' '; // default
+        let maxCount = 0;
+        Object.entries(delimiterCounts).forEach(([delimiter, count]) => {
+          if (count > maxCount) {
+            maxCount = count;
+            mostCommonDelimiter = delimiter;
+          }
+        });
+        
+        console.log('📋 Data analysis:', {
+          sampleData: sampleData.slice(0, 3),
+          delimiterCounts,
+          mostCommonDelimiter
+        });
+        
+        // Add data structure information to the prompt
+        if (sampleData.length > 0) {
+          prompt += `\n\nDATA STRUCTURE ANALYSIS:\n- Sample data: ${sampleData.slice(0, 3).join(', ')}\n- Most common delimiter detected: "${mostCommonDelimiter}"\n- Use this delimiter in your formula: FIND("${mostCommonDelimiter}",cell_ref)\n- If extracting first word, use: =IFERROR(LEFT(cell_ref,FIND("${mostCommonDelimiter}",cell_ref)-1),cell_ref)`;
+        }
+      }
+      
       if (commandProcessorRef.current) {
         const cmd = await commandProcessorRef.current.processLLMCommand(prompt);
         if (cmd && cmd.params && cmd.params.formula) {
@@ -3546,65 +3603,51 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
               <button
                 onClick={() => saveCurrentState('Manual Save')}
                 disabled={saveStatus === 'saving'}
-                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                  saveStatus === 'saving' 
+                    ? 'bg-blue-800 text-white cursor-not-allowed'
+                    : saveStatus === 'saved'
+                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                    : hasUnsavedChanges
+                    ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
               >
                 {saveStatus === 'saving' ? (
                   <>
                     <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin"></div>
                     Saving...
                   </>
+                ) : saveStatus === 'saved' ? (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Saved {lastSaveTime && new Date().getTime() - lastSaveTime.getTime() < 60000 
+                      ? 'just now' 
+                      : lastSaveTime?.toLocaleTimeString()
+                    }
+                  </>
+                ) : hasUnsavedChanges ? (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    Save Changes (Ctrl+S)
+                  </>
                 ) : (
                   <>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
-                    Save Workspace {hasUnsavedChanges ? '(Ctrl+S)' : ''}
+                    Save Workspace
                   </>
                 )}
               </button>
             </div>
           )}
 
-          {/* Save Status Indicator */}
-          {!sidebarCollapsed && (saveStatus !== 'idle' || hasUnsavedChanges) && (
-            <div className="mt-3 px-3 py-2 bg-gray-900/40 rounded-lg border border-gray-600/30">
-              <div className="flex items-center gap-2">
-                {hasUnsavedChanges && saveStatus === 'idle' && (
-                  <>
-                    <div className="w-3 h-3 bg-orange-400 rounded-full"></div>
-                    <span className="text-xs text-orange-300">Unsaved changes</span>
-                  </>
-                )}
-                {saveStatus === 'saving' && (
-                  <>
-                    <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-xs text-blue-300">Saving...</span>
-                  </>
-                )}
-                {saveStatus === 'saved' && (
-                  <>
-                    <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span className="text-xs text-green-300">
-                      Saved {lastSaveTime && new Date().getTime() - lastSaveTime.getTime() < 60000 
-                        ? 'just now' 
-                        : lastSaveTime?.toLocaleTimeString()
-                      }
-                    </span>
-                  </>
-                )}
-                {saveStatus === 'error' && (
-                  <>
-                    <svg className="w-3 h-3 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                    </svg>
-                    <span className="text-xs text-red-300">Save failed - try again</span>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
+          {/* Save Status Indicator removed as it's now integrated into the save button */}
         </div>
 
         {/* Navigation Sections */}
