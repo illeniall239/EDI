@@ -2478,7 +2478,7 @@ ONLY output the formula, nothing else.
             # Create the cell data in Luckysheet format
             cell_data = []
             
-            # Add header row
+            # Add header row - only for the selected columns
             for col_idx, column in enumerate(df.columns):
                 cell_data.append({
                     "r": 0,  # row index
@@ -2492,7 +2492,7 @@ ONLY output the formula, nothing else.
                     }
                 })
             
-            # Add data rows
+            # Add data rows - only for the selected columns
             for row_idx, (_, row) in enumerate(df.iterrows(), start=1):
                 for col_idx, value in enumerate(row):
                     # Handle different data types
@@ -2516,7 +2516,7 @@ ONLY output the formula, nothing else.
                         }
                     })
             
-            # Create the sheet configuration
+            # Create the sheet configuration - only for the selected columns
             sheet_config = {
                 "name": sheet_name,
                 "color": "",
@@ -2525,7 +2525,7 @@ ONLY output the formula, nothing else.
                 "order": 0,
                 "hide": 0,
                 "row": len(df) + 1,  # +1 for header
-                "column": len(df.columns),
+                "column": len(df.columns),  # Only the selected columns
                 "defaultRowHeight": 19,
                 "defaultColWidth": 73,
                 "celldata": cell_data,

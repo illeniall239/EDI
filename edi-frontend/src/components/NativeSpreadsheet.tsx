@@ -1722,7 +1722,7 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
   };
 
   // Function to prepare Luckysheet data
-  const prepareLuckysheetData = (dataArray: any[]) => {
+  const prepareLuckysheetData = (dataArray: any[], selectedColumns?: string[]) => {
       const sheetData: any = {
             name: "Sheet1",
             color: "",
@@ -1730,56 +1730,56 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
             status: 1,
             order: 0,
             hide: 0,
-        row: 50,
-        column: 26,
+            row: 50,
+            column: 26,
             celldata: []
       };
 
     if (dataArray && dataArray.length > 0) {
-      // Preserve original column order using our helper function
-      const headers = getOriginalColumnOrder(dataArray);
+      // Use selected columns if provided, otherwise get all columns
+      const headers = selectedColumns || getOriginalColumnOrder(dataArray);
       console.log('📋 prepareLuckysheetData using column order:', headers);
-          const celldata: any[] = [];
+      const celldata: any[] = [];
 
-          // Add headers
-          headers.forEach((header, colIndex) => {
+      // Add headers - only for selected columns
+      headers.forEach((header, colIndex) => {
+        celldata.push({
+          r: 0,
+          c: colIndex,
+          v: {
+            v: header,
+            ct: { fa: "General", t: "g" },
+            m: header,
+            bg: "#f0f0f0",
+            bl: 1
+          }
+        });
+      });
+
+      // Add data rows - only for selected columns
+      dataArray.forEach((row, rowIndex) => {
+        headers.forEach((header, colIndex) => {
+          const value = row[header];
+          // Handle NaN values by converting them to null
+          const processedValue = value === null || (typeof value === 'number' && isNaN(value)) ? null : value;
+          if (processedValue !== undefined && processedValue !== null) {
             celldata.push({
-              r: 0,
+              r: rowIndex + 1,
               c: colIndex,
               v: {
-                v: header,
+                v: processedValue,
                 ct: { fa: "General", t: "g" },
-                m: header,
-                bg: "#f0f0f0",
-                bl: 1
+                m: String(processedValue)
               }
             });
-          });
+          }
+        });
+      });
 
-          // Add data rows
-      dataArray.forEach((row, rowIndex) => {
-            headers.forEach((header, colIndex) => {
-              const value = row[header];
-              // Handle NaN values by converting them to null
-              const processedValue = value === null || (typeof value === 'number' && isNaN(value)) ? null : value;
-              if (processedValue !== undefined && processedValue !== null) {
-                celldata.push({
-                  r: rowIndex + 1,
-                  c: colIndex,
-                  v: {
-                    v: processedValue,
-                    ct: { fa: "General", t: "g" },
-                    m: String(processedValue)
-                  }
-                });
-              }
-            });
-          });
-
-        sheetData.celldata = celldata;
+      sheetData.celldata = celldata;
       sheetData.row = Math.max(50, dataArray.length + 10);
-        sheetData.column = Math.max(26, headers.length + 5);
-      }
+      sheetData.column = Math.max(26, headers.length + 5);
+    }
 
     return sheetData;
   };
@@ -2965,8 +2965,8 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
               sampleData: extractedArray.slice(0, 3)
             });
             
-            // Create new sheet data using the proper format
-            const newSheetData = prepareLuckysheetData(extractedArray);
+            // Create new sheet data using the proper format and pass selected columns
+            const newSheetData = prepareLuckysheetData(extractedArray, selectedColumns);
             newSheetData.name = sheetName;
             newSheetData.index = Date.now().toString(); // Unique index
             
