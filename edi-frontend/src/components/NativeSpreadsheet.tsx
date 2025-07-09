@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as XLSX from 'xlsx';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import UserProfile from '@/components/UserProfile';
 import { SpreadsheetCommandProcessor, SpreadsheetCommand } from '@/utils/spreadsheetCommandProcessor';
@@ -19,6 +20,14 @@ declare global {
   interface Window {
     luckysheet: any;
   }
+
+interface LuckysheetCellData {
+  v: string | number | null;
+  m?: string;
+  ct?: { fa: string; t: string };
+  f?: string;
+  [key: string]: any;
+}
 }
 
 interface NativeSpreadsheetProps {
@@ -3375,6 +3384,112 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
 
   // Removed additional CSS styling and mutation observer
 
+  // Download functions
+  const downloadAsCSV = () => {
+    try {
+      if (!window.luckysheet || !data.length) return;
+      
+      // Get current sheet data
+      const sheetData = window.luckysheet.getSheetData() as LuckysheetCellData[][];
+      if (!sheetData || !sheetData.length) return;
+      
+      // Convert to CSV
+      const csvContent = sheetData
+        .map((row: LuckysheetCellData[]) => 
+          row.map((cell: LuckysheetCellData) => {
+            const value = cell?.v ?? '';
+            // Escape quotes and wrap in quotes if contains comma or quotes
+            return value.toString().includes(',') || value.toString().includes('"') || value.toString().includes('\n')
+              ? `"${value.toString().replace(/"/g, '""')}"` 
+              : value;
+          }).join(',')
+        )
+        .join('\n');
+      
+      // Create and trigger download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      const workspaceName = currentWorkspace?.name?.replace(/[^a-zA-Z0-9-_]/g, '_') || 'spreadsheet';
+      const uniqueId = uuidv4().slice(0, 8);
+      link.download = `${workspaceName}_${new Date().toISOString().split('T')[0]}_${uniqueId}.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (error) {
+      console.error('Error downloading CSV:', error);
+      alert('Failed to export data as CSV. Please try again.');
+    }
+  };
+
+  const downloadAsExcel = () => {
+    try {
+      if (!window.luckysheet || !data.length) return;
+      
+      // Get current sheet data
+      const sheetData = window.luckysheet.getSheetData() as LuckysheetCellData[][];
+      if (!sheetData || !sheetData.length) return;
+
+      // Get sheet configuration
+      const config = window.luckysheet.getConfig();
+      const sheetName = config.title || 'Sheet1';
+      
+      // Convert Luckysheet data to XLSX format
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet(
+        sheetData.map(row => 
+          row.map(cell => {
+            if (!cell) return null;
+            
+            // Handle different cell types
+            if (typeof cell === 'object') {
+              // If cell has a formula
+              if (cell.f) {
+                return { f: cell.f, t: 'n', v: cell.v };
+              }
+              
+              // If cell has specific formatting
+              if (cell.ct?.t === 'd') {
+                return { t: 'd', v: cell.v, z: cell.ct.fa || 'yyyy-mm-dd' };
+              }
+              
+              if (cell.ct?.t === 'n') {
+                return { t: 'n', v: cell.v, z: cell.ct.fa || '#,##0.00' };
+              }
+              
+              // Default to the cell value
+              return cell.v;
+            }
+            
+            return cell;
+          })
+        )
+      );
+      
+      // Add the worksheet to the workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      
+      // Generate Excel file
+      const excelBuffer = XLSX.write(workbook, { 
+        bookType: 'xlsx', 
+        type: 'array',
+        cellStyles: true
+      });
+      
+      // Create and trigger download
+      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      const workspaceName = currentWorkspace?.name?.replace(/[^a-zA-Z0-9-_]/g, '_') || 'spreadsheet';
+      const uniqueId = uuidv4().slice(0, 8);
+      link.download = `${workspaceName}_${new Date().toISOString().split('T')[0]}_${uniqueId}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (error) {
+      console.error('Error downloading Excel:', error);
+      alert('Failed to export data as Excel. Please try again or use CSV export instead.');
+    }
+  };
+
   // Handle formula drag event listeners
   useEffect(() => {
     if (isDraggingFormula) {
@@ -3647,8 +3762,65 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
             </div>
           )}
 
-          {/* Save Status Indicator removed as it's now integrated into the save button */}
-        </div>
+                      {/* Download Button */}
+            {!sidebarCollapsed && (
+              <div className="mt-3">
+                <div className="relative group">
+                  <button
+                    onClick={() => {
+                      const dropdown = document.getElementById('download-options');
+                      if (dropdown) {
+                        dropdown.classList.toggle('hidden');
+                        // Add click outside handler
+                        const handleClickOutside = (e: MouseEvent) => {
+                          if (!dropdown.contains(e.target as Node)) {
+                            dropdown.classList.add('hidden');
+                            document.removeEventListener('mousedown', handleClickOutside);
+                          }
+                        };
+                        if (!dropdown.classList.contains('hidden')) {
+                          setTimeout(() => {
+                            document.addEventListener('mousedown', handleClickOutside);
+                          }, 0);
+                        }
+                      }
+                    }}
+                    className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-colors flex items-center justify-center gap-2 text-blue-200 group-hover:text-blue-100"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download Spreadsheet
+                  </button>
+                  <div
+                    id="download-options"
+                    className="hidden absolute z-50 w-full mt-2 bg-gray-900 border border-blue-900/30 rounded-lg shadow-lg overflow-hidden"
+                  >
+                    <button
+                      onClick={downloadAsCSV}
+                      className="w-full px-4 py-2 text-left text-sm text-blue-200 hover:bg-blue-600/20 transition-colors flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Download as CSV
+                    </button>
+                    <button
+                      onClick={downloadAsExcel}
+                      className="w-full px-4 py-2 text-left text-sm text-blue-200 hover:bg-blue-600/20 transition-colors flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Download as Excel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Save Status Indicator removed as it's now integrated into the save button */}
+          </div>
 
         {/* Navigation Sections */}
         <div className="flex-1 overflow-y-auto">
