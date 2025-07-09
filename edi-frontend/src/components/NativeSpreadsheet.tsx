@@ -232,6 +232,7 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
   const [showDebugInfo, setShowDebugInfo] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [isFilterActive, setIsFilterActive] = useState(false);
   const [commandStats, setCommandStats] = useState<{
     lastCommand?: string;
     processingTime?: number;
@@ -2077,12 +2078,61 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
         }
         setTimeout(() => setCommandResult(null), 2000);
       }
+
+      // Handle formula shortcut
+      if (e.key === 'Enter' && e.ctrlKey) {
+        e.preventDefault();
+        setShowFormulaDialog(true);
+        setFormulaInput(''); // Clear any previous formula input
+        return;
+      }
+
+      // Handle filter shortcut (Ctrl+Shift+L)
+      if (e.key === 'L' && e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        if (!window.luckysheet) {
+          console.warn('Luckysheet not available');
+          return;
+        }
+
+        try {
+          // Get all sheets and find the active one
+          const allSheets = window.luckysheet.getLuckysheetfile();
+          const activeSheet = allSheets.find((s: any) => s.status === 1);
+
+          if (!activeSheet) {
+            console.warn('Could not find active sheet');
+            return;
+          }
+
+          if (isFilterActive) {
+            console.log('Filter is active, removing it...');
+            window.luckysheet.setRangeFilter('close');
+            setIsFilterActive(false);
+            console.log('Filter removed successfully');
+          } else {
+            console.log('No active filter, applying new filter...');
+            const sheet = window.luckysheet.getSheetData();
+            if (!sheet || sheet.length === 0) {
+              console.warn('No data in the current sheet');
+              return;
+            }
+            const range = `A1:${String.fromCharCode(65 + sheet[0].length - 1)}${sheet.length}`;
+            window.luckysheet.setRangeFilter('open', { range });
+            setIsFilterActive(true);
+            console.log('Filter applied successfully');
+          }
+        } catch (error) {
+          console.error('Error toggling filter:', error);
+        }
+        return;
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [luckysheetInitialized, undoDataOperation, redoDataOperation]);
+  }, [luckysheetInitialized, undoDataOperation, redoDataOperation, isFilterActive]);
 
   // Initialize command processor when data changes
   useEffect(() => {
