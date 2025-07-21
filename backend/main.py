@@ -78,6 +78,10 @@ class ResetRequest(BaseModel):
 class ExtractColumnsRequest(BaseModel):
     selected_columns: List[str]
     sheet_name: Optional[str] = None
+
+class AnalyzeChartRequest(BaseModel):
+    image_path: str
+    original_query: str
     workspace_id: Optional[str] = None
 
 class SyntheticDatasetRequest(BaseModel):
@@ -463,6 +467,48 @@ async def get_current_data():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/analyze-chart")
+async def analyze_chart(request: AnalyzeChartRequest):
+    """
+    Analyze a chart image using Gemini Vision API and return structured insights.
+    """
+    try:
+        print(f"🔍 === CHART ANALYSIS REQUEST ===")
+        print(f"🖼️ Image path: {request.image_path}")
+        print(f"💬 Original query: {request.original_query}")
+        
+        # Use the agent services to analyze the chart
+        analysis_result = agent_services.analyze_chart_with_gemini(
+            request.image_path, 
+            request.original_query
+        )
+        
+        print(f"✅ Analysis completed")
+        print(f"📊 Source: {analysis_result.get('source', 'unknown')}")
+        print(f"🎯 Confidence: {analysis_result.get('confidence', 'unknown')}")
+        
+        return {
+            "success": True,
+            "analysis": analysis_result
+        }
+        
+    except Exception as e:
+        print(f"❌ Error analyzing chart: {str(e)}")
+        import traceback
+        print(f"📚 Full traceback: {traceback.format_exc()}")
+        
+        # Return error response with fallback
+        fallback_analysis = agent_services._generate_fallback_analysis(
+            request.image_path, 
+            request.original_query
+        )
+        
+        return {
+            "success": False,
+            "error": str(e),
+            "analysis": fallback_analysis
+        }
 
 @app.get("/api/health")
 async def health_check():

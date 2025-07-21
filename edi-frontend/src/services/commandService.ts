@@ -21,6 +21,7 @@ export interface CommandResponse {
   visualization?: {
     type: string;
     path: string;
+    original_query?: string;
   };
   data_updated?: boolean;
   updated_data?: {

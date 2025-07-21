@@ -39,6 +39,7 @@ export default function WorkspacePage() {
             
             if (event.detail && event.detail.data) {
                 const newData = event.detail.data;
+                const newFilename = event.detail.filename || currentFilename;
                 console.log('📊 Received updated data with', newData.length, 'rows');
                 
                 // Compare with current data to detect duplicate removal
@@ -59,13 +60,17 @@ export default function WorkspacePage() {
                     }
                 }
                 
-                // Update state with new data
+                // Update state with new data and filename
                 console.log('🔄 Setting new data to state...');
                 setData(newData);
+                if (newFilename && newFilename !== currentFilename) {
+                    console.log('📄 Updating filename:', newFilename);
+                    setCurrentFilename(newFilename);
+                }
                 console.log('✅ Data state updated');
                 
-                // Save updated data to workspace
-                saveDataToWorkspace(newData, currentFilename);
+                // Save updated data to workspace with correct filename
+                saveDataToWorkspace(newData, newFilename);
             } else {
                 console.warn('⚠️ Data update event received but no data found in event');
             }
@@ -78,7 +83,7 @@ export default function WorkspacePage() {
             // Clean up event listener
             window.removeEventListener('dataUpdate', handleDataUpdate as EventListener);
         };
-    }, [data]);
+    }, [data.length, currentFilename]);
 
     // Helper function to save data to workspace
     const saveDataToWorkspace = async (newData: any[], filename?: string) => {

@@ -6,6 +6,7 @@ import json
 import pandas as pd
 import re
 import logging
+import settings
 from langchain_community.agent_toolkits.sql.base import create_sql_agent
 from langchain.agents.agent_types import AgentType
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
@@ -1418,6 +1419,9 @@ ONLY output the formula, nothing else.
             # For the frontend, we need to ensure the visualization is in the expected format
             logger.debug(f"Original visualization paths object: {visualization_paths}")
             
+            # Store the original query in visualization metadata for future analysis
+            visualization_paths['original_query'] = question
+            
             # If we already have a 'filename' key, use it as is
             if "filename" in visualization_paths:
                 logger.debug(f"Using existing filename: {visualization_paths['filename']}")
@@ -1435,6 +1439,7 @@ ONLY output the formula, nothing else.
             if filename:
                 logger.debug(f"Extracted filename: {filename}")
                 visualization_paths['filename'] = filename
+                visualization_paths['original_query'] = question
                 return "Visualization created successfully.", visualization_paths
             else:
                 logger.error(f"Could not extract filename from visualization paths: {visualization_paths}")
@@ -1444,6 +1449,177 @@ ONLY output the formula, nothing else.
             logger.error(f"❌ Visualization error: {str(e)}")
             logger.exception("Full exception details:")
             return f"Error processing visualization request: {str(e)}", None
+
+    def analyze_chart_with_gemini(self, image_path: str, original_query: str) -> Dict[str, str]:
+        """
+        Analyze a chart image using Gemini Vision API and return structured insights.
+        
+        Args:
+            image_path: Path to the chart image
+            original_query: The user's original question that generated the chart
+            
+        Returns:
+            Dictionary with analysis results including chart_type, purpose, patterns, insights
+        """
+        logger.debug(f"🔍 === ANALYZING CHART WITH GEMINI ===")
+        logger.debug(f"🖼️ Image path: {image_path}")
+        logger.debug(f"💬 Original query: {original_query}")
+        
+        try:
+            import google.generativeai as genai
+            import PIL.Image
+            
+            # Configure Gemini with API key from settings
+            genai.configure(api_key=settings.GOOGLE_API_KEY)
+            
+            # Use Gemini 2.0 Flash for vision capabilities
+            model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            
+            # Load the image
+            full_image_path = os.path.join(self.charts_dir, os.path.basename(image_path))
+            if not os.path.exists(full_image_path):
+                # Try the path as provided
+                full_image_path = image_path
+                
+            if not os.path.exists(full_image_path):
+                raise FileNotFoundError(f"Chart image not found: {full_image_path}")
+                
+            logger.debug(f"📁 Loading image from: {full_image_path}")
+            image = PIL.Image.open(full_image_path)
+            
+            # Create the analysis prompt
+            prompt = f"""
+The user asked: "{original_query}"
+
+Based on this request, analyze the generated visualization and provide insights in this exact format:
+
+**Chart Type & Purpose:**
+[What type of chart was created to answer their question? How does this visualization address their specific request?]
+
+**Key Patterns & Trends:**
+[What trends directly answer their question? Any patterns that relate to their inquiry? Relevant statistical observations]
+
+**Actionable Insights:**
+[Based on their original question, what decisions can they make? What follow-up questions should they consider? Specific recommendations related to their inquiry]
+
+Focus on their original intent: "{original_query}"
+Keep the analysis concise but thorough, focusing on business value and practical insights.
+"""
+            
+            logger.debug("🤖 Sending request to Gemini Vision API...")
+            response = model.generate_content([prompt, image])
+            
+            if response.text:
+                logger.debug("✅ Received analysis from Gemini")
+                
+                # Parse the response into structured format
+                analysis_text = response.text.strip()
+                
+                # Try to extract sections
+                sections = {
+                    'chart_type': '',
+                    'patterns': '',
+                    'insights': '',
+                    'full_analysis': analysis_text
+                }
+                
+                # Simple parsing - look for section headers
+                lines = analysis_text.split('\n')
+                current_section = None
+                section_content = []
+                
+                for line in lines:
+                    line_lower = line.lower().strip()
+                    if 'chart type' in line_lower and 'purpose' in line_lower:
+                        if current_section and section_content:
+                            sections[current_section] = '\n'.join(section_content).strip()
+                        current_section = 'chart_type'
+                        section_content = []
+                    elif 'patterns' in line_lower and 'trends' in line_lower:
+                        if current_section and section_content:
+                            sections[current_section] = '\n'.join(section_content).strip()
+                        current_section = 'patterns'
+                        section_content = []
+                    elif 'actionable' in line_lower and 'insights' in line_lower:
+                        if current_section and section_content:
+                            sections[current_section] = '\n'.join(section_content).strip()
+                        current_section = 'insights'
+                        section_content = []
+                    elif line.strip() and not line.startswith('**'):
+                        if current_section:
+                            section_content.append(line)
+                
+                # Don't forget the last section
+                if current_section and section_content:
+                    sections[current_section] = '\n'.join(section_content).strip()
+                
+                sections['source'] = 'gemini'
+                sections['confidence'] = 'high'
+                
+                logger.debug(f"📊 Analysis completed successfully")
+                return sections
+                
+            else:
+                logger.warning("⚠️ Gemini returned no content")
+                return self._generate_fallback_analysis(image_path, original_query)
+                
+        except Exception as e:
+            logger.error(f"❌ Error analyzing chart with Gemini: {str(e)}")
+            logger.exception("Full exception details:")
+            return self._generate_fallback_analysis(image_path, original_query)
+    
+    def _generate_fallback_analysis(self, image_path: str, original_query: str) -> Dict[str, str]:
+        """
+        Generate basic fallback analysis when Gemini vision fails.
+        """
+        logger.debug("🔄 Generating fallback analysis...")
+        
+        try:
+            # Extract basic info from image filename and current data
+            filename = os.path.basename(image_path)
+            chart_type = "chart"
+            
+            # Try to infer chart type from query
+            query_lower = original_query.lower()
+            if any(word in query_lower for word in ['bar', 'column']):
+                chart_type = "bar chart"
+            elif any(word in query_lower for word in ['line', 'trend', 'time']):
+                chart_type = "line chart"
+            elif any(word in query_lower for word in ['scatter', 'correlation']):
+                chart_type = "scatter plot"
+            elif any(word in query_lower for word in ['pie', 'distribution']):
+                chart_type = "pie chart"
+            elif any(word in query_lower for word in ['histogram', 'frequency']):
+                chart_type = "histogram"
+            
+            # Get basic data info if available
+            data_info = ""
+            if self.data_handler and self.data_handler.get_df() is not None:
+                df = self.data_handler.get_df()
+                data_info = f"Dataset contains {len(df)} rows and {len(df.columns)} columns."
+            
+            fallback = {
+                'chart_type': f"A {chart_type} was created to explore: \"{original_query}\". {data_info}",
+                'patterns': f"This visualization shows data patterns related to your query. The chart displays quantitative relationships that help answer your question about {original_query.lower()}.",
+                'insights': f"Based on the visualization generated for \"{original_query}\", consider examining the highest and lowest values, looking for trends over time if applicable, and identifying any outliers that might need further investigation.",
+                'full_analysis': f"**Chart Type & Purpose:** A {chart_type} addressing: \"{original_query}\"\n\n**Patterns:** Basic data visualization showing relationships in your dataset.\n\n**Insights:** Review the chart for patterns that answer your original question.",
+                'source': 'fallback',
+                'confidence': 'medium'
+            }
+            
+            logger.debug("✅ Fallback analysis generated")
+            return fallback
+            
+        except Exception as e:
+            logger.error(f"❌ Error in fallback analysis: {str(e)}")
+            return {
+                'chart_type': 'Chart analysis unavailable',
+                'patterns': 'Unable to analyze patterns at this time',
+                'insights': 'Please review the chart manually for insights',
+                'full_analysis': 'Chart analysis is temporarily unavailable. Please review the visualization manually.',
+                'source': 'error',
+                'confidence': 'low'
+            }
 
     def _process_translation_request(self, question: str, df: pd.DataFrame) -> str:
         """

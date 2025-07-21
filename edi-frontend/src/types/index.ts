@@ -14,6 +14,7 @@ export interface QueryResponse {
     visualization?: {
         type: 'matplotlib_figure' | 'plotly_html';
         path: string;
+        original_query?: string;
     };
     data_updated?: boolean;
     updated_data?: {
@@ -31,7 +32,17 @@ export interface ChatMessage {
     visualization?: {
         type: 'matplotlib_figure' | 'plotly_html';
         path: string;
+        original_query?: string;
     };
+    analysis?: {
+        chart_type: string;
+        patterns: string;
+        insights: string;
+        full_analysis: string;
+        source: 'gemini' | 'fallback' | 'error';
+        confidence: 'high' | 'medium' | 'low';
+    };
+    analysisError?: string;
 }
 
 export interface DataState {

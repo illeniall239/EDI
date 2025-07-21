@@ -174,7 +174,8 @@ export default function ChatInterface({ isDataLoaded, data, onFileUpload }: Chat
                     isTyping: !response.visualization,
                     visualization: response.visualization ? {
                         type: response.visualization.type,
-                        path: response.visualization.path
+                        path: response.visualization.path,
+                        original_query: response.visualization.original_query || userMessage
                     } : undefined
                 }];
             });
@@ -272,6 +273,60 @@ export default function ChatInterface({ isDataLoaded, data, onFileUpload }: Chat
         } catch (error) {
             console.error('Error downloading chart:', error);
             alert('Failed to download chart. Please try again.');
+        }
+    };
+
+    // Helper function to analyze chart
+    const analyzeChart = async (visualizationPath: string, originalQuery: string, messageIndex: number) => {
+        try {
+            // Update the message to show loading state
+            setMessages(prev => prev.map((msg, idx) => 
+                idx === messageIndex 
+                    ? { ...msg, isAnalyzing: true }
+                    : msg
+            ));
+
+            const response = await fetch(`${API_BASE_URL}/api/analyze-chart`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    image_path: visualizationPath,
+                    original_query: originalQuery
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to analyze chart');
+            }
+
+            const data = await response.json();
+            
+            // Update the message with analysis results
+            setMessages(prev => prev.map((msg, idx) => 
+                idx === messageIndex 
+                    ? { 
+                        ...msg, 
+                        isAnalyzing: false,
+                        analysis: data.analysis 
+                      }
+                    : msg
+            ));
+
+        } catch (error) {
+            console.error('Error analyzing chart:', error);
+            
+            // Update message to remove loading state and show error
+            setMessages(prev => prev.map((msg, idx) => 
+                idx === messageIndex 
+                    ? { 
+                        ...msg, 
+                        isAnalyzing: false,
+                        analysisError: 'Failed to analyze chart. Please try again.'
+                      }
+                    : msg
+            ));
         }
     };
 
@@ -391,15 +446,31 @@ export default function ChatInterface({ isDataLoaded, data, onFileUpload }: Chat
                                                                 height={400}
                                                                 className="rounded-lg"
                                                             />
-                                                            <button
-                                                                onClick={() => downloadChart(message.visualization!.path, message.visualization!.type)}
-                                                                className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
-                                                            >
-                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                                </svg>
-                                                                Save Chart
-                                                            </button>
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={() => downloadChart(message.visualization!.path, message.visualization!.type)}
+                                                                    className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                                    </svg>
+                                                                    Save Chart
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => analyzeChart(message.visualization!.path, message.visualization!.original_query || 'visualization request', index)}
+                                                                    disabled={message.isAnalyzing}
+                                                                    className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors text-sm font-medium"
+                                                                >
+                                                                    {message.isAnalyzing ? (
+                                                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                                    ) : (
+                                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                                                        </svg>
+                                                                    )}
+                                                                    {message.isAnalyzing ? 'Analyzing...' : 'Analyze Chart'}
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     ) : message.visualization.type === 'plotly_html' && (
                                                         <div className="space-y-3">
@@ -407,15 +478,81 @@ export default function ChatInterface({ isDataLoaded, data, onFileUpload }: Chat
                                                                 src={`${API_BASE_URL}${message.visualization.path}`}
                                                                 className="w-full h-[400px] rounded-lg border-0"
                                                             />
-                                                            <button
-                                                                onClick={() => downloadChart(message.visualization!.path, message.visualization!.type)}
-                                                                className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
-                                                            >
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={() => downloadChart(message.visualization!.path, message.visualization!.type)}
+                                                                    className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                                    </svg>
+                                                                    Save Chart
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => analyzeChart(message.visualization!.path, message.visualization!.original_query || 'visualization request', index)}
+                                                                    disabled={message.isAnalyzing}
+                                                                    className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors text-sm font-medium"
+                                                                >
+                                                                    {message.isAnalyzing ? (
+                                                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                                    ) : (
+                                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                                                        </svg>
+                                                                    )}
+                                                                    {message.isAnalyzing ? 'Analyzing...' : 'Analyze Chart'}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Display analysis results */}
+                                                    {message.analysis && (
+                                                        <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
+                                                            <div className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                                                 </svg>
-                                                                Save Chart
-                                                            </button>
+                                                                Chart Analysis
+                                                                <span className={`px-2 py-1 text-xs rounded ${
+                                                                    message.analysis.source === 'gemini' ? 'bg-green-100 text-green-800' :
+                                                                    message.analysis.source === 'fallback' ? 'bg-yellow-100 text-yellow-800' :
+                                                                    'bg-red-100 text-red-800'
+                                                                }`}>
+                                                                    {message.analysis.source === 'gemini' ? 'AI Powered' : 
+                                                                     message.analysis.source === 'fallback' ? 'Basic Analysis' : 'Limited'}
+                                                                </span>
+                                                            </div>
+                                                            
+                                                            <div className="space-y-3 text-sm">
+                                                                {message.analysis.chart_type && (
+                                                                    <div>
+                                                                        <h4 className="font-medium text-gray-800 mb-1">📊 Chart Type & Purpose</h4>
+                                                                        <p className="text-gray-600">{message.analysis.chart_type}</p>
+                                                                    </div>
+                                                                )}
+                                                                
+                                                                {message.analysis.patterns && (
+                                                                    <div>
+                                                                        <h4 className="font-medium text-gray-800 mb-1">📈 Key Patterns & Trends</h4>
+                                                                        <p className="text-gray-600">{message.analysis.patterns}</p>
+                                                                    </div>
+                                                                )}
+                                                                
+                                                                {message.analysis.insights && (
+                                                                    <div>
+                                                                        <h4 className="font-medium text-gray-800 mb-1">💡 Actionable Insights</h4>
+                                                                        <p className="text-gray-600">{message.analysis.insights}</p>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Display analysis error */}
+                                                    {message.analysisError && (
+                                                        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                                            <div className="text-sm text-red-700">{message.analysisError}</div>
                                                         </div>
                                                     )}
                                                 </div>
