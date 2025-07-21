@@ -13,7 +13,8 @@ import { supabase } from '@/utils/supabase';
 import FormulaErrorService, { FormulaError } from '@/services/formulaErrorService';
 import { v4 as uuidv4 } from 'uuid';
 import ColumnExtractionDialog from '@/components/ColumnExtractionDialog';
-import { API_BASE_URL } from '@/config';
+import SyntheticDatasetDialog, { SyntheticDatasetSpecs } from '@/components/SyntheticDatasetDialog';
+import { API_BASE_URL, API_ENDPOINTS } from '@/config';
 
 // Declare luckysheet global
 declare global {
@@ -51,6 +52,18 @@ interface FormulaErrorDialogProps {
   error: FormulaError;
   onClose: () => void;
 }
+
+// Function to strip markdown formatting
+const stripMarkdown = (text: string): string => {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove **bold**
+    .replace(/\*(.*?)\*/g, '$1')     // Remove *italic*
+    .replace(/`(.*?)`/g, '$1')       // Remove `code`
+    .replace(/^#+\s*/gm, '')         // Remove # headers
+    .replace(/^\s*[-*+]\s*/gm, '')   // Remove bullet points
+    .replace(/^\s*\d+\.\s*/gm, '')   // Remove numbered lists
+    .trim();
+};
 
 // Add FormulaErrorDialog component
 const FormulaErrorDialog: React.FC<FormulaErrorDialogProps> = ({ error, onClose }) => {
@@ -147,25 +160,26 @@ const FormulaErrorDialog: React.FC<FormulaErrorDialogProps> = ({ error, onClose 
 
   return (
     <div 
-      className="fixed z-[2000] bg-white rounded-lg shadow-2xl border border-gray-200 max-w-sm"
+      className="fixed z-[2000] rounded-lg shadow-2xl border border-slate-700/50 max-w-sm"
       style={{ 
+        backgroundColor: 'rgb(2, 6, 23)',
         top: `${position.top}px`, 
         left: `${position.left}px`,
         animation: 'fadeIn 0.2s ease-out'
       }}
     >
       {/* Arrow pointing to cell */}
-      <div className="absolute -left-2 top-4 w-0 h-0 border-t-8 border-b-8 border-r-8 border-transparent border-r-white"></div>
+      <div className="absolute -left-2 top-4 w-0 h-0 border-t-8 border-b-8 border-r-8 border-transparent" style={{ borderRightColor: 'rgb(2, 6, 23)' }}></div>
       
       <div className="p-4">
-        <div className="flex justify-between items-start mb-3">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Formula Error</h3>
-            <p className="text-xs text-gray-500">Cell {error.cellReference}</p>
-          </div>
+                  <div className="flex justify-between items-start mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Formula Error</h3>
+              <p className="text-xs text-slate-400">Cell {error.cellReference}</p>
+            </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-500 p-1"
+            className="text-slate-400 hover:text-white p-1"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -176,7 +190,7 @@ const FormulaErrorDialog: React.FC<FormulaErrorDialogProps> = ({ error, onClose 
         <div className="space-y-3">
           <div className="bg-red-50 p-2 rounded-md">
             <h4 className="text-xs font-medium text-red-800 mb-1">Problem</h4>
-            <p className="text-xs text-red-700">{error.errorMessage}</p>
+            <p className="text-xs text-red-700">{stripMarkdown(error.errorMessage)}</p>
             <div className="mt-1 text-xs text-red-600">
               <code className="bg-red-100 px-1 rounded text-xs">{error.formula}</code>
             </div>
@@ -185,7 +199,7 @@ const FormulaErrorDialog: React.FC<FormulaErrorDialogProps> = ({ error, onClose 
           {error.solution && (
             <div className="bg-green-50 p-2 rounded-md">
               <h4 className="text-xs font-medium text-green-800 mb-1">Solution</h4>
-              <p className="text-xs text-green-700">{error.solution}</p>
+              <p className="text-xs text-green-700">{stripMarkdown(error.solution)}</p>
             </div>
           )}
           
@@ -521,6 +535,9 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
   // Add state for column extraction dialog
   const [showColumnExtraction, setShowColumnExtraction] = useState(false);
 
+  // Add state for synthetic dataset dialog
+  const [showSyntheticDatasetDialog, setShowSyntheticDatasetDialog] = useState(false);
+
   // Manual save functionality
   const lastSavedDataRef = useRef<string>('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -642,14 +659,14 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                   <div className="space-y-2">
                     <div className="bg-red-50 p-2 rounded">
                       <p className="text-xs font-medium text-red-800">Problem:</p>
-                      <p className="text-xs text-red-700 mt-1">{error.errorMessage}</p>
+                      <p className="text-xs text-red-700 mt-1">{stripMarkdown(error.errorMessage)}</p>
                       <code className="text-xs bg-red-100 px-1 rounded mt-1 inline-block">{error.formula}</code>
                     </div>
                     
                     {error.solution && (
                       <div className="bg-green-50 p-2 rounded">
                         <p className="text-xs font-medium text-green-800">Solution:</p>
-                        <p className="text-xs text-green-700 mt-1">{error.solution}</p>
+                        <p className="text-xs text-green-700 mt-1">{stripMarkdown(error.solution)}</p>
                       </div>
                     )}
                     
@@ -1394,13 +1411,12 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
       let assistantContent = response.message || 'I apologize, but I couldn\'t process your request at the moment.';
       console.log('📝 Base assistant content:', assistantContent);
       
-      // If there's a visualization, add it to the message
+      // Log visualization detection without adding to message content
       if (response.visualization) {
         console.log('🎨 === VISUALIZATION DETECTED ===');
         console.log('🖼️ Visualization type:', response.visualization.type);
         console.log('📁 Visualization path:', response.visualization.path);
-        assistantContent += `\n\n📊 **Visualization Created**\n[View Visualization](${response.visualization.path})`;
-        console.log('✅ Visualization info added to message');
+        console.log('✅ Visualization will be displayed separately in UI');
       } else {
         console.log('ℹ️ No visualization in response');
       }
@@ -2389,6 +2405,9 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
           dataLength: data.length,
           luckysheetInitialized
         });
+        
+        // Clear column order state when data is cleared
+        setOriginalColumnOrder([]);
         // Clear Luckysheet when data is empty
         if (window.luckysheet && containerRef.current) {
           try {
@@ -2955,6 +2974,108 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
           setTimeout(() => setCommandResult(null), 3000);
         }
       }, 100);
+    }
+  };
+
+  // Handle synthetic dataset generation
+  const handleSyntheticDatasetGeneration = async (specs: SyntheticDatasetSpecs) => {
+    try {
+      console.log('🧬 === GENERATING SYNTHETIC DATASET ===');
+      console.log('📋 Specifications:', specs);
+      
+      setCommandResult('🔄 Generating synthetic dataset...');
+      
+      // First reset backend state to ensure clean slate
+      try {
+        console.log('🧹 Resetting backend state before generation...');
+        const resetResponse = await fetch(API_ENDPOINTS.resetState, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        
+        if (resetResponse.ok) {
+          console.log('✅ Backend state reset successfully');
+        } else {
+          console.warn('⚠️ Failed to reset backend state:', resetResponse.statusText);
+        }
+      } catch (resetError) {
+        console.error('❌ Error resetting backend state:', resetError);
+        // Continue with generation even if reset fails
+      }
+      
+      const requestBody = {
+        description: specs.description,
+        rows: specs.rows,
+        columns: specs.columns,
+        column_specs: specs.columnSpecs
+      };
+      
+      console.log('📦 Request body:', requestBody);
+      
+      const response = await fetch(API_ENDPOINTS.generateSyntheticDataset, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to generate dataset');
+      }
+      
+      const result = await response.json();
+      console.log('✅ Generation result:', result);
+      
+      if (result.success && result.data) {
+        // Clear any existing column order state before setting new data
+        setOriginalColumnOrder([]);
+        
+        // Update the data using the existing data flow
+        if (onDataUpdate) {
+          console.log('📊 Updating data with generated dataset');
+          onDataUpdate(result.data);
+          
+          // Show success message
+          setCommandResult(`✅ Generated "${result.dataset_name}" with ${result.rows} rows and ${result.columns.length} columns`);
+          
+          // Clear and reset Luckysheet completely for new data
+          if (luckysheetInitialized && window.luckysheet && containerRef.current) {
+            try {
+              console.log('🔄 Completely resetting Luckysheet for new dataset...');
+              window.luckysheet.destroy();
+              containerRef.current.innerHTML = '';
+              
+              // Force reinitialization
+              setLuckysheetInitialized(false);
+              initializationAttempted.current = false;
+              
+              // Reinitialize after a short delay
+              setTimeout(() => {
+                setIsLuckysheetReady(true);
+              }, 200);
+              
+            } catch (error) {
+              console.error('❌ Error resetting Luckysheet:', error);
+              // Fallback to normal refresh
+              setTimeout(() => {
+                refreshLuckysheetData(result.data, 'Synthetic Dataset Generation');
+              }, 100);
+            }
+          }
+        }
+      } else {
+        throw new Error(result.message || 'Failed to generate dataset');
+      }
+      
+      setTimeout(() => setCommandResult(null), 5000);
+      
+    } catch (error) {
+      console.error('❌ Error generating synthetic dataset:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setCommandResult(`❌ Failed to generate dataset: ${errorMessage}`);
+      setTimeout(() => setCommandResult(null), 5000);
+      throw error; // Re-throw to let the dialog handle it
     }
   };
 
@@ -3621,6 +3742,36 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     };
   }, [luckysheetInitialized, handleFormulaError]);
 
+  // Helper function to download chart
+  const downloadChart = async (visualizationPath: string) => {
+    try {
+      const fullUrl = `http://localhost:8000${visualizationPath}`;
+      const response = await fetch(fullUrl);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch chart');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Extract filename from path or create one based on file extension
+      const filename = visualizationPath.split('/').pop() || 
+                     `chart_${Date.now()}.${visualizationPath.endsWith('.html') ? 'html' : 'png'}`;
+      
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading chart:', error);
+      alert('Failed to download chart. Please try again.');
+    }
+  };
+
   if (loadingError) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-50">
@@ -3892,6 +4043,18 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                   />
                 </label>
               )}
+
+              {/* Generate Synthetic Dataset Button */}
+              <button
+                onClick={() => setShowSyntheticDatasetDialog(true)}
+                className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group`}
+                title={sidebarCollapsed ? 'Generate Dataset' : ''}
+              >
+                <svg className="w-5 h-5 min-w-[20px] min-h-[20px] flex-shrink-0 text-blue-400 group-hover:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                {!sidebarCollapsed && <span className="text-blue-200 group-hover:text-blue-100 whitespace-nowrap">Generate Dataset</span>}
+              </button>
               
               {/* Data Quality Report Button */}
               {data.length > 0 && (
@@ -4141,8 +4304,8 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
               height: '80vh',
               pointerEvents: 'auto',
               transform: chatModalPos ? 'none' : 'translate(-50%, -50%)',
-              background: 'rgba(0, 0, 0, 0.95)',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
+              background: 'rgb(2, 6, 23)',
+              border: '1px solid rgba(148, 163, 184, 0.2)',
               borderRadius: '1.5rem',
               boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 0 40px rgba(59, 130, 246, 0.2)',
               overflow: 'hidden',
@@ -4152,23 +4315,24 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
           >
             {/* Modal Content */}
             <motion.div
-              className="relative bg-black/90 backdrop-blur-md rounded-2xl w-full h-full flex flex-col overflow-hidden border border-blue-900/20"
+              className="relative rounded-2xl w-full h-full flex flex-col overflow-hidden border border-slate-700/50"
+              style={{ backgroundColor: 'rgb(2, 6, 23)' }}
             >
               {/* Modal Header */}
               <div
-                className="flex items-center justify-between p-6 border-b border-blue-900/30 bg-black/80 backdrop-blur-md cursor-move select-none"
+                className="flex items-center justify-between p-6 border-b border-slate-700/50 cursor-move select-none"
+                style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', userSelect: 'none' }}
                 onMouseDown={handleDragStart}
-                style={{ userSelect: 'none' }}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-600/20 border border-blue-500/30 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="p-2 bg-blue-600 rounded-lg">
+                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
                   </div>
                   <div>
-                    <h2 className="text-xl font-semibold text-white">AI Commands & Chat</h2>
-                    <p className="text-blue-300/80 text-sm">Execute commands instantly or get AI-powered data analysis</p>
+                    <h2 className="text-lg font-semibold text-white">AI Commands & Chat</h2>
+                    <p className="text-sm text-slate-400">Execute commands instantly or get AI-powered data analysis</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4191,7 +4355,7 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
 
               {/* Chat Messages Area */}
               <div className="flex-1 overflow-hidden flex flex-col">
-                <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-black/30">
+                <div className="flex-1 overflow-y-auto p-6 space-y-4" style={{ backgroundColor: 'rgba(15, 23, 42, 0.3)' }}>
                   {chatMessages.map((message) => (
                     <div
                       key={message.id}
@@ -4267,20 +4431,40 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                                         </svg>
                                         Open Interactive Chart
                                       </a>
+                                      <button
+                                        onClick={() => downloadChart(message.visualization!.path)}
+                                        className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Save Chart
+                                      </button>
                                       <div className="text-xs text-gray-600">Click to view the interactive visualization in a new tab</div>
                                     </div>
                                   ) : (
-                                    <img 
-                                      src={`http://localhost:8000${message.visualization.path}`}
-                                      alt="Generated visualization"
-                                      className="max-w-full h-auto rounded border"
-                                      onError={(e) => {
-                                        const target = e.currentTarget as HTMLImageElement;
-                                        const errorDiv = target.nextElementSibling as HTMLDivElement;
-                                        target.style.display = 'none';
-                                        if (errorDiv) errorDiv.style.display = 'block';
-                                      }}
-                                    />
+                                    <div className="space-y-2">
+                                      <img 
+                                        src={`http://localhost:8000${message.visualization.path}`}
+                                        alt="Generated visualization"
+                                        className="max-w-full h-auto rounded border"
+                                        onError={(e) => {
+                                          const target = e.currentTarget as HTMLImageElement;
+                                          const errorDiv = target.nextElementSibling as HTMLDivElement;
+                                          target.style.display = 'none';
+                                          if (errorDiv) errorDiv.style.display = 'block';
+                                        }}
+                                      />
+                                      <button
+                                        onClick={() => downloadChart(message.visualization!.path)}
+                                        className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Save Chart
+                                      </button>
+                                    </div>
                                   )}
                                   <div className="text-xs text-red-600 mt-2" style={{ display: 'none' }}>
                                     Failed to load visualization. <a href={`http://localhost:8000${message.visualization.path}`} target="_blank" rel="noopener noreferrer" className="underline text-red-700">View directly</a>
@@ -4301,7 +4485,7 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                 </div>
 
                 {/* Quick Questions */}
-                <div className="px-6 py-3 border-t border-blue-900/30 bg-black/40">
+                <div className="px-6 py-3 border-t border-slate-700/50" style={{ backgroundColor: 'rgba(15, 23, 42, 0.4)' }}>
                   <div className="text-xs font-medium text-blue-300 mb-2">💡 Quick Questions:</div>
                   <div className="flex flex-wrap gap-2">
                     {[
@@ -4315,7 +4499,8 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                       <button
                         key={index}
                         onClick={() => setChatInput(question)}
-                        className="text-xs px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 hover:text-white rounded-full border border-blue-500/30 hover:border-blue-400/50 transition-all duration-200 font-medium backdrop-blur-sm"
+                        className="text-xs px-3 py-1.5 hover:bg-blue-600 text-slate-300 hover:text-white rounded-lg border border-slate-700 hover:border-blue-500 transition-all duration-200 font-medium"
+                        style={{ backgroundColor: 'rgba(15, 23, 42, 0.8)' }}
                       >
                         {question}
                       </button>
@@ -4324,7 +4509,7 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                 </div>
 
                 {/* Chat Input */}
-                <div className="p-6 border-t border-blue-900/30 bg-black/60 backdrop-blur-sm">
+                <div className="p-6 border-t border-slate-700/50" style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)' }}>
                   <form onSubmit={handleChatSubmit} className="space-y-3">
                     <div className="flex gap-3">
                       <div className="flex-1">
@@ -4332,10 +4517,11 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                           value={chatInput}
                           onChange={(e) => setChatInput(e.target.value)}
                           placeholder="Ask me anything about your data... (e.g., 'What are the key trends?', 'Show me statistical insights', 'Create a summary report')"
-                          className="w-full px-4 py-3 border border-blue-500/30 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 text-blue-100 placeholder-blue-300/60 bg-black/40 backdrop-blur-sm"
+                          className="w-full px-4 py-3 border border-slate-600 rounded-xl text-sm resize-none focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-slate-400"
                           rows={3}
                           disabled={isChatProcessing}
                           style={{
+                            backgroundColor: 'rgba(15, 23, 42, 0.6)',
                             fontSize: '14px',
                             lineHeight: '1.5'
                           }}
@@ -4639,8 +4825,8 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
             top: formulaDialogPos?.top && formulaDialogPos.top < window.innerHeight - 500 ? formulaDialogPos.top : '50%',
             left: formulaDialogPos?.left && formulaDialogPos.left < window.innerWidth - 500 ? formulaDialogPos.left : '50%',
             transform: formulaDialogPos ? 'none' : 'translate(-50%, -50%)',
-            background: 'linear-gradient(135deg, rgba(0,0,0,0.95) 0%, rgba(30,41,59,0.95) 100%)',
-            border: '1px solid rgba(59,130,246,0.3)',
+            background: 'rgb(2, 6, 23)',
+            border: '1px solid rgba(148, 163, 184, 0.2)',
             borderRadius: 16,
             boxShadow: '0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(59,130,246,0.1)',
             padding: 32,
@@ -4714,8 +4900,8 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
               const dataRangeInfo = getDataRangeInfo();
               return dataRangeInfo ? (
                 <div style={{
-                  background: 'rgba(59,130,246,0.1)',
-                  border: '1px solid rgba(59,130,246,0.3)',
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  border: '1px solid rgba(148, 163, 184, 0.2)',
                   borderRadius: 6,
                   padding: 10,
                   marginBottom: 18,
@@ -4804,7 +4990,7 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
               value={formulaInput}
               onChange={e => { setFormulaInput(e.target.value); setGeneratedFormula(null); setFormulaError(null); }}
               placeholder="e.g. sum all values above"
-              style={{ width: '100%', padding: 12, fontSize: 16, borderRadius: 6, border: '1px solid rgba(59,130,246,0.3)', color: '#e0e6f0', background: 'rgba(30,41,59,0.5)', marginBottom: 12, marginTop: 2 }}
+              style={{ width: '100%', padding: 12, fontSize: 16, borderRadius: 6, border: '1px solid rgba(148, 163, 184, 0.3)', color: '#e0e6f0', background: 'rgba(15, 23, 42, 0.6)', marginBottom: 12, marginTop: 2 }}
               autoFocus
               disabled={formulaLoading || !!generatedFormula}
             />
@@ -4817,13 +5003,13 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                     type="text"
                     value={generatedFormula}
                     onChange={e => setGeneratedFormula(e.target.value)}
-                    style={{ width: '100%', padding: 10, fontSize: 15, borderRadius: 6, border: '1px solid rgba(59,130,246,0.3)', color: '#e0e6f0', background: 'rgba(30,41,59,0.5)', marginBottom: 10 }}
+                    style={{ width: '100%', padding: 10, fontSize: 15, borderRadius: 6, border: '1px solid rgba(148, 163, 184, 0.3)', color: '#e0e6f0', background: 'rgba(15, 23, 42, 0.6)', marginBottom: 10 }}
                   />
                 </>
               )}
           </div>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
-            <button type="button" onClick={handleFormulaCancel} disabled={formulaLoading} style={{ padding: '10px 22px', borderRadius: 6, border: '1px solid rgba(59,130,246,0.3)', background: 'rgba(30,41,59,0.5)', color: '#94a3b8', fontWeight: 600, fontSize: 15, boxShadow: '0 1px 2px rgba(0,0,0,0.1)', transition: 'all 0.2s', cursor: 'pointer' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; e.currentTarget.style.color = '#e0e6f0'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(30,41,59,0.5)'; e.currentTarget.style.color = '#94a3b8'; }}>Cancel</button>
+            <button type="button" onClick={handleFormulaCancel} disabled={formulaLoading} style={{ padding: '10px 22px', borderRadius: 6, border: '1px solid rgba(148, 163, 184, 0.3)', background: 'rgba(15, 23, 42, 0.6)', color: '#94a3b8', fontWeight: 600, fontSize: 15, boxShadow: '0 1px 2px rgba(0,0,0,0.1)', transition: 'all 0.2s', cursor: 'pointer' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(59,130,246,0.3)'; e.currentTarget.style.color = '#e0e6f0'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(15, 23, 42, 0.6)'; e.currentTarget.style.color = '#94a3b8'; }}>Cancel</button>
             {!generatedFormula && (
               <button type="button" onClick={handleFormulaSubmit} disabled={formulaLoading || (!formulaInput.trim() && selectedColumns.length === 0)} style={{ padding: '10px 22px', borderRadius: 6, border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 700, fontSize: 15, boxShadow: '0 2px 8px rgba(59,130,246,0.3)', transition: 'background 0.2s', cursor: 'pointer' }} onMouseEnter={(e) => { e.currentTarget.style.background = '#2563eb'; }} onMouseLeave={(e) => { e.currentTarget.style.background = '#3b82f6'; }}>Generate</button>
             )}
@@ -4855,6 +5041,15 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
             isOpen={showColumnExtraction}
             onClose={() => setShowColumnExtraction(false)}
             onExtract={handleColumnExtraction}
+          />
+        )}
+
+        {/* Synthetic Dataset Dialog */}
+        {showSyntheticDatasetDialog && (
+          <SyntheticDatasetDialog
+            isOpen={showSyntheticDatasetDialog}
+            onClose={() => setShowSyntheticDatasetDialog(false)}
+            onGenerate={handleSyntheticDatasetGeneration}
           />
         )}
 

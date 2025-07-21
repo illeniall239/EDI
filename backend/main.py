@@ -80,6 +80,96 @@ class ExtractColumnsRequest(BaseModel):
     sheet_name: Optional[str] = None
     workspace_id: Optional[str] = None
 
+class SyntheticDatasetRequest(BaseModel):
+    description: str
+    rows: Optional[int] = 100
+    columns: Optional[int] = None
+    column_specs: Optional[Dict[str, str]] = None
+    workspace_id: Optional[str] = None
+
+def create_fallback_dataset(description: str, rows: int) -> Dict:
+    """Create a simple fallback dataset when LLM parsing fails"""
+    import random
+    from datetime import datetime, timedelta
+    
+    # Analyze description to determine dataset type
+    desc_lower = description.lower()
+    
+    if 'sales' in desc_lower or 'revenue' in desc_lower:
+        # Sales dataset
+        products = ['Laptop', 'Mouse', 'Keyboard', 'Monitor', 'Headphones', 'Tablet', 'Phone', 'Speaker', 'Camera', 'Printer']
+        customers = ['John Smith', 'Sarah Johnson', 'Mike Brown', 'Lisa Davis', 'Tom Wilson', 'Amy Chen', 'David Lee', 'Emma Taylor']
+        
+        data = []
+        for i in range(rows):
+            data.append({
+                'Product': random.choice(products),
+                'Customer': random.choice(customers),
+                'Quantity': random.randint(1, 10),
+                'Price': round(random.uniform(10, 1000), 2),
+                'Date': (datetime.now() - timedelta(days=random.randint(0, 365))).strftime('%Y-%m-%d')
+            })
+        columns = ['Product', 'Customer', 'Quantity', 'Price', 'Date']
+        
+    elif 'employee' in desc_lower or 'staff' in desc_lower:
+        # Employee dataset
+        names = ['Alice Johnson', 'Bob Smith', 'Carol Davis', 'David Wilson', 'Eva Brown', 'Frank Lee', 'Grace Chen', 'Henry Taylor']
+        departments = ['Engineering', 'Marketing', 'Sales', 'HR', 'Finance', 'Operations']
+        
+        data = []
+        for i in range(rows):
+            data.append({
+                'Name': random.choice(names),
+                'Department': random.choice(departments),
+                'Salary': random.randint(40000, 120000),
+                'Experience': random.randint(1, 15),
+                'Hire_Date': (datetime.now() - timedelta(days=random.randint(30, 3650))).strftime('%Y-%m-%d')
+            })
+        columns = ['Name', 'Department', 'Salary', 'Experience', 'Hire_Date']
+        
+    elif 'student' in desc_lower or 'grade' in desc_lower or 'school' in desc_lower:
+        # Student grades dataset (what the user was trying to generate)
+        names = ['Alice Smith', 'Bob Johnson', 'Charlie Brown', 'David Lee', 'Emily Davis', 'Frank Wilson', 'Grace Rodriguez', 'Henry Garcia', 'Ivy Martinez', 'Jack Anderson']
+        subjects = ['Math', 'Science', 'English', 'History', 'Art', 'PE', 'Chemistry', 'Biology', 'Physics']
+        semesters = ['Fall 2023', 'Spring 2024', 'Fall 2024', 'Spring 2023']
+        
+        data = []
+        for i in range(rows):
+            data.append({
+                'Name': random.choice(names),
+                'Subject': random.choice(subjects),
+                'Grade': random.randint(65, 100),
+                'Semester': random.choice(semesters)
+            })
+        columns = ['Name', 'Subject', 'Grade', 'Semester']
+        
+    else:
+        # Generic dataset
+        data = []
+        for i in range(rows):
+            data.append({
+                'ID': i + 1,
+                'Name': f'Item {i + 1}',
+                'Category': random.choice(['A', 'B', 'C', 'D']),
+                'Value': round(random.uniform(1, 100), 2),
+                'Status': random.choice(['Active', 'Inactive', 'Pending'])
+            })
+        columns = ['ID', 'Name', 'Category', 'Value', 'Status']
+    
+    # Update the data handler with the new dataset
+    df = pd.DataFrame(data)
+    data_handler.update_df_and_db(df)
+    agent_services.initialize_agents(data_handler)
+    
+    return {
+        "success": True,
+        "message": f"Generated fallback dataset with {len(data)} rows and {len(columns)} columns",
+        "data": data,
+        "columns": columns,
+        "rows": len(data),
+        "dataset_name": f"Fallback {description}"
+    }
+
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
     try:
@@ -90,7 +180,7 @@ async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
             buffer.write(content)
         
         # Load the data using our existing DataHandler
-        response, df = data_handler.load_data(temp_path, lambda x, y: None)
+        response, df = data_handler.load_data(temp_path, lambda x, y: print(f"Progress: {x}, {y}"))
         
         # Clean up the temporary file
         os.remove(temp_path)
@@ -525,6 +615,189 @@ async def extract_columns(extract_request: ExtractColumnsRequest):
     except Exception as e:
         print(f"❌ Error extracting columns: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/generate-synthetic-dataset")
+async def generate_synthetic_dataset(dataset_request: SyntheticDatasetRequest):
+    """
+    Generate a synthetic dataset based on user specifications using LLM.
+    """
+    print("🧬 === API ENDPOINT /api/generate-synthetic-dataset CALLED ===")
+    print(f"📥 Dataset request: {dataset_request}")
+    
+    try:
+        if not dataset_request.description.strip():
+            raise HTTPException(status_code=400, detail="Dataset description is required")
+        
+        # Create the prompt for dataset generation
+        prompt = f"""Create a synthetic dataset with the following specifications:
+
+Description: {dataset_request.description}
+Number of rows: {dataset_request.rows}
+"""
+        
+        if dataset_request.column_specs:
+            prompt += f"Column specifications: {dataset_request.column_specs}\n"
+        elif dataset_request.columns:
+            prompt += f"Number of columns: {dataset_request.columns}\n"
+        
+        prompt += """
+Generate realistic sample data that matches the description. 
+
+CRITICAL INSTRUCTIONS:
+1. You MUST return ONLY valid JSON in the exact format below
+2. Do NOT include any explanatory text, markdown formatting, or additional comments
+3. Do NOT use ```json``` code blocks
+4. Return raw JSON only
+
+Required JSON structure:
+{
+    "columns": ["Column1", "Column2", ...],
+    "data": [
+        {"Column1": "value1", "Column2": "value2", ...},
+        ...
+    ]
+}
+
+Data quality guidelines:
+- If it's sales data, include realistic product names, dates, amounts, customer names, etc.
+- If it's employee data, include realistic names, departments, salaries, hire dates, etc.
+- Use appropriate data types (strings, numbers, dates) for each column
+- Ensure data makes logical sense (e.g., dates are in reasonable order, amounts are realistic)
+- Make data varied and realistic
+
+RESPONSE FORMAT: Start your response with { and end with } - nothing else."""
+
+        print(f"🧠 Sending prompt to LLM: {prompt}")
+        
+        # Use the LLM to generate the dataset
+        response = agent_services.llm.invoke(prompt)
+        response_text = response.content.strip()
+        
+        print(f"📄 LLM response: {response_text}")
+        
+        # Try to extract JSON from the response
+        try:
+            # Remove any markdown code blocks if present
+            if "```json" in response_text:
+                start = response_text.find("```json") + 7
+                end = response_text.find("```", start)
+                response_text = response_text[start:end].strip()
+            elif "```" in response_text:
+                start = response_text.find("```") + 3
+                end = response_text.rfind("```")
+                response_text = response_text[start:end].strip()
+            
+            # Try to find JSON object boundaries
+            start_brace = response_text.find('{')
+            end_brace = response_text.rfind('}')
+            
+            if start_brace != -1 and end_brace != -1 and end_brace > start_brace:
+                response_text = response_text[start_brace:end_brace + 1]
+                
+                # Validate that JSON has proper structure (basic check)
+                if not (response_text.count('{') >= 1 and response_text.count('}') >= 1 and 
+                        '"columns"' in response_text and '"data"' in response_text):
+                    print("⚠️ JSON structure appears incomplete, using fallback")
+                    raise json.JSONDecodeError("Incomplete JSON structure", response_text, 0)
+            
+            print(f"🔍 Cleaned response text length: {len(response_text)} characters")
+            print(f"🔍 First 200 chars: {response_text[:200]}...")
+            print(f"🔍 Last 200 chars: ...{response_text[-200:]}")
+            
+            # Parse the JSON with error recovery
+            try:
+                dataset_json = json.loads(response_text)
+            except json.JSONDecodeError as inner_e:
+                print(f"⚠️ Initial JSON parse failed: {inner_e}")
+                
+                # Try to repair common JSON issues
+                if "Expecting ',' delimiter" in str(inner_e):
+                    print("🔧 Attempting JSON repair for missing delimiter...")
+                    # Find the position of the error and try to fix it
+                    error_pos = getattr(inner_e, 'pos', 0)
+                    if error_pos > 0 and error_pos < len(response_text):
+                        # Look for incomplete entries at the end
+                        last_complete_brace = response_text.rfind('}', 0, error_pos)
+                        if last_complete_brace > 0:
+                            # Find the end of the data array
+                            data_end = response_text.rfind(']', 0, last_complete_brace + 100)
+                            if data_end > last_complete_brace:
+                                # Try to reconstruct valid JSON
+                                repaired_json = response_text[:data_end + 1] + '\n}'
+                                print(f"🔧 Repaired JSON length: {len(repaired_json)}")
+                                try:
+                                    dataset_json = json.loads(repaired_json)
+                                    print("✅ JSON repair successful!")
+                                except:
+                                    print("❌ JSON repair failed, using fallback")
+                                    raise inner_e
+                            else:
+                                raise inner_e
+                        else:
+                            raise inner_e
+                    else:
+                        raise inner_e
+                else:
+                    raise inner_e
+            
+            if "columns" not in dataset_json or "data" not in dataset_json:
+                raise ValueError("Invalid JSON structure")
+            
+            # Validate the data structure
+            columns = dataset_json["columns"]
+            data_rows = dataset_json["data"]
+            
+            print(f"📊 Generated dataset: {len(data_rows)} rows, {len(columns)} columns")
+            print(f"📋 Columns: {columns}")
+            
+            # Convert to DataFrame for validation and processing
+            df = pd.DataFrame(data_rows)
+            
+            # Update the data handler with the new dataset
+            data_handler.update_df_and_db(df)
+            
+            # Initialize agents with the new data
+            agent_services.initialize_agents(data_handler)
+            
+            return {
+                "success": True,
+                "message": f"Successfully generated synthetic dataset with {len(data_rows)} rows and {len(columns)} columns",
+                "data": df.to_dict(orient="records"),
+                "columns": df.columns.tolist(),
+                "rows": len(df),
+                "dataset_name": f"Synthetic {dataset_request.description}"
+            }
+            
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON parsing error: {e}")
+            print(f"📄 Raw response: {response_text}")
+            
+            # Try to create a fallback dataset based on the description
+            print("🔄 Attempting to create fallback dataset...")
+            try:
+                fallback_data = create_fallback_dataset(dataset_request.description, dataset_request.rows)
+                if fallback_data:
+                    print("✅ Fallback dataset created successfully")
+                    return fallback_data
+            except Exception as fallback_error:
+                print(f"❌ Fallback creation failed: {fallback_error}")
+            
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to parse LLM response as JSON. The AI returned: '{response_text[:100]}...'. Please try again with a clearer description."
+            )
+        except ValueError as e:
+            print(f"❌ Data validation error: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Invalid dataset structure generated. Please try again."
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error generating synthetic dataset: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate dataset: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 

@@ -7,7 +7,8 @@ export const API_ENDPOINTS = {
     generateReport: `${API_BASE_URL}/api/generate-report`,
     cancelOperation: `${API_BASE_URL}/api/cancel-operation`,
     resetState: `${API_BASE_URL}/api/reset-state`,
-    spreadsheetCommand: `${API_BASE_URL}/api/spreadsheet-command`
+    spreadsheetCommand: `${API_BASE_URL}/api/spreadsheet-command`,
+    generateSyntheticDataset: `${API_BASE_URL}/api/generate-synthetic-dataset`
 };
 
 // Static files base URL for visualizations

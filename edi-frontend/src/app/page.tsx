@@ -510,68 +510,98 @@ export default function Home() {
                 </div>
             </section>
 
-            {/* Footer - New Design */}
-            <footer className="py-16 bg-black/80 backdrop-blur-sm border-t border-blue-900/20">
-                <div className="max-w-7xl mx-auto px-8">
-                    {/* Contact Section */}
-                    <div className="mb-16">
-                        <h2 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-200 via-white to-blue-200">
-                            Interested in working together,
-                        </h2>
-                        <h2 className="text-3xl font-bold mb-8 text-blue-100/70">
-                            trying out the platform or simply learning more?
-                        </h2>
-                        <div className="mb-8">
-                            <p className="text-gray-400 text-sm mb-2">Contact us at:</p>
-                            <a href="mailto:contact@edi.ai" className="text-blue-400 hover:text-blue-300 transition-colors duration-200 flex items-center gap-2">
-                                contact@edi.ai
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                                </svg>
+            {/* Footer - Card Style Like Reference, Themed */}
+            <footer className="w-full flex justify-center items-center py-12 bg-transparent">
+                <div className="w-full max-w-[110rem] rounded-2xl shadow-xl px-8 py-10 md:py-14 md:px-16 border border-blue-900/40 relative overflow-hidden bg-black/90" style={{margin: '40px 0'}}>
+                    {/* Top row: Social links */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-0 border-b border-blue-900/40 pb-8 mb-8">
+                        {/* YouTube */}
+                        <div className="flex flex-col">
+                            <a href="#" className="flex items-center justify-between text-white text-lg font-semibold py-4 group">
+                                <span className="flex items-center gap-2">
+                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a2.994 2.994 0 0 0-2.108-2.117C19.228 3.5 12 3.5 12 3.5s-7.228 0-9.39.569A2.994 2.994 0 0 0 .502 6.186C0 8.35 0 12 0 12s0 3.65.502 5.814a2.994 2.994 0 0 0 2.108 2.117C4.772 20.5 12 20.5 12 20.5s7.228 0 9.39-.569a2.994 2.994 0 0 0 2.108-2.117C24 15.65 24 12 24 12s0-3.65-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                                    YouTube
+                                </span>
+                                <span className="text-blue-500 group-hover:translate-x-1 transition-transform duration-200 mr-12">→</span>
                             </a>
+                            <div className="mt-4 space-y-2">
+                                <div className="uppercase text-xs text-gray-400 mb-2">Product</div>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Technology</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Integrations</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Releases</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Status</a>
+                            </div>
+                        </div>
+                        {/* Twitter */}
+                        <div className="flex flex-col">
+                            <a href="#" className="flex items-center justify-between text-white text-lg font-semibold py-4 group">
+                                <span className="flex items-center gap-2">
+                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8.29 20.251c7.547 0 11.675-6.253 11.675-11.675 0-.178 0-.355-.012-.53A8.348 8.348 0 0022 5.92a8.19 8.19 0 01-2.357.646 4.118 4.118 0 001.804-2.27 8.224 8.224 0 01-2.605.996 4.107 4.107 0 00-6.993 3.743 11.65 11.65 0 01-8.457-4.287 4.106 4.106 0 001.27 5.477A4.072 4.072 0 012.8 9.713v.052a4.105 4.105 0 003.292 4.022 4.095 4.095 0 01-1.853.07 4.108 4.108 0 003.834 2.85A8.233 8.233 0 012 18.407a11.616 11.616 0 006.29 1.84"/></svg>
+                                    Twitter
+                                </span>
+                                <span className="text-blue-500 group-hover:translate-x-1 transition-transform duration-200 mr-12">→</span>
+                            </a>
+                            <div className="mt-4 space-y-2">
+                                <div className="uppercase text-xs text-gray-400 mb-2">Resources</div>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Docs</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">API Reference</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Tutorials</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">System Guide</a>
+                            </div>
+                        </div>
+                        {/* Instagram */}
+                        <div className="flex flex-col">
+                            <a href="#" className="flex items-center justify-between text-white text-lg font-semibold py-4 group">
+                                <span className="flex items-center gap-2">
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><circle cx="17.5" cy="6.5" r="1.5"/></svg>
+                                    Instagram
+                                </span>
+                                <span className="text-blue-500 group-hover:translate-x-1 transition-transform duration-200 mr-12">→</span>
+                            </a>
+                            <div className="mt-4 space-y-2">
+                                <div className="uppercase text-xs text-gray-400 mb-2">Company</div>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Team</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Culture</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Jobs</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Press Kit</a>
+                            </div>
+                        </div>
+                        {/* Facebook */}
+                        <div className="flex flex-col">
+                            <a href="#" className="flex items-center justify-between text-white text-lg font-semibold py-4 group">
+                                <span className="flex items-center gap-2">
+                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M22.675 0h-21.35C.595 0 0 .592 0 1.326v21.348C0 23.408.595 24 1.326 24h11.495v-9.294H9.691v-3.622h3.13V8.413c0-3.1 1.893-4.788 4.659-4.788 1.325 0 2.463.099 2.797.143v3.24l-1.918.001c-1.504 0-1.797.715-1.797 1.763v2.313h3.587l-.467 3.622h-3.12V24h6.116C23.406 24 24 23.408 24 22.674V1.326C24 .592 23.406 0 22.675 0"/></svg>
+                                    Facebook
+                                </span>
+                                <span className="text-blue-500 group-hover:translate-x-1 transition-transform duration-200 mr-12">→</span>
+                            </a>
+                            <div className="mt-4 space-y-2">
+                                <div className="uppercase text-xs text-gray-400 mb-2">Legal</div>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Terms of Use</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Data Policy</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Cookie Policy</a>
+                                <a href="#" className="block text-gray-300 hover:text-blue-500 transition-colors">Accessibility</a>
+                            </div>
                         </div>
                     </div>
-
-                    {/* Large Logo Section */}
-                    <div className="flex justify-center items-center mb-16">
-                        <div className="flex items-center gap-4">
-                            <div 
-                                className="w-24 h-24"
-                                style={{
-                                    background: 'linear-gradient(135deg, #ffffff 0%, #ffffff 30%, #3b82f6 60%, #1d4ed8 80%, #1e40af 100%)',
-                                    mask: 'url(/logo.svg) no-repeat center',
-                                    maskSize: 'contain',
-                                    WebkitMask: 'url(/logo.svg) no-repeat center',
-                                    WebkitMaskSize: 'contain'
-                                }}
-                                aria-label="EDI.ai Large Logo"
-                            />
-                            <span className="text-6xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white via-blue-200 to-white">
-                                EDI.ai
-                            </span>
+                    {/* Bottom row: Logo, description, subscribe */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mt-10 gap-8">
+                        {/* Logo and description */}
+                        <div className="flex flex-col gap-4">
+                            <span className="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-blue-200 to-white">EDI.ai</span>
+                            <p className="text-gray-400 max-w-xs">
+                                EDI.ai empowers you to unlock insights from your data with ease. Harness the power of AI to analyze, visualize, and collaborate—making smarter decisions, faster. Join us in shaping the future of intelligent data-driven work.
+                            </p>
                         </div>
+                        {/* Subscribe form */}
+                        <form className="flex gap-2 w-full max-w-md">
+                            <input type="email" placeholder="name@email.com" className="flex-1 px-4 py-3 rounded bg-black/80 border border-blue-900/40 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            <button type="submit" className="px-6 py-3 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-colors">Subscribe</button>
+                        </form>
                     </div>
-
-                    {/* Navigation Links */}
-                    <div className="flex justify-center mb-16">
-                        <div className="flex gap-12">
-                            <a href="#how-it-works" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">How It Works</a>
-                            <a href="#benefits" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">Benefits</a>
-                            <a href="#features" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">Features</a>
-                            <a href="#team" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">Team</a>
-                        </div>
-                    </div>
-
-                    {/* Bottom Section */}
-                    <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-8 border-t border-blue-900/20">
-                        <p className="text-gray-500 text-sm">
-                            © {new Date().getFullYear()} EDI.ai Inc. All rights reserved.
-                        </p>
-                        <div className="flex gap-6">
-                            <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">LinkedIn</a>
-                            <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">Facebook</a>
-                            <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-400 transition-colors duration-200">Twitter</a>
-                        </div>
+                    {/* Copyright */}
+                    <div className="mt-10 text-gray-500 text-sm text-center border-t border-blue-900/40 pt-6">
+                        © {new Date().getFullYear()} EDI.ai. All rights reserved.
                     </div>
                 </div>
             </footer>

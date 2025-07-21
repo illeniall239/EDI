@@ -245,6 +245,36 @@ export default function ChatInterface({ isDataLoaded, data, onFileUpload }: Chat
         }
     };
 
+    // Helper function to download chart
+    const downloadChart = async (visualizationPath: string, visualizationType: string) => {
+        try {
+            const fullUrl = `${API_BASE_URL}${visualizationPath}`;
+            const response = await fetch(fullUrl);
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch chart');
+            }
+            
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            
+            // Extract filename from path or create one based on type
+            const filename = visualizationPath.split('/').pop() || 
+                           `chart_${Date.now()}.${visualizationType === 'plotly_html' ? 'html' : 'png'}`;
+            
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Error downloading chart:', error);
+            alert('Failed to download chart. Please try again.');
+        }
+    };
+
     return (
         <div className="flex h-full w-full flex-col">
             <div className="flex flex-1 overflow-hidden">
@@ -353,18 +383,40 @@ export default function ChatInterface({ isDataLoaded, data, onFileUpload }: Chat
                                             {message.visualization && (
                                                 <div className="mt-4">
                                                     {message.visualization.type === 'matplotlib_figure' ? (
-                                                        <Image
-                                                            src={`${API_BASE_URL}${message.visualization.path}`}
-                                                            alt="Data Visualization"
-                                                            width={600}
-                                                            height={400}
-                                                            className="rounded-lg"
-                                                        />
+                                                        <div className="space-y-3">
+                                                            <Image
+                                                                src={`${API_BASE_URL}${message.visualization.path}`}
+                                                                alt="Data Visualization"
+                                                                width={600}
+                                                                height={400}
+                                                                className="rounded-lg"
+                                                            />
+                                                            <button
+                                                                onClick={() => downloadChart(message.visualization!.path, message.visualization!.type)}
+                                                                className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                                </svg>
+                                                                Save Chart
+                                                            </button>
+                                                        </div>
                                                     ) : message.visualization.type === 'plotly_html' && (
-                                                        <iframe
-                                                            src={`${API_BASE_URL}${message.visualization.path}`}
-                                                            className="w-full h-[400px] rounded-lg border-0"
-                                                        />
+                                                        <div className="space-y-3">
+                                                            <iframe
+                                                                src={`${API_BASE_URL}${message.visualization.path}`}
+                                                                className="w-full h-[400px] rounded-lg border-0"
+                                                            />
+                                                            <button
+                                                                onClick={() => downloadChart(message.visualization!.path, message.visualization!.type)}
+                                                                className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                                </svg>
+                                                                Save Chart
+                                                            </button>
+                                                        </div>
                                                     )}
                                                 </div>
                                             )}

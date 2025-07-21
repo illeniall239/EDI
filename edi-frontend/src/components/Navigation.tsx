@@ -51,27 +51,7 @@ export default function Navigation({ showStartProject = true, darkMode = true }:
       <nav className="w-[95%] max-w-[1800px] bg-black/40 backdrop-blur-md rounded-xl border border-blue-900/10">
         <div className="flex items-center justify-between h-14 pl-2 pr-6">
           {/* Logo */}
-          <div className="flex items-center">
-            <Link 
-              href="/" 
-              onClick={(e) => handleNavClick(e, null)}
-              className="flex items-center transition-all duration-300 pl-4"
-            >
-              <div 
-                className="h-18 w-auto transition-all duration-300 hover:drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]"
-                style={{
-                  background: 'linear-gradient(135deg, #ffffff 0%, #ffffff 30%, #3b82f6 60%, #1d4ed8 80%, #1e40af 100%)',
-                  mask: 'url(/logo.svg) no-repeat center',
-                  maskSize: 'contain',
-                  WebkitMask: 'url(/logo.svg) no-repeat center',
-                  WebkitMaskSize: 'contain',
-                  width: '72px', // Approximate width for h-18
-                  height: '72px'
-                }}
-                aria-label="EDI.ai Logo"
-              />
-            </Link>
-          </div>
+          <span className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-blue-200 to-white pl-2">EDI.ai</span>
 
           {/* Center Navigation */}
           <div className="hidden md:flex items-center space-x-8">

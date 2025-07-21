@@ -191,6 +191,24 @@ export default function WorkspacePage() {
         setData([]);
         setCurrentFilename(undefined);
         
+        // Reset backend state to ensure clean slate for new data generation
+        try {
+            console.log('🧹 Clearing backend state...');
+            const response = await fetch('http://localhost:8000/api/reset-state', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            
+            if (response.ok) {
+                console.log('✅ Backend state cleared successfully');
+            } else {
+                console.warn('⚠️ Failed to clear backend state:', response.statusText);
+            }
+        } catch (error) {
+            console.error('❌ Error clearing backend state:', error);
+        }
+        
         // Save empty state to workspace
         await saveDataToWorkspace([], undefined);
     };
