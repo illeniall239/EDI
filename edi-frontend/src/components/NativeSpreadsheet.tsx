@@ -533,6 +533,9 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
   const [editValue, setEditValue] = useState('');
   const [editLoading, setEditLoading] = useState(false);
   
+  // Add ref for dropdown to handle click outside
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  
   // Excel-style navigation state
 
   const [currentError, setCurrentError] = useState<FormulaError | null>(null);
@@ -3561,6 +3564,20 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [saveCurrentState]);
 
+  // Handle click outside dropdown to close it
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+
+    if (dropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [dropdownOpen]);
+
   // Removed all custom cell styling
 
   // Handle Luckysheet resize when sidebar collapses/expands
@@ -3929,10 +3946,15 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
               {/* Workspace Selector */}
               <div className="space-y-2">
                 <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Workspace</label>
-                <div className="relative" tabIndex={0} onBlur={() => setDropdownOpen(false)}>
+                <div className="relative" ref={dropdownRef}>
                   <button
                     className={`w-full flex items-center justify-between text-sm text-white bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 hover:border-blue-500 transition-colors ${dropdownOpen ? 'border-blue-500' : ''}`}
-                    onClick={() => setDropdownOpen((open) => !open)}
+                    onClick={() => {
+                      console.log('📂 Dropdown clicked, current state:', dropdownOpen);
+                      console.log('📂 Available workspaces:', workspaces.length, workspaces.map(w => w.name));
+                      console.log('📂 Current workspace:', currentWorkspace?.name);
+                      setDropdownOpen((open) => !open);
+                    }}
                     type="button"
                   >
                     <div className="flex items-center space-x-2 flex-1 min-w-0">
@@ -3956,9 +3978,19 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                                 ? 'bg-blue-600 text-white'
                                 : 'text-slate-300 hover:bg-slate-800'
                             }`}
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              console.log('🔄 Workspace button clicked:', ws.name, ws.id);
+                              console.log('🔄 Current workspace before:', currentWorkspace?.id);
+                              console.log('🔄 Router available:', !!router);
+                              
                               setCurrentWorkspace(ws);
                               setDropdownOpen(false);
+                              
+                              // Navigate to the selected workspace
+                              console.log('🔄 Navigating to:', `/workspace/${ws.id}`);
+                              router.push(`/workspace/${ws.id}`);
                             }}
                           >
                             {ws.name}
