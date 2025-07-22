@@ -439,13 +439,13 @@ export default function ChatInterface({ isDataLoaded, data, onFileUpload }: Chat
                                                 <div className="mt-4">
                                                     {message.visualization.type === 'matplotlib_figure' ? (
                                                         <div className="space-y-3">
-                                                            <Image
-                                                                src={`${API_BASE_URL}${message.visualization.path}`}
-                                                                alt="Data Visualization"
-                                                                width={600}
-                                                                height={400}
-                                                                className="rounded-lg"
-                                                            />
+                                                        <Image
+                                                            src={`${API_BASE_URL}${message.visualization.path}`}
+                                                            alt="Data Visualization"
+                                                            width={600}
+                                                            height={400}
+                                                            className="rounded-lg"
+                                                        />
                                                             <div className="flex gap-2">
                                                                 <button
                                                                     onClick={() => downloadChart(message.visualization!.path, message.visualization!.type)}
@@ -474,10 +474,10 @@ export default function ChatInterface({ isDataLoaded, data, onFileUpload }: Chat
                                                         </div>
                                                     ) : message.visualization.type === 'plotly_html' && (
                                                         <div className="space-y-3">
-                                                            <iframe
-                                                                src={`${API_BASE_URL}${message.visualization.path}`}
-                                                                className="w-full h-[400px] rounded-lg border-0"
-                                                            />
+                                                        <iframe
+                                                            src={`${API_BASE_URL}${message.visualization.path}`}
+                                                            className="w-full h-[400px] rounded-lg border-0"
+                                                        />
                                                             <div className="flex gap-2">
                                                                 <button
                                                                     onClick={() => downloadChart(message.visualization!.path, message.visualization!.type)}

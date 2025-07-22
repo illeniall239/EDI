@@ -3905,155 +3905,101 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(59,130,246,0.2),transparent_70%)]"></div>
       </div>
 
-      {/* Sidebar Navigation */}
-      <div className={`relative z-10 ${sidebarCollapsed ? 'w-16' : 'w-80'} bg-black/80 backdrop-blur-sm border-r border-blue-900/40 shadow-lg flex flex-col transition-all duration-300`}>
+            {/* Professional Sidebar - Clean Blue Design */}
+      <div className={`relative z-10 ${sidebarCollapsed ? 'w-16' : 'w-80'} bg-slate-950/95 backdrop-blur-sm border-r border-slate-800 shadow-xl flex flex-col transition-all duration-300`}>
+        
         {/* Header */}
-        <div className={`${sidebarCollapsed ? 'p-3' : 'p-6'} border-b border-blue-900/30 transition-all duration-300`}>
+        <div className={`${sidebarCollapsed ? 'p-4' : 'p-6'} border-b border-slate-800`}>
           {!sidebarCollapsed && (
-            <div className="flex justify-between items-center mb-6">
-              {/* User Profile Section */}
-              <UserProfile variant="dark" />
-              
-              {/* Collapse Toggle Button */}
-              <button
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="flex items-center justify-center p-2 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group"
-                title="Collapse Sidebar"
-              >
-                <svg 
-                  className="w-5 h-5 text-blue-400 group-hover:text-blue-300 transition-transform duration-200" 
-                  fill="none" 
-                  viewBox="0 0 24 24" 
-                  stroke="currentColor"
+            <div className="space-y-4">
+              {/* Top Section */}
+              <div className="flex items-center justify-between gap-4">
+                <UserProfile variant="dark" />
+                <button
+                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors"
+                  title="Collapse Sidebar"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-            </div>
-          )}
-          
-          {sidebarCollapsed && (
-            <div className="flex justify-center mb-4">
-              {/* Collapse Toggle Button for collapsed state */}
-              <button
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="w-full flex items-center justify-center p-2 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group"
-                title="Expand Sidebar"
-              >
-                <svg 
-                  className="w-5 h-5 text-blue-400 group-hover:text-blue-300 transition-transform duration-200 rotate-180" 
-                  fill="none" 
-                  viewBox="0 0 24 24" 
-                  stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-            </div>
-          )}
-          
-          {/* Workspace Selector */}
-          {!sidebarCollapsed && (
-            <div className="relative select-none" tabIndex={0} onBlur={() => setDropdownOpen(false)}>
-              <button
-                className={`w-full flex items-center justify-between text-sm font-medium text-white truncate cursor-pointer bg-blue-900/20 border border-blue-700/30 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-150 ${dropdownOpen ? 'ring-2 ring-blue-400' : ''}`}
-                onClick={() => setDropdownOpen((open) => !open)}
-                type="button"
-              >
-                <span className="truncate text-left flex-1">
-                  {currentWorkspace?.name || 'Select workspace'}
-                </span>
-                <svg className={`w-4 h-4 ml-2 transition-transform duration-200 text-blue-400 ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {dropdownOpen && (
-                <div className="absolute left-0 right-0 mt-1 bg-black/95 border border-blue-900/50 rounded-md shadow-xl z-50 py-1">
-                  {workspaces.length === 0 ? (
-                    <div className="px-3 py-2 text-blue-200 text-sm">No workspaces found</div>
-                  ) : (
-                    workspaces.map(ws => (
-                      <button
-                        key={ws.id}
-                        className={`w-full text-left px-3 py-2 text-sm transition-all duration-100 ${
-                          currentWorkspace?.id === ws.id
-                            ? 'bg-blue-900/40 text-blue-200 font-medium'
-                            : 'text-blue-100 hover:bg-blue-900/20'
-                        }`}
-                        onClick={() => {
-                          setCurrentWorkspace(ws);
-                          setDropdownOpen(false);
-                        }}
-                      >
-                        {ws.name}
-                      </button>
-                    ))
+                  <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Workspace Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Workspace</label>
+                <div className="relative" tabIndex={0} onBlur={() => setDropdownOpen(false)}>
+                  <button
+                    className={`w-full flex items-center justify-between text-sm text-white bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 hover:border-blue-500 transition-colors ${dropdownOpen ? 'border-blue-500' : ''}`}
+                    onClick={() => setDropdownOpen((open) => !open)}
+                    type="button"
+                  >
+                    <div className="flex items-center space-x-2 flex-1 min-w-0">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      <span className="truncate">{currentWorkspace?.name || 'Select workspace'}</span>
+                    </div>
+                    <svg className={`w-4 h-4 text-slate-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {dropdownOpen && (
+                    <div className="absolute left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 py-1">
+                      {workspaces.length === 0 ? (
+                        <div className="px-3 py-2 text-slate-400 text-sm">No workspaces found</div>
+                      ) : (
+                        workspaces.map(ws => (
+                          <button
+                            key={ws.id}
+                            className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                              currentWorkspace?.id === ws.id
+                                ? 'bg-blue-600 text-white'
+                                : 'text-slate-300 hover:bg-slate-800'
+                            }`}
+                            onClick={() => {
+                              setCurrentWorkspace(ws);
+                              setDropdownOpen(false);
+                            }}
+                          >
+                            {ws.name}
+                          </button>
+                        ))
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
-          )}
-          
-          {/* Manual Save Button */}
-          {!sidebarCollapsed && (
-            <div className="mt-3">
-              <button
-                onClick={() => saveCurrentState('Manual Save')}
-                disabled={saveStatus === 'saving'}
-                className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                  saveStatus === 'saving' 
-                    ? 'bg-blue-800 text-white cursor-not-allowed'
-                    : saveStatus === 'saved'
-                    ? 'bg-green-600 hover:bg-green-700 text-white'
-                    : hasUnsavedChanges
-                    ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              >
-                {saveStatus === 'saving' ? (
-                  <>
-                    <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin"></div>
-                    Saving...
-                  </>
-                ) : saveStatus === 'saved' ? (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Saved {lastSaveTime && new Date().getTime() - lastSaveTime.getTime() < 60000 
-                      ? 'just now' 
-                      : lastSaveTime?.toLocaleTimeString()
-                    }
-                  </>
-                ) : hasUnsavedChanges ? (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    Save Changes (Ctrl+S)
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    Save Workspace
-                  </>
-                )}
-              </button>
-            </div>
-          )}
+              </div>
 
-                      {/* Download Button */}
-            {!sidebarCollapsed && (
-              <div className="mt-3">
-                <div className="relative group">
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => saveCurrentState('Manual Save')}
+                  disabled={saveStatus === 'saving'}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    saveStatus === 'saving' 
+                      ? 'bg-slate-800 text-slate-400 cursor-not-allowed'
+                      : saveStatus === 'saved'
+                      ? 'bg-green-600 hover:bg-green-700 text-white'
+                      : hasUnsavedChanges
+                      ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  {saveStatus === 'saving' ? (
+                    <div className="w-4 h-4 border border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                  )}
+                </button>
+
+                <div className="relative">
                   <button
                     onClick={() => {
                       const dropdown = document.getElementById('download-options');
                       if (dropdown) {
                         dropdown.classList.toggle('hidden');
-                        // Add click outside handler
                         const handleClickOutside = (e: MouseEvent) => {
                           if (!dropdown.contains(e.target as Node)) {
                             dropdown.classList.add('hidden');
@@ -4067,55 +4013,70 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                         }
                       }
                     }}
-                    className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-colors flex items-center justify-center gap-2 text-blue-200 group-hover:text-blue-100"
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
-                    Download Spreadsheet
                   </button>
                   <div
                     id="download-options"
-                    className="hidden absolute z-50 w-full mt-2 bg-gray-900 border border-blue-900/30 rounded-lg shadow-lg overflow-hidden"
+                    className="hidden absolute right-0 mt-1 w-32 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 py-1"
                   >
                     <button
                       onClick={downloadAsCSV}
-                      className="w-full px-4 py-2 text-left text-sm text-blue-200 hover:bg-blue-600/20 transition-colors flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left text-sm text-slate-300 hover:bg-slate-800"
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      Download as CSV
+                      CSV
                     </button>
                     <button
                       onClick={downloadAsExcel}
-                      className="w-full px-4 py-2 text-left text-sm text-blue-200 hover:bg-blue-600/20 transition-colors flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left text-sm text-slate-300 hover:bg-slate-800"
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      Download as Excel
+                      Excel
                     </button>
                   </div>
                 </div>
               </div>
-            )}
-
-            {/* Save Status Indicator removed as it's now integrated into the save button */}
-          </div>
+            </div>
+          )}
+          
+          {sidebarCollapsed && (
+            <div className="flex flex-col items-center space-y-3">
+              <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center">
+                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+              </div>
+              <button
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors"
+                title="Expand Sidebar"
+              >
+                <svg className="w-4 h-4 text-slate-400 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Navigation Sections */}
         <div className="flex-1 overflow-y-auto">
           {/* Data Operations */}
-          <div className={`${sidebarCollapsed ? 'p-3' : 'p-6'} border-b border-blue-900/20`}>
-            {!sidebarCollapsed && <h3 className="text-sm font-medium text-blue-300 mb-4 uppercase tracking-wider">Data Operations</h3>}
-            <div className={`${sidebarCollapsed ? 'flex flex-col items-center space-y-3' : 'space-y-3'}`}>
+          <div className={`${sidebarCollapsed ? 'p-3' : 'p-6'} border-b border-slate-800`}>
+            {!sidebarCollapsed && (
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-4">Data Operations</h3>
+            )}
+            
+            <div className={`${sidebarCollapsed ? 'space-y-2' : 'space-y-2'}`}>
+              {/* Upload Data */}
               {onFileUpload && (
-                <label className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group cursor-pointer`} title={sidebarCollapsed ? 'Upload Data' : ''}>
-                  <svg className="w-5 h-5 text-blue-400 group-hover:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <label className={`${sidebarCollapsed ? 'w-10 h-10' : 'w-full'} flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 px-3 py-2.5'} rounded-lg bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 transition-all cursor-pointer group`} title={sidebarCollapsed ? 'Upload Data' : ''}>
+                  <svg className="w-4 h-4 text-slate-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
-                  {!sidebarCollapsed && <span className="text-blue-200 group-hover:text-blue-100">Upload Data</span>}
+                  {!sidebarCollapsed && (
+                    <span className="text-sm text-slate-300 group-hover:text-white font-medium">Upload Data</span>
+                  )}
                   <input
                     type="file"
                     accept=".csv,.xlsx,.xls"
@@ -4125,106 +4086,122 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                 </label>
               )}
 
-              {/* Generate Synthetic Dataset Button */}
+              {/* Generate Dataset */}
               <button
                 onClick={() => setShowSyntheticDatasetDialog(true)}
-                className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group`}
+                className={`${sidebarCollapsed ? 'w-10 h-10' : 'w-full'} flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 px-3 py-2.5'} rounded-lg bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 transition-all group`}
                 title={sidebarCollapsed ? 'Generate Dataset' : ''}
               >
-                <svg className="w-5 h-5 min-w-[20px] min-h-[20px] flex-shrink-0 text-blue-400 group-hover:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-4 h-4 text-slate-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
-                {!sidebarCollapsed && <span className="text-blue-200 group-hover:text-blue-100 whitespace-nowrap">Generate Dataset</span>}
+                {!sidebarCollapsed && (
+                  <span className="text-sm text-slate-300 group-hover:text-white font-medium">Generate Dataset</span>
+                )}
               </button>
               
-              {/* Data Quality Report Button */}
+              {/* Data Quality Report */}
               {data.length > 0 && (
                 <button
                   onClick={() => generateDataQualityReport(false)}
                   disabled={isGeneratingReport}
-                  className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed`}
+                  className={`${sidebarCollapsed ? 'w-10 h-10' : 'w-full'} flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 px-3 py-2.5'} rounded-lg bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 transition-all group disabled:opacity-50 disabled:cursor-not-allowed`}
                   title={sidebarCollapsed ? 'Data Quality Report' : ''}
                 >
                   {isGeneratingReport ? (
-                    <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                    <div className="w-4 h-4 border border-slate-400 border-t-transparent rounded-full animate-spin"></div>
                   ) : (
-                    <svg className="w-5 h-5 text-blue-400 group-hover:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 text-slate-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                   )}
                   {!sidebarCollapsed && (
-                    <span className="text-blue-200 group-hover:text-blue-100">
-                      {isGeneratingReport ? 'Analyzing...' : 'Data Quality Report'}
+                    <span className="text-sm text-slate-300 group-hover:text-white font-medium">
+                      {isGeneratingReport ? 'Analyzing...' : 'Quality Report'}
                     </span>
                   )}
                 </button>
               )}
               
-              {/* Extract Columns Button */}
+              {/* Extract Columns */}
               {data.length > 0 && (
                 <button
                   onClick={() => setShowColumnExtraction(true)}
-                  className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group`}
+                  className={`${sidebarCollapsed ? 'w-10 h-10' : 'w-full'} flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 px-3 py-2.5'} rounded-lg bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 transition-all group`}
                   title={sidebarCollapsed ? 'Extract Columns' : ''}
                 >
-                  <svg className="w-5 h-5 text-blue-400 group-hover:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-4 h-4 text-slate-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  {!sidebarCollapsed && <span className="text-blue-200 group-hover:text-blue-100">Extract Columns</span>}
+                  {!sidebarCollapsed && (
+                    <span className="text-sm text-slate-300 group-hover:text-white font-medium">Extract Columns</span>
+                  )}
                 </button>
               )}
 
+              {/* Clear Data */}
               {onClearData && data.length > 0 && (
                 <button
                   onClick={onClearData}
-                  className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group`}
+                  className={`${sidebarCollapsed ? 'w-10 h-10' : 'w-full'} flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 px-3 py-2.5'} rounded-lg bg-slate-800 hover:bg-red-600 border border-slate-700 hover:border-red-500 transition-all group`}
                   title={sidebarCollapsed ? 'Clear Data' : ''}
                 >
-                  <svg className="w-5 h-5 text-blue-400 group-hover:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-4 h-4 text-slate-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                  {!sidebarCollapsed && <span className="text-blue-200 group-hover:text-blue-100">Clear Data</span>}
+                  {!sidebarCollapsed && (
+                    <span className="text-sm text-slate-300 group-hover:text-white font-medium">Clear Data</span>
+                  )}
                 </button>
               )}
             </div>
           </div>
 
           {/* AI Commands */}
-          <div className={`${sidebarCollapsed ? 'p-3' : 'p-6'} border-b border-blue-900/20`}>
-            {!sidebarCollapsed && <h3 className="text-sm font-medium text-blue-300 mb-4 uppercase tracking-wider">AI Commands</h3>}
-            <div className={`${sidebarCollapsed ? 'flex flex-col items-center space-y-3' : 'space-y-3'}`}>
+          <div className={`${sidebarCollapsed ? 'p-3' : 'p-6'} border-b border-slate-800`}>
+            {!sidebarCollapsed && (
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-4">AI Commands</h3>
+            )}
+            
+            <div className={`${sidebarCollapsed ? 'space-y-2' : 'space-y-2'}`}>
+              {/* Voice Command */}
               <button
                 onClick={isListening ? stopVoiceRecognition : startVoiceRecognition}
                 disabled={isProcessingCommand}
-                className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg border transition-all duration-200 group ${
+                className={`${sidebarCollapsed ? 'w-10 h-10' : 'w-full'} flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 px-3 py-2.5'} rounded-lg border transition-all group ${
                   isListening 
-                    ? 'bg-red-600/20 border-red-600/40 text-red-300' 
-                    : 'bg-blue-600/10 hover:bg-blue-600/20 border-blue-600/30'
+                    ? 'bg-red-600 border-red-500 text-white' 
+                    : 'bg-slate-800 hover:bg-blue-600 border-slate-700 hover:border-blue-500'
                 }`}
                 title={sidebarCollapsed ? (isListening ? 'Stop Voice Command' : 'Voice Command') : ''}
               >
-                <svg className={`w-5 h-5 ${isListening ? 'text-red-400 group-hover:text-red-300' : 'text-blue-400 group-hover:text-blue-300'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className={`w-4 h-4 ${isListening ? 'text-white' : 'text-slate-400 group-hover:text-white'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
                 {!sidebarCollapsed && (
-                  <span className={isListening ? 'text-red-200' : 'text-blue-200 group-hover:text-blue-100'}>
-                    {isListening ? 'Stop Voice Command' : 'Voice Command'}
+                  <span className={`text-sm font-medium ${isListening ? 'text-white' : 'text-slate-300 group-hover:text-white'}`}>
+                    {isListening ? 'Stop Recording' : 'Voice Command'}
                   </span>
                 )}
               </button>
+
+              {/* AI Chat */}
               <button
                 onClick={() => setShowChatInterface(true)}
-                className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group`}
+                className={`${sidebarCollapsed ? 'w-10 h-10' : 'w-full'} flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 px-3 py-2.5'} rounded-lg bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 transition-all group`}
                 title={sidebarCollapsed ? 'AI Commands & Chat' : ''}
               >
-                <svg className="w-5 h-5 text-blue-400 group-hover:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                <svg className="w-4 h-4 text-slate-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
-                {!sidebarCollapsed && <span className="text-blue-200 group-hover:text-blue-100">AI Commands & Chat</span>}
+                {!sidebarCollapsed && (
+                  <span className="text-sm text-slate-300 group-hover:text-white font-medium">AI Chat</span>
+                )}
               </button>
+
+              {/* Formula Generation */}
               <button
                 onClick={() => {
-                  // Initialize dialog state similar to keyboard shortcut
                   let row = 0, col = 0;
                   if (window.luckysheet && typeof window.luckysheet.getRange === 'function') {
                     const range = window.luckysheet.getRange();
@@ -4255,25 +4232,26 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                   setFormulaCell({ row, col });
                   setSelectedColumns([]);
                 }}
-                className={`${sidebarCollapsed ? 'w-10 h-10 flex items-center justify-center' : 'w-full flex items-center space-x-3 px-4 py-3'} rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30 transition-all duration-200 group`}
+                className={`${sidebarCollapsed ? 'w-10 h-10' : 'w-full'} flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 px-3 py-2.5'} rounded-lg bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 transition-all group`}
                 title={sidebarCollapsed ? 'AI Formula Generation' : ''}
               >
-                <svg className="w-5 h-5 text-blue-400 group-hover:text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-4 h-4 text-slate-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
-                {!sidebarCollapsed && <span className="text-blue-200 group-hover:text-blue-100">AI Formula Generation</span>}
+                {!sidebarCollapsed && (
+                  <span className="text-sm text-slate-300 group-hover:text-white font-medium">Formula Assistant</span>
+                )}
               </button>
             </div>
           </div>
 
           {/* Reports */}
-          <div className={`${sidebarCollapsed ? 'p-3' : 'p-6'} border-b border-blue-900/20`}>
-            {!sidebarCollapsed && <h3 className="text-sm font-medium text-blue-300 mb-4 uppercase tracking-wider">Reports</h3>}
-            <div className={`${sidebarCollapsed ? 'flex flex-col items-center' : 'flex items-center'}`}>
-              <ReportGenerator isDataLoaded={data.length > 0} workspaceId={currentWorkspace?.id ?? null} collapsed={sidebarCollapsed} />
-            </div>
+          <div className={`${sidebarCollapsed ? 'p-3' : 'p-6'}`}>
+            {!sidebarCollapsed && (
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-4">Reports</h3>
+            )}
+            <ReportGenerator isDataLoaded={data.length > 0} workspaceId={currentWorkspace?.id ?? null} collapsed={sidebarCollapsed} />
           </div>
-
         </div>
       </div>
 
@@ -4300,10 +4278,10 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
               right: 20,
                   zIndex: 1001,
               display: 'flex',
-              gap: '3px',
+              gap: '8px',
               background: 'rgba(0, 0, 0, 0.1)',
               borderRadius: '12px',
-              padding: '4px',
+              padding: '6px',
               backdropFilter: 'blur(4px)',
             }}>
               <button
@@ -4541,17 +4519,17 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
                                     </div>
                                   ) : (
                                     <div className="space-y-2">
-                                      <img 
-                                        src={`http://localhost:8000${message.visualization.path}`}
-                                        alt="Generated visualization"
-                                        className="max-w-full h-auto rounded border"
-                                        onError={(e) => {
-                                          const target = e.currentTarget as HTMLImageElement;
-                                          const errorDiv = target.nextElementSibling as HTMLDivElement;
-                                          target.style.display = 'none';
-                                          if (errorDiv) errorDiv.style.display = 'block';
-                                        }}
-                                      />
+                                    <img 
+                                      src={`http://localhost:8000${message.visualization.path}`}
+                                      alt="Generated visualization"
+                                      className="max-w-full h-auto rounded border"
+                                      onError={(e) => {
+                                        const target = e.currentTarget as HTMLImageElement;
+                                        const errorDiv = target.nextElementSibling as HTMLDivElement;
+                                        target.style.display = 'none';
+                                        if (errorDiv) errorDiv.style.display = 'block';
+                                      }}
+                                    />
                                       <div className="flex gap-2">
                                         <button
                                           onClick={() => downloadChart(message.visualization!.path)}

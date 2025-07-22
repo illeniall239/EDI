@@ -102,34 +102,44 @@ export default function ColumnExtractionDialog({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden text-gray-900" style={{color: '#111827', backgroundColor: '#ffffff'}}>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div 
+        className="relative w-full max-w-4xl rounded-xl shadow-2xl border border-slate-700/50 overflow-hidden max-h-[90vh]"
+        style={{ backgroundColor: 'rgb(2, 6, 23)' }}
+      >
         {/* Header */}
-        <div className="bg-blue-600 text-white p-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Database className="w-5 h-5" />
-            <h2 className="text-lg font-semibold">Extract Columns</h2>
+        <div className="border-b border-slate-700/50 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-600 rounded-lg">
+                <Database className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-white">Extract Columns</h2>
+                <p className="text-sm text-slate-400">Select columns to extract into a new sheet</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="text-white hover:text-gray-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-6 max-h-[calc(90vh-200px)] overflow-y-auto">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+            <div className="bg-red-900/20 border border-red-800/50 text-red-300 px-4 py-3 rounded-lg mb-4">
               {error}
             </div>
           )}
 
           {loading ? (
             <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="mt-2 text-gray-600">Loading columns...</p>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+              <p className="mt-2 text-slate-400">Loading columns...</p>
             </div>
           ) : (
             <>
@@ -138,24 +148,24 @@ export default function ColumnExtractionDialog({
                 {/* Search and Filter */}
                 <div className="flex gap-4">
                   <div className="flex-1 relative">
-                    <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+                    <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
                     <input
                       type="text"
                       placeholder="Search columns..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
+                      className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-slate-400"
                     />
                   </div>
                   <div className="relative">
-                    <Filter className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+                    <Filter className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
                     <select
                       value={filterCategory}
                       onChange={(e) => setFilterCategory(e.target.value)}
-                      className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white text-gray-900"
+                      className="pl-10 pr-8 py-2 bg-slate-800 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none text-white"
                     >
                       {categories.map(category => (
-                        <option key={category} value={category}>{category}</option>
+                        <option key={category} value={category} className="bg-slate-800 text-white">{category}</option>
                       ))}
                     </select>
                   </div>
@@ -163,7 +173,7 @@ export default function ColumnExtractionDialog({
 
                 {/* Sheet Name */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-slate-300 mb-1">
                     New Sheet Name (optional)
                   </label>
                   <input
@@ -171,7 +181,7 @@ export default function ColumnExtractionDialog({
                     placeholder="Enter custom sheet name..."
                     value={sheetName}
                     onChange={(e) => setSheetName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-slate-400"
                   />
                 </div>
 
@@ -179,7 +189,7 @@ export default function ColumnExtractionDialog({
                 <div className="flex items-center justify-between">
                   <button
                     onClick={handleSelectAll}
-                    className="flex items-center gap-2 text-blue-600 hover:text-blue-700 transition-colors font-medium"
+                    className="flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors font-medium"
                   >
                     {selectedColumns.size === filteredColumns.length ? (
                       <Check className="w-4 h-4" />
@@ -188,24 +198,24 @@ export default function ColumnExtractionDialog({
                     )}
                     {selectedColumns.size === filteredColumns.length ? 'Deselect All' : 'Select All'}
                   </button>
-                  <span className="text-sm text-gray-600 font-medium">
+                  <span className="text-sm text-slate-400 font-medium">
                     {selectedColumns.size} of {filteredColumns.length} columns selected
                   </span>
                 </div>
               </div>
 
               {/* Columns List */}
-              <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
+              <div className="max-h-96 overflow-y-auto border border-slate-600 rounded-lg bg-slate-800/50">
                 {filteredColumns.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-8 text-slate-400">
                     No columns found matching your criteria
                   </div>
                 ) : (
-                  <div className="divide-y divide-gray-200">
+                  <div className="divide-y divide-slate-600/50">
                     {filteredColumns.map((column) => (
                       <div
                         key={column.name}
-                        className="p-4 hover:bg-gray-50 transition-colors"
+                        className="p-4 hover:bg-slate-700/50 transition-colors"
                       >
                         <div className="flex items-start gap-3">
                           <button
@@ -217,26 +227,26 @@ export default function ColumnExtractionDialog({
                                 <Check className="w-3 h-3 text-white" />
                               </div>
                             ) : (
-                              <div className="w-5 h-5 border-2 border-gray-300 rounded hover:border-blue-400 transition-colors"></div>
+                              <div className="w-5 h-5 border-2 border-slate-500 rounded hover:border-blue-400 transition-colors"></div>
                             )}
                           </button>
                           
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-medium text-gray-900 truncate">
+                              <h3 className="font-medium text-white truncate">
                                 {column.name}
                               </h3>
                               <span className={`px-2 py-1 text-xs rounded-full ${
-                                column.data_category === 'Text' ? 'bg-green-100 text-green-800' :
-                                column.data_category === 'Numeric' ? 'bg-blue-100 text-blue-800' :
-                                column.data_category === 'Date/Time' ? 'bg-purple-100 text-purple-800' :
-                                'bg-gray-100 text-gray-800'
+                                column.data_category === 'Text' ? 'bg-green-900/40 text-green-300 border border-green-700/50' :
+                                column.data_category === 'Numeric' ? 'bg-blue-900/40 text-blue-300 border border-blue-700/50' :
+                                column.data_category === 'Date/Time' ? 'bg-purple-900/40 text-purple-300 border border-purple-700/50' :
+                                'bg-slate-700/50 text-slate-300 border border-slate-600/50'
                               }`}>
                                 {column.data_category}
                               </span>
                             </div>
                             
-                            <div className="text-sm text-gray-600 space-y-1">
+                            <div className="text-sm text-slate-400 space-y-1">
                               <div className="flex items-center gap-4">
                                 <span>Type: {column.type}</span>
                                 <span>Completeness: {column.completeness_percentage}%</span>
@@ -246,7 +256,7 @@ export default function ColumnExtractionDialog({
                               {column.sample_values.length > 0 && (
                                 <div>
                                   <span className="font-medium">Sample values: </span>
-                                  <span className="text-gray-500">
+                                  <span className="text-slate-500">
                                     {column.sample_values.join(', ')}
                                     {column.unique_count > 3 && '...'}
                                   </span>
@@ -265,8 +275,8 @@ export default function ColumnExtractionDialog({
         </div>
 
         {/* Footer */}
-        <div className="bg-gray-50 px-6 py-4 flex items-center justify-between">
-          <div className="text-sm text-gray-600">
+        <div className="border-t border-slate-700/50 px-6 py-4 flex items-center justify-between bg-slate-900/50">
+          <div className="text-sm text-slate-400">
             {columns.length > 0 && (
               <>Total: {columns.length} columns, {selectedColumns.size} selected</>
             )}
@@ -274,14 +284,14 @@ export default function ColumnExtractionDialog({
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="px-4 py-2 text-slate-300 border border-slate-600 rounded-lg hover:bg-slate-700 transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleExtract}
               disabled={selectedColumns.size === 0 || loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
               <Download className="w-4 h-4" />
               Extract Selected
