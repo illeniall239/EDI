@@ -5229,7 +5229,7 @@ export default function NativeSpreadsheet({ data = [], onCommand, onDataUpdate, 
         {/* Formula Error History Button */}
         <button
           onClick={() => setShowErrorHistory(true)}
-          className="fixed bottom-4 right-4 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors z-[1000]"
+          className="fixed bottom-20 right-4 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors z-[1000]"
           title="View Formula Error History"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

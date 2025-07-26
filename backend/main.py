@@ -42,22 +42,39 @@ REPORTS_DIR = os.path.join(os.path.dirname(__file__), "generated_reports")
 os.makedirs(CHARTS_DIR, exist_ok=True)
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
+# Configure logging first
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 # Mount static directory for serving visualizations
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 
 # Initialize our services
 data_handler = DataHandler()
 speech_util = SpeechUtil(api_key=settings.AZURE_SPEECH_KEY, region=settings.AZURE_SERVICE_REGION)
-agent_services = AgentServices(llm=settings.LLM, speech_util_instance=speech_util, charts_dir=CHARTS_DIR)
-agent_services.initialize_agents(data_handler)
-report_generator = ReportGenerator(
-    data_handler=data_handler,
-    agent_services_instance=agent_services
-)
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+# Check if LLM is properly configured
+if settings.LLM is None:
+    logger.error("LLM is not properly configured. Please check your GOOGLE_API_KEY environment variable.")
+    agent_services = None
+    report_generator = None
+else:
+    try:
+        # Test the LLM connection
+        test_response = settings.LLM.invoke("Hello")
+        logger.info("LLM connection successful")
+        
+        agent_services = AgentServices(llm=settings.LLM, speech_util_instance=speech_util, charts_dir=CHARTS_DIR)
+        agent_services.initialize_agents(data_handler)
+        report_generator = ReportGenerator(
+            data_handler=data_handler,
+            agent_services_instance=agent_services
+        )
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM services: {str(e)}")
+        logger.error("Please check your GOOGLE_API_KEY and ensure it's valid")
+        agent_services = None
+        report_generator = None
 
 # --- Request/Response Models ---
 class QueryRequest(BaseModel):
@@ -246,6 +263,14 @@ async def process_query(query: Dict[str, Any]):
         
         print("🔄 === CALLING AGENT SERVICES ===")
         print(f"🤖 Agent services instance: {agent_services}")
+        
+        # Check if agent_services is properly initialized
+        if agent_services is None:
+            raise HTTPException(
+                status_code=503, 
+                detail="AI services are not available. Please check your API configuration and restart the server."
+            )
+        
         print(f"🗃️ Data handler has data: {data_handler.get_df() is not None}")
         if data_handler.get_df() is not None:
             df = data_handler.get_df()
@@ -512,14 +537,31 @@ async def analyze_chart(request: AnalyzeChartRequest):
 
 @app.get("/api/health")
 async def health_check():
+    # Check if services are properly initialized
+    services_status = {
+        "data_handler": "available" if data_handler else "unavailable",
+        "agent_services": "available" if agent_services else "unavailable",
+        "report_generator": "available" if report_generator else "unavailable",
+        "speech_utils": "available" if speech_util else "unavailable"
+    }
+    
+    # Check LLM status
+    llm_status = "available" if settings.LLM else "unavailable"
+    
+    # Determine overall status
+    if all(status == "available" for status in services_status.values()) and llm_status == "available":
+        overall_status = "healthy"
+    else:
+        overall_status = "degraded"
+    
     return {
-        "status": "healthy",
-        "data_loaded": data_handler.get_df() is not None,
-        "services": {
-            "data_handler": "available",
-            "agent_services": "available",
-            "report_generator": "available",
-            "speech_utils": "available"
+        "status": overall_status,
+        "data_loaded": data_handler.get_df() is not None if data_handler else False,
+        "llm": llm_status,
+        "services": services_status,
+        "api_keys": {
+            "google_api_key": "configured" if settings.GOOGLE_API_KEY else "missing",
+            "azure_speech_key": "configured" if settings.AZURE_SPEECH_KEY else "missing"
         }
     }
 

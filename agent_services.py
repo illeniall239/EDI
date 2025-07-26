@@ -135,6 +135,23 @@ class AgentServices:
 
         if db_sqlalchemy and self.llm:
             toolkit = CustomSQLDatabaseToolkit(db=db_sqlalchemy, llm=self.llm)
+            
+            # Create a custom system message for better responses
+            system_message = """You are a helpful data analysis assistant. When answering questions about data:
+
+1. ALWAYS provide complete, contextual answers in natural language
+2. NEVER return just a single value or word - always explain what the data means
+3. Include relevant context and insights from the data
+4. Use proper sentences and formatting
+5. If you find specific data points, explain their significance
+6. Make your responses informative and helpful to the user
+7. Provide insights that help the user understand the data better
+8. When querying data, include relevant context columns (developer, publisher, ratings, etc.)
+9. Always provide a complete picture by including related data points
+10. Explain what the data suggests about trends, patterns, or insights
+
+Remember: Your goal is to help users understand their data, not just return raw values. Always provide the full context needed to understand the answer."""
+            
             self.agent_executor = create_sql_agent(
                 llm=self.llm,
                 toolkit=toolkit,
@@ -143,9 +160,15 @@ class AgentServices:
                 agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
                 memory=self.memory,
                 return_intermediate_steps=True,  # This helps with debugging
+                agent_kwargs={"system_message": system_message}
             )
         else:
-            print("Warning: SQL Agent could not be initialized. DB or LLM missing.")
+            if not self.llm:
+                print("Warning: SQL Agent could not be initialized. LLM missing.")
+            elif not db_sqlalchemy:
+                print("Info: SQL Agent will be initialized when data is loaded.")
+            else:
+                print("Warning: SQL Agent could not be initialized. Unknown issue.")
             self.agent_executor = None
         self.memory.clear()
 
@@ -192,45 +215,44 @@ class AgentServices:
 
         try:
             summary_prompt = f"""
-            Provide a well-formatted summary of the 'data' table using markdown formatting. Follow these guidelines:
+            Provide a comprehensive summary of the 'data' table in plain text format (NO markdown formatting). Follow these guidelines:
 
-            1. Use proper markdown headings (## for main sections, ### for subsections)
+            1. Use clear section headers with emojis (e.g., "📊 Dataset Overview", "📋 Column Details")
             2. Use bullet points (- ) for lists
-            3. Use bold (**) for important terms and numbers
+            3. Use plain text emphasis for important terms and numbers (no ** or __)
             4. Add line breaks between sections for readability
-            5. Format any code or SQL in backticks
-            6. Use tables where appropriate (| Header | Header |)
-            7. Include emojis at the start of main sections for visual appeal
+            5. Include emojis at the start of main sections for visual appeal
+            6. Write in a clear, professional tone without any markdown syntax
 
             Cover these sections:
 
-            ## 📊 Dataset Overview
+            📊 Dataset Overview
             - Data type and domain
             - Row/column count
             - Time range covered
             
-            ## 📋 Column Details
+            📋 Column Details
             - List key columns with their types
             - For important columns:
               - Number of unique values
               - Missing data percentage
               - Basic statistics
             
-            ## 🔍 Key Insights
+            🔍 Key Insights
             - 3 main patterns or relationships
             - Potential business questions
             
-            ## ⚡ Data Quality
+            ⚡ Data Quality
             - Completeness assessment
             - Major limitations
             - Duplications check
             
-            ## 📈 Recommended Analyses
+            📈 Recommended Analyses
             - 2-3 suggested next steps
             - Potential visualizations
 
             Use original column names and include specific metrics where relevant.
-            Make the response visually appealing and easy to read.
+            Make the response visually appealing and easy to read in plain text format.
 
             Column name mapping:
             {json.dumps(column_mapping, indent=2)}
@@ -239,12 +261,47 @@ class AgentServices:
             comprehensive_summary = self.agent_executor.invoke({"input": summary_prompt})["output"]
             if self.operation_cancelled_flag: return "Operation was canceled by user."
 
+            # Strip markdown formatting if present
+            comprehensive_summary = self._strip_markdown(comprehensive_summary)
+
             self.inferred_context = comprehensive_summary
             self.data_summary = comprehensive_summary
 
             return comprehensive_summary
         except Exception as e:
             return f"Error generating comprehensive summary: {str(e)}"
+
+    def _strip_markdown(self, text):
+        """Strip markdown formatting from text while preserving structure and readability."""
+        if not text:
+            return text
+        
+        # Remove markdown headers (##, ###, etc.)
+        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove bold formatting (**text** or __text__)
+        text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+        text = re.sub(r'__(.*?)__', r'\1', text)
+        
+        # Remove italic formatting (*text* or _text_)
+        text = re.sub(r'\*(.*?)\*', r'\1', text)
+        text = re.sub(r'_(.*?)_', r'\1', text)
+        
+        # Remove code formatting (`text`)
+        text = re.sub(r'`(.*?)`', r'\1', text)
+        
+        # Remove table formatting (| Header | Header |)
+        text = re.sub(r'^\|.*\|$', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\|[-:\s|]+\|$', '', text, flags=re.MULTILINE)
+        
+        # Remove link formatting [text](url)
+        text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+        
+        # Clean up extra whitespace
+        text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)
+        text = text.strip()
+        
+        return text
 
     def generate_pandas_code(self, question, query_category):
         """Generate pandas code using LLM based on query and category."""
@@ -682,7 +739,18 @@ except Exception as e:
         try:
             llm_prompt = f"""
 You are an expert data assistant. Categorize the following user query as one of: {', '.join(valid_categories)}.
+
 Query: "{question}"
+
+Guidelines for categorization:
+- SPECIFIC_DATA: Queries asking about specific data points, counts, rankings, or data context/summary (e.g., "what is this data about", "data summary", "how many", "which has the most", "data context")
+- GENERAL: General questions about data science concepts, not about the current dataset
+- VISUALIZATION: Requests for charts, graphs, plots, or visual representations
+- TRANSFORMATION: Requests to modify, clean, filter, or transform the data
+- TRANSLATION: Requests to translate data content
+- ANALYSIS: Requests for statistical analysis, correlations, patterns
+- MISSING_VALUES: Queries about null/empty values
+
 Only output the category name, nothing else.
 """
             llm_response = self.llm.invoke(llm_prompt)
@@ -711,7 +779,19 @@ Only output the category name, nothing else.
         ]):
             return "TRANSLATION"
         
-        # Check explicitly for duplicate removal requests first (higher priority)
+        # Check explicitly for data context/summary queries first (highest priority)
+        data_context_keywords = [
+            'what is this data about', 'what is the data about', 'data about',
+            'data context', 'data summary', 'summary of data', 'what does this data contain',
+            'what does the data show', 'what does this data represent'
+        ]
+        
+        for keyword in data_context_keywords:
+            if keyword in question_lower:
+                logger.debug(f"🔍 Detected data context keyword: '{keyword}' in query: '{question_lower}'")
+                return "SPECIFIC_DATA"
+        
+        # Check explicitly for duplicate removal requests (high priority)
         duplicate_keywords = [
             'remove duplicate', 'drop duplicate', 'deduplicate', 'deduplication',
             'delete duplicate', 'get rid of duplicate', 'eliminate duplicate', 
@@ -751,6 +831,11 @@ Only output the category name, nothing else.
         # Check for specific data queries (has highest priority after spreadsheet/translation/transformation)
         # These are queries about specific data points, rankings, etc.
         specific_data_patterns = [
+            # Patterns for data context and summary queries
+            r'what\s+is\s+(this|the)\s+data\s+about',
+            r'data\s+(context|summary|overview)',
+            r'summary\s+of\s+(data|the\s+data)',
+            r'what\s+does\s+(this|the)\s+data\s+(contain|show|represent)',
             # Patterns for queries about rankings, counts, etc.
             r'(which|what)\s+\w+\s+(has|have|had)\s+the\s+(most|highest|greatest|maximum|max|largest|best)',
             r'(which|what)\s+\w+\s+(has|have|had)\s+the\s+(least|lowest|smallest|minimum|min|worst)',
@@ -2328,6 +2413,13 @@ Keep the analysis concise but thorough, focusing on business value and practical
             - Limit results to top 10 rows unless otherwise specified
             - Use appropriate JOINs if needed (but only with the 'data' table)
             - Make column names readable in the results
+            
+            IMPORTANT: Include relevant context columns in your SELECT statement. For example:
+            - If asking about games, include name, developer, publisher, release_date, positive_ratings, negative_ratings
+            - If asking about ratings, include both positive and negative ratings for context
+            - If asking about sales/owners, include price and other relevant metrics
+            - Always include the primary identifier (name or appid) along with the specific metric being queried
+            
             Query:
             """
             # Get SQL query from LLM
@@ -2367,8 +2459,19 @@ Keep the analysis concise but thorough, focusing on business value and practical
                 
                 # Since we can't get structured data this way, let's use the agent executor
                 try:
-                    agent_response = self.agent_executor.invoke({"input": question})["output"]
-                    return agent_response
+                    enhanced_question = f"""
+                    Answer this question about the data: "{question}"
+                    
+                    IMPORTANT: When querying the data, include relevant context columns such as:
+                    - For games: name, developer, publisher, release_date, positive_ratings, negative_ratings
+                    - For ratings: both positive and negative ratings for comparison
+                    - For sales/owners: include price and other relevant metrics
+                    
+                    Provide a complete answer that includes all relevant context from the data.
+                    """
+                    agent_response = self.agent_executor.invoke({"input": enhanced_question})["output"]
+                    # Format the response to ensure it's contextual and helpful
+                    return self._format_sql_response(agent_response, question)
                 except Exception as agent_error:
                     logger.error(f"Error using agent executor: {str(agent_error)}")
                     return f"I encountered an error trying to query the data using the agent: {str(agent_error)}"
@@ -2405,8 +2508,19 @@ Keep the analysis concise but thorough, focusing on business value and practical
                     return result
                 else:
                     # Fall back to using the agent executor
-                    agent_response = self.agent_executor.invoke({"input": question})["output"]
-                    return agent_response
+                    enhanced_question = f"""
+                    Answer this question about the data: "{question}"
+                    
+                    IMPORTANT: When querying the data, include relevant context columns such as:
+                    - For games: name, developer, publisher, release_date, positive_ratings, negative_ratings
+                    - For ratings: both positive and negative ratings for comparison
+                    - For sales/owners: include price and other relevant metrics
+                    
+                    Provide a complete answer that includes all relevant context from the data.
+                    """
+                    agent_response = self.agent_executor.invoke({"input": enhanced_question})["output"]
+                    # Format the response to ensure it's contextual and helpful
+                    return self._format_sql_response(agent_response, question)
             
             # Check if we got any results
             if not rows:
@@ -2478,11 +2592,64 @@ Keep the analysis concise but thorough, focusing on business value and practical
             # Fall back to using the agent executor directly
             try:
                 logger.debug("Falling back to using the agent executor directly")
-                agent_response = self.agent_executor.invoke({"input": question})["output"]
-                return agent_response
+                enhanced_question = f"""
+                Answer this question about the data: "{question}"
+                
+                IMPORTANT: When querying the data, include relevant context columns such as:
+                - For games: name, developer, publisher, release_date, positive_ratings, negative_ratings
+                - For ratings: both positive and negative ratings for comparison
+                - For sales/owners: include price and other relevant metrics
+                
+                Provide a complete answer that includes all relevant context from the data.
+                """
+                agent_response = self.agent_executor.invoke({"input": enhanced_question})["output"]
+                # Format the response to ensure it's contextual and helpful
+                return self._format_sql_response(agent_response, question)
             except Exception as agent_error:
                 logger.error(f"Error using agent executor fallback: {str(agent_error)}")
                 return f"I encountered an error trying to query the data. Please try rephrasing your question."
+
+    def _format_sql_response(self, raw_response: str, question: str) -> str:
+        """
+        Format a raw SQL response into a proper, contextual answer.
+        
+        Args:
+            raw_response: The raw response from the SQL agent
+            question: The original user question
+            
+        Returns:
+            A properly formatted response with context and explanation
+        """
+        # If the response is already good (more than just a single word/value), return it
+        if len(raw_response.strip()) > 50 and not raw_response.strip().isupper():
+            return raw_response
+        
+        # If it's just a single value or very short response, enhance it
+        enhanced_prompt = f"""
+        The user asked: "{question}"
+        
+        The raw data result is: "{raw_response}"
+        
+        Please provide a complete, contextual answer that:
+        1. Directly answers the user's question
+        2. Explains what the result means
+        3. Provides relevant context and insights from the data
+        4. Uses proper sentences and formatting
+        5. Makes the response informative and helpful
+        6. If the data includes additional context (like developer, publisher, ratings, etc.), incorporate that information
+        7. Provide insights about what the data suggests or implies
+        
+        Do not mention that you're processing raw data or SQL results.
+        Just provide a natural, helpful answer that gives the user a complete understanding of the data.
+        """
+        
+        try:
+            enhanced_response = self.llm.invoke(enhanced_prompt).content.strip()
+            return enhanced_response
+        except Exception as e:
+            logger.error(f"Error enhancing SQL response: {str(e)}")
+            # Fallback to a basic enhancement
+            return f"Based on the data, {raw_response}. This represents the result for your query: '{question}'."
 
     def get_available_columns_for_extraction(self) -> Dict[str, any]:
         """

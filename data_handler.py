@@ -204,14 +204,32 @@ class DataHandler:
             print(f"  {col}: {missing} missing values")
         
         self.df = new_df
-        if self.engine:
-            # Since we're keeping original column names, just update directly
-            self.df.to_sql('data', self.engine, index=False, if_exists='replace')
-            # Update column mapping to reflect any new columns
-            if self.df is not None:
-                self.column_mapping = {col: col.strip() for col in self.df.columns}
-        else:
-            print("Warning: Engine not initialized. Cannot update database table.")
+        
+        # Create database engine if it doesn't exist
+        if not self.engine:
+            # Use a temporary database name for synthetic data if no filename is set
+            if not self._display_filename:
+                self._display_filename = f"synthetic_dataset_{int(time.time())}"
+            
+            db_file_name = f"temp_db_{self._display_filename.replace('.', '_').replace(' ', '_')}.db"
+            print(f"DEBUG: Creating new database engine for: {db_file_name}")
+            self.engine = create_engine(f'sqlite:///{db_file_name}', connect_args={'check_same_thread': False})
+        
+        # Update the SQL database
+        self.df.to_sql('data', self.engine, index=False, if_exists='replace')
+        
+        # Reinitialize the SQLAlchemy database object for LangChain
+        try:
+            self.db_sqlalchemy = SQLDatabase(self.engine)
+            print("DEBUG: Successfully reinitialized SQLAlchemy database object")
+        except Exception as e:
+            print(f"DEBUG: Error reinitializing SQLAlchemy database object: {str(e)}")
+            self.db_sqlalchemy = None
+        
+        # Update column mapping to reflect any new columns
+        if self.df is not None:
+            self.column_mapping = {col: col.strip() for col in self.df.columns}
+            print(f"DEBUG: Updated column mapping: {self.column_mapping}")
 
 
     def get_df(self):
