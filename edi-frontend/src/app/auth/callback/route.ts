@@ -20,10 +20,10 @@ export async function GET(request: NextRequest) {
           get(name: string) {
             return request.cookies.get(name)?.value
           },
-          set(name: string, value: string, options: any) {
-            redirectResponse.cookies.set(name, value, options)
+          set(name: string, value: string, options: unknown) {
+            redirectResponse.cookies.set(name, value, options as Parameters<typeof redirectResponse.cookies.set>[2])
           },
-          remove(name: string, options: any) {
+          remove(name: string) {
             redirectResponse.cookies.delete(name)
           },
         },

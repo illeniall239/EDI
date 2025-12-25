@@ -7,11 +7,30 @@ import pandas as pd
 import re
 import logging
 import settings
+
+# Supabase client for persistent memory
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+    print("[OK] Supabase import successful in agent_services.py")
+except ImportError as e:
+    SUPABASE_AVAILABLE = False
+    print(f"[ERROR] ImportError in agent_services.py: {str(e)}")
+    print("Warning: supabase-py not found. Install with 'pip install supabase' for persistent conversation memory.")
+except Exception as e:
+    SUPABASE_AVAILABLE = False
+    print(f"[ERROR] Unexpected error importing supabase: {str(e)}")
+    print("Warning: supabase import failed for unknown reason.")
 from langchain_community.agent_toolkits.sql.base import create_sql_agent
 from langchain.agents.agent_types import AgentType
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 from langchain_community.tools.sql_database.tool import QuerySQLDataBaseTool
-from langchain.memory import ConversationBufferMemory
+from langchain_core.chat_history import InMemoryChatMessageHistory
+try:
+    from langchain.memory import ConversationBufferMemory
+    LANGCHAIN_MEMORY_AVAILABLE = True
+except Exception:
+    LANGCHAIN_MEMORY_AVAILABLE = False
 # Import for Langchain Pandas Agent
 try:
     from langchain_experimental.agents.agent_toolkits.pandas.base import create_pandas_dataframe_agent
@@ -122,23 +141,67 @@ class AgentServices:
             os.makedirs(self.charts_dir, exist_ok=True)
 
         self.agent_executor = None
-        self.memory = ConversationBufferMemory(return_messages=True)
+        # Maintain low-level chat histories and wrap them with a ConversationBufferMemory
+        self.chat_history = InMemoryChatMessageHistory()
+        if LANGCHAIN_MEMORY_AVAILABLE:
+            self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, chat_memory=self.chat_history)
+        else:
+            # Fallback: keep history only (no true memory features)
+            self.memory = None
+        self.chat_histories = {}  # Map: chat_id -> InMemoryChatMessageHistory
+        self.current_chat_id = None  # Track current active chat
         self.inferred_context = None
         self.data_summary = None
         self.analysis_results = []
         self.visualizations = []
         self.data_handler = None
+        
+        # Initialize Supabase client for persistent memory
+        self.supabase_client = None
+        if SUPABASE_AVAILABLE:
+            try:
+                supabase_url = os.getenv('NEXT_PUBLIC_SUPABASE_URL')
+                supabase_key = os.getenv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+                logger.debug(f"🔍 Supabase URL from env: {supabase_url}")
+                logger.debug(f"🔍 Supabase key from env: {'***' + supabase_key[-10:] if supabase_key else None}")
+                
+                if supabase_url and supabase_key:
+                    self.supabase_client: Client = create_client(supabase_url, supabase_key)
+                    logger.info("✅ Supabase client initialized for persistent conversation memory")
+                else:
+                    logger.warning("⚠️ Supabase credentials not found in environment variables")
+                    logger.debug(f"URL present: {bool(supabase_url)}, Key present: {bool(supabase_key)}")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize Supabase client: {str(e)}")
+                self.supabase_client = None
+        else:
+            logger.warning("⚠️ Supabase not available - conversation memory will not persist across restarts")
 
     def initialize_agents(self, data_handler_instance):
         self.data_handler = data_handler_instance
         db_sqlalchemy = self.data_handler.get_db_sqlalchemy_object()
+        
+        # Initialize the data cleaning agent
+        self.data_cleaning_agent = DataCleaningAgent(self.llm)
+        
 
         if db_sqlalchemy and self.llm:
             toolkit = CustomSQLDatabaseToolkit(db=db_sqlalchemy, llm=self.llm)
             
             # Create a custom system message for better responses
-            system_message = """You are a helpful data analysis assistant. When answering questions about data:
+            system_message = """You are EDI.ai, a conversational AI assistant. You're naturally friendly, helpful, and enjoy chatting with users about any topic. 
 
+Your specialty is data analysis, but you can discuss anything the user wants to talk about. When the conversation turns to other topics, respond naturally and helpfully while occasionally mentioning your data expertise when relevant.
+
+Conversational Guidelines:
+- Respond to greetings warmly and naturally
+- Answer personal questions (how are you, who are you, etc.) in a friendly manner
+- Handle thanks graciously
+- Engage in small talk and casual conversation
+- Be personable and human-like in your responses
+- When appropriate, gently guide conversations toward data analysis opportunities
+
+When working with data:
 1. ALWAYS provide complete, contextual answers in natural language
 2. NEVER return just a single value or word - always explain what the data means
 3. Include relevant context and insights from the data
@@ -150,7 +213,7 @@ class AgentServices:
 9. Always provide a complete picture by including related data points
 10. Explain what the data suggests about trends, patterns, or insights
 
-Remember: Your goal is to help users understand their data, not just return raw values. Always provide the full context needed to understand the answer."""
+Remember: You're a helpful assistant who happens to excel at data analysis, not a rigid data-only machine. Be conversational, engaging, and helpful across all topics while showcasing your data expertise when relevant."""
             
             self.agent_executor = create_sql_agent(
                 llm=self.llm,
@@ -158,7 +221,7 @@ Remember: Your goal is to help users understand their data, not just return raw 
                 handle_parsing_errors=True,
                 verbose=True,
                 agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-                memory=self.memory,
+                memory=self.memory if self.memory else None,
                 return_intermediate_steps=True,  # This helps with debugging
                 agent_kwargs={"system_message": system_message}
             )
@@ -170,15 +233,147 @@ Remember: Your goal is to help users understand their data, not just return raw 
             else:
                 print("Warning: SQL Agent could not be initialized. Unknown issue.")
             self.agent_executor = None
-        self.memory.clear()
+        if self.memory:
+            self.memory.clear()
 
     def reset_state(self):
-        self.memory.clear()
+        if self.memory:
+            self.memory.clear()
         self.inferred_context = None
         self.data_summary = None
         self.analysis_results = []
         self.visualizations = []
         self.operation_cancelled_flag = False # Critical: reset cancellation flag
+        
+        # Clear all chat memories to prevent context contamination
+        self.chat_histories.clear()
+        self.current_chat_id = None
+        
+        # Force reinitialize LLM to clear any internal state/memory
+        if hasattr(self, 'llm') and self.llm:
+            print("🧹 Clearing LLM context for fresh synthetic dataset generation")
+            # The LLM will be reinitialized on next use, ensuring clean context
+
+    # NEW: Chat-specific memory management methods
+    def switch_chat_context(self, chat_id: str):
+        """Switch to specific chat's memory context with persistent loading from Supabase"""
+        logger.info(f"🔄 Switching to chat context: {chat_id}")
+        
+        # Save current chat state if we have one
+        if self.current_chat_id and self.chat_history:
+            logger.debug(f"💾 Saving context for previous chat: {self.current_chat_id}")
+            self.chat_histories[self.current_chat_id] = self.chat_history
+        
+        # Switch to new chat's memory or create new one
+        if chat_id in self.chat_histories:
+            # History already exists in current session
+            logger.debug(f"📥 Restoring context for chat: {chat_id}")
+            self.chat_history = self.chat_histories[chat_id]
+        else:
+            # Create new memory and load from Supabase if available
+            logger.debug(f"🆕 Creating new context for chat: {chat_id}")
+            self.chat_history = InMemoryChatMessageHistory()
+            
+            # PERSISTENT MEMORY: Load chat history from Supabase database
+            try:
+                chat_messages = self._load_chat_messages_from_supabase(chat_id)
+                if chat_messages:
+                    logger.info(f"📚 Populating memory with {len(chat_messages)} messages from database")
+                    for i, message in enumerate(chat_messages):
+                        role = message.get('role')
+                        content = message.get('content', '')
+                        logger.debug(f"📝 Loading message {i+1}: {role} -> {content[:50]}...")
+                        if role == 'user':
+                            self.chat_history.add_user_message(content)
+                        elif role == 'assistant':
+                            self.chat_history.add_ai_message(content)
+                    logger.info(f"✅ Successfully restored conversation context from database")
+                    logger.debug(f"🧠 Final memory state: {len(self.chat_history.messages)} messages total")
+                else:
+                    logger.debug(f"📭 No previous conversation history found for chat: {chat_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to load conversation history from database: {str(e)}")
+                logger.debug("🔄 Continuing with empty memory")
+            
+            self.chat_histories[chat_id] = self.chat_history
+        
+        # Update current chat reference
+        self.current_chat_id = chat_id
+        
+        # Update agent executor with new memory if initialized
+        if self.agent_executor and hasattr(self.agent_executor, 'memory') and LANGCHAIN_MEMORY_AVAILABLE:
+            # Re-wrap current chat_history in ConversationBufferMemory
+            self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, chat_memory=self.chat_history)
+            self.agent_executor.memory = self.memory
+            logger.debug(f"🔧 Updated agent executor memory for chat: {chat_id}")
+    
+    def clear_chat_context(self, chat_id: str):
+        """Clear specific chat's context"""
+        logger.info(f"🗑️ Clearing context for chat: {chat_id}")
+        
+        if chat_id in self.chat_histories:
+            self.chat_histories[chat_id].clear()
+            del self.chat_histories[chat_id]
+        
+        # If this was the current chat, reset to default memory
+        if self.current_chat_id == chat_id:
+            self.chat_history = InMemoryChatMessageHistory()
+            self.current_chat_id = None
+            if self.agent_executor and hasattr(self.agent_executor, 'memory') and LANGCHAIN_MEMORY_AVAILABLE:
+                self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, chat_memory=self.chat_history)
+                self.agent_executor.memory = self.memory
+
+    def _get_conversation_context_string(self, max_messages: int = 6) -> str:
+        """Get formatted conversation context for LLM prompts"""
+        logger.debug(f"🔍 Getting conversation context...")
+        logger.debug(f"🔍 Memory exists: {self.memory is not None}")
+        logger.debug(f"🔍 Memory exists and has messages: {bool(self.memory and hasattr(self.memory, 'chat_memory'))}")
+        logger.debug(f"🔍 Messages count: {len(self.memory.chat_memory.messages) if self.memory and hasattr(self.memory, 'chat_memory') else 0}")
+        
+        if not self.memory or not self.memory.chat_memory.messages:
+            logger.debug("🔍 No memory or messages available for context")
+            return ""
+        
+        recent_messages = self.memory.chat_memory.messages[-max_messages:] if len(self.memory.chat_memory.messages) > 0 else []
+        if not recent_messages:
+            logger.debug("🔍 No recent messages found")
+            return ""
+        
+        logger.debug(f"🔍 Building context from {len(recent_messages)} recent messages")
+        context_str = "Recent conversation context:\n"
+        for i, msg in enumerate(recent_messages[-4:]):  # Show last 4 messages max
+            role = "User" if msg.type == "human" else "Assistant"
+            content = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
+            context_str += f"{role}: {content}\n"
+            logger.debug(f"🔍 Context message {i+1}: {role} -> {content}")
+        
+        final_context = context_str + "\n"
+        logger.debug(f"🔍 Final context string: {repr(final_context)}")
+        return final_context
+
+    def _load_chat_messages_from_supabase(self, chat_id: str) -> list:
+        """Load chat messages from Supabase database for the given chat_id"""
+        if not self.supabase_client:
+            logger.warning("⚠️ Supabase client not available - cannot load chat history")
+            return []
+        
+        try:
+            logger.debug(f"📥 Loading chat messages from Supabase for chat_id: {chat_id}")
+            
+            # Query the chats table for messages
+            response = self.supabase_client.table('chats').select('messages').eq('id', chat_id).single().execute()
+            
+            if response.data and response.data.get('messages'):
+                messages = response.data['messages']
+                logger.info(f"✅ Loaded {len(messages)} messages from Supabase for chat: {chat_id}")
+                return messages
+            else:
+                logger.debug(f"📭 No messages found in Supabase for chat: {chat_id}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to load chat messages from Supabase: {str(e)}")
+            return []
 
     def cancel_operation(self):
         print("AgentServices: Cancel operation requested.")
@@ -204,104 +399,6 @@ Remember: Your goal is to help users understand their data, not just return raw 
         """
         return self.llm.invoke(prompt).content.strip()
 
-    def generate_comprehensive_data_summary(self):
-        if self.operation_cancelled_flag: return "Operation was canceled by user."
-        if self.agent_executor is None or self.data_handler is None or self.data_handler.get_db_sqlalchemy_object() is None:
-            return "Data or agent not loaded yet for summary generation."
-
-        column_mapping = self.data_handler.get_column_mapping()
-        if column_mapping is None:
-            return "Column mapping not available for summary generation."
-
-        try:
-            summary_prompt = f"""
-            Provide a comprehensive summary of the 'data' table in plain text format (NO markdown formatting). Follow these guidelines:
-
-            1. Use clear section headers with emojis (e.g., "📊 Dataset Overview", "📋 Column Details")
-            2. Use bullet points (- ) for lists
-            3. Use plain text emphasis for important terms and numbers (no ** or __)
-            4. Add line breaks between sections for readability
-            5. Include emojis at the start of main sections for visual appeal
-            6. Write in a clear, professional tone without any markdown syntax
-
-            Cover these sections:
-
-            📊 Dataset Overview
-            - Data type and domain
-            - Row/column count
-            - Time range covered
-            
-            📋 Column Details
-            - List key columns with their types
-            - For important columns:
-              - Number of unique values
-              - Missing data percentage
-              - Basic statistics
-            
-            🔍 Key Insights
-            - 3 main patterns or relationships
-            - Potential business questions
-            
-            ⚡ Data Quality
-            - Completeness assessment
-            - Major limitations
-            - Duplications check
-            
-            📈 Recommended Analyses
-            - 2-3 suggested next steps
-            - Potential visualizations
-
-            Use original column names and include specific metrics where relevant.
-            Make the response visually appealing and easy to read in plain text format.
-
-            Column name mapping:
-            {json.dumps(column_mapping, indent=2)}
-            """
-            if self.operation_cancelled_flag: return "Operation was canceled by user."
-            comprehensive_summary = self.agent_executor.invoke({"input": summary_prompt})["output"]
-            if self.operation_cancelled_flag: return "Operation was canceled by user."
-
-            # Strip markdown formatting if present
-            comprehensive_summary = self._strip_markdown(comprehensive_summary)
-
-            self.inferred_context = comprehensive_summary
-            self.data_summary = comprehensive_summary
-
-            return comprehensive_summary
-        except Exception as e:
-            return f"Error generating comprehensive summary: {str(e)}"
-
-    def _strip_markdown(self, text):
-        """Strip markdown formatting from text while preserving structure and readability."""
-        if not text:
-            return text
-        
-        # Remove markdown headers (##, ###, etc.)
-        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-        
-        # Remove bold formatting (**text** or __text__)
-        text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-        text = re.sub(r'__(.*?)__', r'\1', text)
-        
-        # Remove italic formatting (*text* or _text_)
-        text = re.sub(r'\*(.*?)\*', r'\1', text)
-        text = re.sub(r'_(.*?)_', r'\1', text)
-        
-        # Remove code formatting (`text`)
-        text = re.sub(r'`(.*?)`', r'\1', text)
-        
-        # Remove table formatting (| Header | Header |)
-        text = re.sub(r'^\|.*\|$', '', text, flags=re.MULTILINE)
-        text = re.sub(r'^\|[-:\s|]+\|$', '', text, flags=re.MULTILINE)
-        
-        # Remove link formatting [text](url)
-        text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-        
-        # Clean up extra whitespace
-        text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)
-        text = text.strip()
-        
-        return text
 
     def generate_pandas_code(self, question, query_category):
         """Generate pandas code using LLM based on query and category."""
@@ -309,11 +406,11 @@ Remember: Your goal is to help users understand their data, not just return raw 
         
         if self.operation_cancelled_flag:
             logger.info("Operation cancelled flag detected in generate_pandas_code")
-            return None, "Operation was canceled by user."
+            return None, "I've stopped processing that request as you requested."
         
         if self.data_handler.get_df() is None:
             logger.error("No DataFrame available in data_handler")
-            return None, "No data loaded to process."
+            return None, "I need some data to work with first. Please upload a dataset."
 
         try:
             column_mapping = self.data_handler.get_column_mapping()
@@ -399,10 +496,10 @@ except Exception as e:
 """
             try:
                 if self.operation_cancelled_flag: 
-                    return None, "Operation was canceled by user."
+                    return None, "I've stopped processing that request as you requested."
                 response = self.llm.invoke(prompt).content.strip()
                 if self.operation_cancelled_flag: 
-                    return None, "Operation was canceled by user."
+                    return None, "I've stopped processing that request as you requested."
 
                 code_match = re.search(r"```(?:python)?\s*(.*?)```", response, re.DOTALL) or \
                             re.search(r"'''(?:python)?\s*(.*?)'''", response, re.DOTALL)
@@ -472,7 +569,7 @@ except Exception as e:
         
         if self.operation_cancelled_flag:
             logger.info("Operation cancelled flag detected in safe_execute_pandas_code")
-            return None, "Operation was canceled by user."
+            return None, "I've stopped processing that request as you requested."
         
         if not code:
             logger.error("No code provided for execution")
@@ -526,7 +623,7 @@ except Exception as e:
             
             if self.operation_cancelled_flag:
                 logger.info("Operation cancelled during code execution")
-                return None, "Operation was canceled by user."
+                return None, "I've stopped processing that request as you requested."
             
             execution_result = safe_locals.get('result')
             logger.debug(f"Execution result type: {type(execution_result)}")
@@ -704,7 +801,22 @@ except Exception as e:
             logger.exception("Overall error in _save_plotly_figure")
             return None, f"Error saving Plotly figure: {str(e_main)}"
 
-    def categorize_query(self, question: str) -> str:
+    def categorize_query(self, question: str) -> tuple[str, int]:
+        """Categorize the query and return confidence score"""
+        logger.info(f"🔍 === CATEGORIZING QUERY ===")
+        logger.info(f"📝 Input: '{question}'")
+        
+        # Get basic categorization first
+        logger.info(f"🎯 Running basic categorization...")
+        initial_category = self._categorize_query_basic(question)
+        logger.info(f"🎯 Basic categorization result: {initial_category}")
+        
+        # Return basic categorization directly (clarification system removed)
+        default_confidence = 70
+        logger.info(f"📊 Returning basic categorization: {initial_category} with default {default_confidence}% confidence")
+        return initial_category, default_confidence
+    
+    def _categorize_query_basic(self, question: str) -> str:
         """Categorize the query to determine the appropriate processing method"""
         question_lower = question.lower()
 
@@ -730,10 +842,26 @@ except Exception as e:
         except Exception as e:
             logger.error(f"LLM missing values detection failed: {str(e)}")
 
+        # --- Pattern-based pre-filtering for critical categories ---
+        question_lower = question.lower()
+        
+        # Force DUPLICATE_CHECK for any duplicate-related query
+        duplicate_keywords = ['duplicate', 'duplicates', 'deduplicate', 'deduplication']
+        duplicate_patterns = [
+            r'are there.*duplicate', r'any.*duplicate', r'check.*duplicate', r'find.*duplicate',
+            r'remove.*duplicate', r'delete.*duplicate', r'drop.*duplicate', r'eliminate.*duplicate'
+        ]
+        
+        if (any(keyword in question_lower for keyword in duplicate_keywords) or 
+            any(re.search(pattern, question_lower) for pattern in duplicate_patterns)):
+            logger.info(f"Pre-filtered as DUPLICATE_CHECK: {question}")
+            return "DUPLICATE_CHECK"
+
         # --- LLM-based categorization first ---
+        logger.info(f"🤖 Running LLM-based categorization...")
         valid_categories = [
-            'SPECIFIC_DATA', 'GENERAL', 'TRANSFORMATION', 'VISUALIZATION', 
-            'TRANSLATION', 'ANALYSIS', 'MISSING_VALUES'
+            'SPECIFIC_DATA', 'GENERAL', 'VISUALIZATION', 
+            'TRANSLATION', 'ANALYSIS', 'MISSING_VALUES', 'DUPLICATE_CHECK', 'SPREADSHEET_COMMAND', 'JUNK_DETECTION'
         ]
         
         try:
@@ -743,20 +871,31 @@ You are an expert data assistant. Categorize the following user query as one of:
 Query: "{question}"
 
 Guidelines for categorization:
+- SPREADSHEET_COMMAND: Requests to format cells, adjust columns, sort data, or perform spreadsheet operations (e.g., "make A2 bold", "autofit columns", "sort ascending", "sort descending", "widen column", "set cell color", "make cell italic", "resize column").
 - SPECIFIC_DATA: Queries asking about specific data points, counts, rankings, or data context/summary (e.g., "what is this data about", "data summary", "how many", "which has the most", "data context")
 - GENERAL: General questions about data science concepts, not about the current dataset
 - VISUALIZATION: Requests for charts, graphs, plots, or visual representations
-- TRANSFORMATION: Requests to modify, clean, filter, or transform the data
+- DUPLICATE_CHECK: ALL queries about checking for OR removing duplicate rows (e.g., "are there duplicates", "remove duplicates", "check for duplicates", "delete duplicates", "find duplicates", "drop duplicates", "deduplicate", "how many duplicates"). This includes BOTH checking AND removal operations.
 - TRANSLATION: Requests to translate data content
 - ANALYSIS: Requests for statistical analysis, correlations, patterns
 - MISSING_VALUES: Queries about null/empty values
+- JUNK_DETECTION: Requests to find, identify, flag, or clean junk/spam/meaningless responses in text columns (e.g., "find junk responses", "detect spam", "identify meaningless text", "flag gibberish", "clean bad responses", "add junk column")
+
+IMPORTANT: Any query containing words like "duplicate", "duplicates", "deduplicate" should ALWAYS be categorized as DUPLICATE_CHECK, never SPREADSHEET_COMMAND.
 
 Only output the category name, nothing else.
 """
+            logger.info(f"🤖 Sending query to LLM for categorization...")
+            logger.info(f"🤖 LLM Prompt: {llm_prompt}")
+            
             llm_response = self.llm.invoke(llm_prompt)
+            logger.info(f"🤖 LLM Raw response: '{llm_response.content}'")
+            
             category = llm_response.content.strip().upper()
+            logger.info(f"🤖 LLM Parsed category: '{category}'")
+            
             if category in valid_categories:
-                logger.info(f"LLM categorized query as: {category}")
+                logger.info(f"✅ LLM successfully categorized query as: {category}")
                 return category
             else:
                 logger.info(f"LLM categorization uncertain or invalid ('{category}'), falling back to pattern-based categorization.")
@@ -767,7 +906,9 @@ Only output the category name, nothing else.
         # First check for spreadsheet formatting commands
         if any(keyword in question_lower for keyword in [
             'bold', 'italic', 'underline', 'cell format', 'make cell', 'set cell',
-            'font color', 'background color', 'cell color', 'highlight'
+            'font color', 'background color', 'cell color', 'highlight',
+            'autofit', 'auto fit', 'fit columns', 'column width', 'resize column',
+            'widen column', 'narrow column', 'adjust column', 'make column'
         ]):
             return "SPREADSHEET_COMMAND"
         
@@ -812,21 +953,14 @@ Only output the category name, nothing else.
         for keyword in duplicate_keywords:
             if keyword in question_lower:
                 logger.debug(f"🔍 Detected duplicate removal keyword: '{keyword}' in query: '{question_lower}'")
-                return "TRANSFORMATION"
+                return "DUPLICATE_CHECK"
                 
         # Check for question pattern matches
         for pattern in duplicate_patterns:
             if re.search(pattern, question_lower):
                 logger.debug(f"🔍 Detected duplicate removal pattern: '{pattern}' in query: '{question_lower}'")
-                return "TRANSFORMATION"
+                return "DUPLICATE_CHECK"
         
-        # Check for other data transformation requests
-        if any(keyword in question_lower for keyword in [
-            'filter', 'sort', 'group', 'aggregate', 'pivot', 'transform',
-            'clean', 'merge', 'join', 'split', 'convert', 'format data',
-            'normalize', 'fill missing'
-        ]):
-            return "TRANSFORMATION"
             
         # Check for specific data queries (has highest priority after spreadsheet/translation/transformation)
         # These are queries about specific data points, rankings, etc.
@@ -894,141 +1028,14 @@ Only output the category name, nothing else.
         return "GENERAL"
 
     def process_spreadsheet_command(self, question: str) -> str:
-        """Process spreadsheet formatting commands and return Luckysheet API calls or formulas"""
-        if not self.llm:
-            return "LLM not available for processing spreadsheet commands."
+        """DEPRECATED: Spreadsheet operations now handled by Univer frontend.
 
-        # --- Formula Detection and Prompt ---
-        formula_keywords = [
-            "formula", "sum", "average", "vlookup", "if(", "count", "min", "max", "lookup", "match", "index", "concatenate", "concat", "split", "left(", "right(", "mid(", "total", "add up", "subtract", "divide", "multiply"
-        ]
-        if any(word in question.lower() for word in formula_keywords):
-            # Enhanced prompt with data-aware analysis
-            prompt = f'''
-You are an expert spreadsheet assistant. Given a user's natural language request, generate the correct spreadsheet formula for the specified cell.
-
-CRITICAL: When dealing with text extraction (like extracting first word, splitting text, etc.), you MUST analyze the actual data structure to determine the correct delimiter. DO NOT assume spaces are the separator.
-
-- Use Excel/Google Sheets formula syntax (e.g., =SUM(B1:B5)).
-- Do NOT include any explanation, just output the formula.
-- If the user specifies a cell, generate the formula for that cell.
-- If the user says "sum all values above", assume the cell is e.g. B6 and sum B1:B5.
-- If the user says "vlookup the name in A2 from the table in D:F", generate the correct VLOOKUP formula.
-- If the user says "average of column C", generate =AVERAGE(C:C).
-- If the user says "if value in B2 is greater than 10, show 'High', else 'Low'", generate =IF(B2>10, "High", "Low").
-- If the user says "count all non-empty cells in column A", generate =COUNTA(A:A).
-- If the user says "sum values in C2 to C10", generate =SUM(C2:C10).
-- If the user says "find the maximum in range D1:D20", generate =MAX(D1:D20).
-
-FOR TEXT EXTRACTION (extracting first word, splitting text, etc.):
-- First analyze the data to determine the actual delimiter (could be space, colon, comma, semicolon, pipe, etc.)
-- For "extract first word" from data like "windows:mac:linux", use =LEFT(G2,FIND(":",G2)-1) NOT =LEFT(G2,FIND(" ",G2)-1)
-- For "extract first word" from data like "apple,orange,banana", use =LEFT(G2,FIND(",",G2)-1)
-- For "extract first word" from data like "hello world test", use =LEFT(G2,FIND(" ",G2)-1)
-- Handle cases where delimiter might not exist with IFERROR: =IFERROR(LEFT(G2,FIND(":",G2)-1),G2)
-
-USER REQUEST: {question}
-
-ONLY output the formula, nothing else.
-'''
-            try:
-                response = self.llm.invoke(prompt)
-                formula = response.content.strip()
-                logger.info(f"Generated formula: {formula}")
-                return formula
-            except Exception as e:
-                logger.error(f"Error generating formula: {str(e)}")
-                return f"Error processing formula request: {str(e)}"
-
-        # --- Existing formatting/width logic below ---
-        # Check for autofit command first
-        if any(phrase in question.lower() for phrase in ["autofit", "auto fit", "fit columns", "fit all columns"]):
-            return "luckysheet.autoFitColumns()"
-        
-        # Check for column width adjustment commands
-        column_width_match = re.search(r'(?:make|set|adjust)\s+column\s+([A-Za-z]+)\s+(wider|narrower|wide|narrow)', question.lower())
-        if column_width_match:
-            column_letter = column_width_match.group(1).upper()
-            width_action = column_width_match.group(2)
-            
-            # Convert column letter to index (0-based)
-            column_index = ord(column_letter) - 65  # A=0, B=1, etc.
-            
-            # Determine width based on action
-            width = 200 if width_action in ["wider", "wide"] else 100
-            
-            # Use double quotes for JSON compatibility
-            json_obj = {str(column_index): width}
-            return f'luckysheet.setColumnWidth({json.dumps(json_obj)})'
-            
-        prompt = f"""
-        You are a spreadsheet expert who translates natural language commands into Luckysheet API calls.
-        
-        USER COMMAND: {question}
-        
-        Analyze the command and determine:
-        1. Which cell(s) to modify (e.g., A1, B5:C7)
-        2. What formatting or action to apply (e.g., bold, italic, color, width)
-        
-        Then provide ONLY the exact Luckysheet API call needed to execute this command.
-        
-        IMPORTANT: Use DOUBLE QUOTES for all strings and JSON properties, not single quotes, to ensure JSON compatibility.
-        
-        Available Luckysheet API methods:
-        - For bold: luckysheet.setCellFormat(row, column, "bl", 1)
-        - For italic: luckysheet.setCellFormat(row, column, "it", 1)
-        - For underline: luckysheet.setCellFormat(row, column, "ul", 1)
-        - For background color: luckysheet.setCellFormat(row, column, "bg", "colorValue")
-        - For font color: luckysheet.setCellFormat(row, column, "fc", "colorValue")
-        - For column width: luckysheet.setColumnWidth({{"columnIndex": width}})
-        - For auto-fitting columns: luckysheet.autoFitColumns()
-        
-        Color values should be standard CSS color names (e.g., "blue", "red", "green") or hex codes.
-        Column indices are 0-based (A=0, B=1, etc.)
-        
-        Example commands and responses:
-        Q: Make cell A1 bold
-        A: luckysheet.setCellFormat(0, 0, "bl", 1)
-        
-        Q: Set background color of B2 to blue
-        A: luckysheet.setCellFormat(1, 1, "bg", "blue")
-        
-        Q: Change font color of C3 to red
-        A: luckysheet.setCellFormat(2, 2, "fc", "red")
-        
-        Q: Make cell D4 underlined
-        A: luckysheet.setCellFormat(3, 3, "ul", 1)
-        
-        Q: Make column B wider
-        A: luckysheet.setColumnWidth({{"1": 200}})
-        
-        Q: Make column C narrow
-        A: luckysheet.setColumnWidth({{"2": 100}})
-        
-        Q: Auto-fit all columns
-        A: luckysheet.autoFitColumns()
-        
-        Respond with ONLY the API call, no additional text or explanation.
+        This method previously generated Luckysheet API calls but has been disabled
+        as all spreadsheet operations now execute directly through the Univer FacadeAPI
+        on the frontend via UniverAdapter.
         """
-        
-        try:
-            response = self.llm.invoke(prompt)
-            api_call = response.content.strip()
-            
-            # Ensure column width commands use proper JSON format
-            if "setColumnWidth" in api_call:
-                # Look for patterns like {1: 200} and convert to {"1": 200}
-                api_call = re.sub(r'\{(\d+):\s*(\d+)\}', r'{"\1": \2}', api_call)
-            
-            # Replace any remaining single quotes with double quotes for JSON compatibility
-            api_call = api_call.replace("'", '"')
-            
-            logger.info(f"Generated Luckysheet API call: {api_call}")
-            return api_call
-            
-        except Exception as e:
-            logger.error(f"Error generating Luckysheet API call: {str(e)}")
-            return f"Error processing spreadsheet command: {str(e)}"
+        logger.info("process_spreadsheet_command called but is deprecated - operations now use Univer")
+        return "Spreadsheet operations are now handled directly by the Univer frontend. This endpoint is deprecated."
 
     def _process_missing_values(self, question: str, df: pd.DataFrame) -> str:
         """
@@ -1113,19 +1120,21 @@ ONLY output the formula, nothing else.
 
         except Exception as e:
             logger.error(f"❌ Error processing missing values: {str(e)}")
-            return f"I encountered an error while processing missing values: {str(e)}"
+            return "I had trouble analyzing the missing values in your data. Could you try rephrasing your question or check if your data is properly formatted?"
 
-    def process_non_visualization_query(self, question: str, query_category: str, is_speech: bool = False) -> str:
+    def process_non_visualization_query(self, question: str, query_category: str, is_speech: bool = False, mode: str = "simple") -> str:
         """Process non-visualization queries with improved error handling."""
         logger.debug(f"🔧 === PROCESS NON-VISUALIZATION QUERY ===")
         logger.debug(f"💬 Question: {question}")
         logger.debug(f"📂 Category: {query_category}")
         
         if self.operation_cancelled_flag:
-            return "Operation was canceled by user."
+            return "I've stopped processing that request as you requested."
 
         # Add user message to memory
-        self.memory.chat_memory.add_user_message(question)
+        # Record user message in chat history
+        if hasattr(self, 'chat_history') and self.chat_history:
+            self.chat_history.add_user_message(question)
 
         # Handle speech confirmation if needed
         if is_speech and self.speech_util:
@@ -1133,7 +1142,7 @@ ONLY output the formula, nothing else.
             self.speech_util.text_to_speech(confirmation)
             print(confirmation)
             if self.operation_cancelled_flag:
-                return "Operation was canceled by user."
+                return "I've stopped processing that request as you requested."
 
         # Get current dataframe
         current_df = self.data_handler.get_df() if self.data_handler else None
@@ -1142,112 +1151,129 @@ ONLY output the formula, nothing else.
             # Missing values are now handled in main process_query - no duplicate handling needed here
 
             # Process based on query category
-            if query_category == 'SPECIFIC_DATA':
-                if self.data_handler is None or self.data_handler.get_db_sqlalchemy_object() is None:
-                    return "Database not available. Please load data first."
-                
+            if query_category in ['SPECIFIC_DATA', 'ANALYSIS']:
                 if self.operation_cancelled_flag:
-                    return "Operation was canceled by user."
+                    return "I've stopped processing that request as you requested."
 
-                if any(phrase in question.lower() for phrase in ["data context", "data about", "data summary", "summary of data"]):
-                    comprehensive_summary = self.generate_comprehensive_data_summary()
-                    if self.operation_cancelled_flag:
-                        return "Operation was canceled by user."
-                    
-                    self.memory.chat_memory.add_ai_message(comprehensive_summary)
-                    self.analysis_results.append({"question": question, "answer": comprehensive_summary})
-                    return comprehensive_summary
+                # CONTEXT-AWARE PROCESSING: Check if query is about conversation vs dataset FIRST
+                conversation_context = self._get_conversation_context_string()
+                logger.debug(f"🔍 Conversation context being passed to LLM: {repr(conversation_context)}")
+                
+                # Use LLM to determine if this is about conversation context or dataset
+                context_check_prompt = f"""You must analyze this user query and respond in exactly one of two ways:
 
-                # Use direct SQL execution to avoid parsing errors
+{conversation_context}User question: "{question}"
+
+RESPOND WITH EXACTLY ONE OF THESE:
+
+1. If the question asks about information from our conversation history above, give a direct helpful answer to the user. Examples:
+   - If they ask "what is my name?" and you see "my name is John" in history → "Your name is John"
+   - If they ask "what did I tell you?" and you see relevant info → summarize what they told you
+   - If they ask about their name but no name was shared → "I don't see you mentioning your name in our conversation yet. What would you like me to call you?"
+
+2. If the question is about dataset analysis, data queries, charts, or database operations → respond with exactly: "DATASET_QUERY"
+
+CRITICAL: Your response will be shown directly to the user. Do NOT include meta-commentary, analysis, or explanations. Give either:
+- A direct, helpful user-facing answer from conversation history, OR  
+- Exactly "DATASET_QUERY"
+
+No other format is acceptable."""
+
                 try:
-                    logger.debug("🔧 Using direct SQL execution for SPECIFIC_DATA query...")
-                    response = self._execute_sql_query_directly(question)
-                    logger.debug(f"✅ Direct SQL execution completed: {response}")
+                    context_response = self.llm.invoke(context_check_prompt)
+                    response_content = context_response.content.strip()
+                    logger.debug(f"🤖 LLM context check response: {repr(response_content)}")
                     
-                    # Add the response to memory
-                    self.memory.chat_memory.add_ai_message(response)
-                    return response
+                    if response_content == "DATASET_QUERY":
+                        # This is clearly a dataset query, proceed to database
+                        logger.debug("📊 Query classified as dataset query, proceeding to database")
+                    elif "DATASET_QUERY" in response_content:
+                        # LLM included DATASET_QUERY but with extra text - treat as dataset query
+                        logger.debug("📊 Query contains DATASET_QUERY, treating as dataset query")
+                    else:
+                        # This should be a conversation-based response - validate it's user-friendly
+                        if len(response_content) > 0 and not any(phrase in response_content.lower() for phrase in 
+                            ["analyze", "determine", "the user asked", "look in", "check conversation"]):
+                            # Looks like a proper user-facing response
+                            logger.debug("🧠 Query answered from conversation context")
+                            return response_content
+                        else:
+                            # LLM gave diagnostic text instead of user response - provide fallback
+                            logger.warning(f"⚠️ LLM gave diagnostic response instead of user-facing answer: {response_content}")
+                            return "I'm not sure I understand your question. Could you please rephrase it?"
                     
+                    # If we reach here, it's a dataset query - check database availability and proceed
+                    logger.debug(f"🔍 Dataset query detected, checking data handler state...")
+                    logger.debug(f"🔍 self.data_handler is None: {self.data_handler is None}")
+                    if self.data_handler is not None:
+                        db_obj = self.data_handler.get_db_sqlalchemy_object()
+                        logger.debug(f"🔍 get_db_sqlalchemy_object() is None: {db_obj is None}")
+                        df = self.data_handler.get_df()
+                        logger.debug(f"🔍 get_df() is None: {df is None}")
+                        if df is not None:
+                            logger.debug(f"🔍 DataFrame shape: {df.shape}")
+                    
+                    if self.data_handler is None or self.data_handler.get_db_sqlalchemy_object() is None:
+                        logger.error("❌ Database not available - data_handler or db_sqlalchemy_object is None")
+                        return "I need some data to work with first. Could you please upload a dataset so I can help analyze it?"
+                    
+                    # Execute dataset query based on mode
+                    if mode.lower() == "simple":
+                        logger.debug("🔧 Using SIMPLE mode - direct SQL execution...")
+                        response = self._execute_sql_query_directly(question)
+                        logger.debug(f"✅ Simple mode execution completed: {response}")
+                        # Apply enhanced template formatting to Simple mode as well
+                        return self._format_sql_response(response, question)
+                    else:  # complex mode
+                        logger.debug("🔧 Using COMPLEX mode - agent executor...")
+                        try:
+                            enhanced_question = f"""
+                            Answer this question about the data: "{question}"
+                            
+                            IMPORTANT: When querying the data, include relevant context columns and provide comprehensive analysis.
+                            """
+                            agent_response = self.agent_executor.invoke({"input": enhanced_question})["output"]
+                            logger.debug(f"✅ Complex mode execution completed: {agent_response}")
+                            return self._format_sql_response(agent_response, question)
+                        except Exception as agent_error:
+                            logger.error(f"❌ Complex mode failed: {str(agent_error)}")
+                            return "I had trouble with the complex analysis. You might want to try Simple mode or rephrase your question."
+                        
                 except Exception as sql_error:
-                    logger.error(f"❌ Direct SQL execution error: {str(sql_error)}")
-                    return "I encountered an issue processing your data query. Please try rephrasing your question in a simpler way."
+                    logger.error(f"❌ Error in context-aware processing: {str(sql_error)}")
+                    return "I had some trouble with that request. Could you try asking in a different way or let me know more about what you're looking for?"
 
             elif query_category == 'GENERAL_DATA_SCIENCE':
                 if self.operation_cancelled_flag:
-                    return "Operation was canceled by user."
+                    return "I've stopped processing that request as you requested."
 
                 data_science_prompt = f"As an expert in data science, answer the following question concisely, focusing on key concepts and practical advice. If the question is too broad, provide a high-level overview and suggest ways to narrow it down. Do not exceed 4-5 sentences. Question: {question}"
                 response_content = self.llm.invoke(data_science_prompt)
                 response = response_content.content.strip()
 
                 if self.operation_cancelled_flag:
-                    return "Operation was canceled by user."
+                    return "I've stopped processing that request as you requested."
 
                 return response
 
-            elif query_category == "TRANSFORMATION":
-                # Handle duplicate removal specifically
-                if any(phrase in question.lower() for phrase in [
-                    'remove duplicate', 'drop duplicate', 'deduplicate', 'deduplication',
-                    'delete duplicate', 'get rid of duplicate', 'eliminate duplicate', 
-                    'unique rows', 'remove duplicates', 'drop duplicates'
-                ]):
-                    logger.info("Processing as duplicate removal request within process_non_visualization_query")
-                    print("🧹 === PROCESSING DUPLICATE REMOVAL REQUEST (in non-viz) ===")
-                    print(f"💬 Query: {question}")
-                    
-                    if current_df is not None:
-                        print(f"📊 Initial DataFrame shape: {current_df.shape}")
-                        response = self._process_duplicate_removal(question, current_df)
-                        updated_df = self.data_handler.get_df()
-                        if updated_df is not None:
-                            print(f"📊 Updated DataFrame shape: {updated_df.shape}")
-                            print(f"🧹 Rows removed: {len(current_df) - len(updated_df)}")
-                        return response
-                    else:
-                        return "No data loaded for duplicate removal."
-                else:
-                    # Other transformation requests handled with generated code
-                    if self.operation_cancelled_flag:
-                        return "Operation was canceled by user."
-
-                    if current_df is None:
-                        return "No data loaded for processing."
-
-                    code, error = self.generate_pandas_code(question, query_category)
-                    if self.operation_cancelled_flag:
-                        return "Operation was canceled by user."
-
-                    if error:
-                        return error
-
-                    modified_df, exec_message = self.safe_execute_pandas_code(code, query_category)
-                    if self.operation_cancelled_flag:
-                        return "Operation was canceled by user."
-
-                    if isinstance(modified_df, pd.DataFrame):
-                        self.data_handler.update_df_and_db(modified_df)
-                        return f"Data transformation successful. The dataset now contains {len(modified_df)} rows."
-                    else:
-                        return exec_message or "Failed to transform data after attempts."
 
             elif query_category in ['DATA_CLEANING', 'FILTER_DATA']:
                 if self.operation_cancelled_flag:
-                    return "Operation was canceled by user."
+                    return "I've stopped processing that request as you requested."
 
                 if current_df is None:
-                    return "No data loaded for processing."
+                    return "I need some data to work with first. Please upload a dataset so I can help with data processing."
 
                 code, error = self.generate_pandas_code(question, query_category)
                 if self.operation_cancelled_flag:
-                    return "Operation was canceled by user."
+                    return "I've stopped processing that request as you requested."
 
                 if error:
                     return error
 
                 modified_df, exec_message = self.safe_execute_pandas_code(code, query_category)
                 if self.operation_cancelled_flag:
-                    return "Operation was canceled by user."
+                    return "I've stopped processing that request as you requested."
 
                 if isinstance(modified_df, pd.DataFrame):
                     self.data_handler.update_df_and_db(modified_df)
@@ -1257,10 +1283,10 @@ ONLY output the formula, nothing else.
 
             elif query_category == 'DATA_EXPORT':
                 if self.operation_cancelled_flag:
-                    return "Operation was canceled by user."
+                    return "I've stopped processing that request as you requested."
 
                 if current_df is None:
-                    return "No data loaded for export."
+                    return "I need some data to export first. Please upload a dataset and then I can help export it in your preferred format."
 
                 file_format_match = re.search(r'(csv|excel|json|parquet|pickle)', question.lower())
                 file_format = file_format_match.group(1) if file_format_match else "csv"
@@ -1268,10 +1294,10 @@ ONLY output the formula, nothing else.
 
             elif query_category == 'TRANSLATION':
                 if self.operation_cancelled_flag:
-                    return "Operation was canceled by user."
+                    return "I've stopped processing that request as you requested."
 
                 if current_df is None:
-                    return "No data loaded for translation."
+                    return "I need some data to translate first. Please upload a dataset and I can help translate text within it."
 
                 # Process translation request
                 try:
@@ -1284,44 +1310,83 @@ ONLY output the formula, nothing else.
                     logger.error(f"❌ Translation error: {str(translation_error)}")
                     return f"I encountered an issue processing your translation request: {str(translation_error)}"
 
-            else:  # NON_DATA
+            else:  # General conversation and non-data queries
                 if self.operation_cancelled_flag:
-                    return "Operation was canceled by user."
+                    return "I've stopped processing that request as you requested."
 
-                steering_prompt = f"User asked: \"{question}\"\nThis is unrelated to data analysis. Gently remind them this is a data assistant, suggest relevant questions. Concise, friendly, 2-3 sentences."
-                response_content = self.llm.invoke(steering_prompt)
-                return response_content.content.strip()
+                # Get recent conversation history for context using the proper method
+                context_str = self._get_conversation_context_string(max_messages=6)
+
+                # Handle general conversation naturally while mentioning data expertise when appropriate
+                conversation_prompt = f"""You are EDI.ai, a conversational AI assistant.
+
+{context_str}Current question: "{question}"
+
+Be friendly, engaging, and helpful. Your specialty is data analysis, but you can chat about anything. When appropriate, mention your data expertise or suggest how you might help with data-related tasks, but don't force it into every response.
+
+IMPORTANT: 
+- Keep ALL responses very short and concise (1-3 sentences maximum). Be brief but warm and natural.
+- Be context-aware: Don't repeat greetings if you've already greeted the user in this conversation
+- Only say "hello" or greet if this is genuinely the start of conversation or user greets you first
+- For personal questions (who are you, what can you do, your purpose): give brief, friendly answers without repeating previous greetings
+- For thanks: respond graciously in 1 sentence
+- For general topics: engage naturally but briefly
+- For questions outside your expertise: give concise helpful guidance
+
+Keep responses conversational, human-like, SHORT, and context-aware."""
+                response_content = self.llm.invoke(conversation_prompt)
+                response = response_content.content.strip()
+                
+                # Note: AI response will be added to memory by unified system in process_query
+                return response
 
         except Exception as e:
             logger.error(f"❌ Error processing query: {str(e)}")
             logger.exception("💥 Full exception details:")
-            return f"I apologize, but I encountered an issue processing your query. Please try rephrasing your question or ask something more specific about your data."
+            return "I had some trouble with that request. Could you try asking in a different way? I'm here to help with data analysis and general questions."
 
-    def process_query(self, question: str, is_speech: bool = False) -> Tuple[str, Optional[Dict[str, str]]]:
+    def process_query(self, question: str, is_speech: bool = False, mode: str = "simple") -> Tuple[str, Optional[Dict[str, str]]]:
         """Process the user's query and return a response."""
         try:
             if self.operation_cancelled_flag:
-                return "Operation was cancelled.", None
+                return "I've stopped processing that request as you requested.", None
                 
             if not question:
-                return "Please provide a question or command.", None
+                return "I'm ready to help! What would you like to know or do with your data?", None
                 
             # Log the question for debugging
-            logger.info(f"Processing query: {question}")
+            logger.info(f"🚀 === PROCESSING QUERY START ===")
+            logger.info(f"📝 Query: '{question}'")
+            logger.info(f"🎤 Speech mode: {is_speech}")
+            logger.info(f"⚙️ Mode: {mode}")
             
-            # Get query category
-            query_category = self.categorize_query(question)
-            logger.info(f"Query categorized as: {query_category}")
+            # Get query category with confidence
+            logger.info(f"🔍 Starting query categorization...")
+            query_category, confidence = self.categorize_query(question)
+            logger.info(f"✅ Query categorized as: {query_category} (confidence: {confidence}%)")
+            
+            # Skip clarification - proceed directly with query processing
+            logger.info(f"✅ Proceeding directly with query processing (ambiguity detection removed)")
+            
+            # Execute based on final category
+            logger.info(f"🎯 === EXECUTING QUERY TYPE: {query_category} ===")
             
             # Handle missing values queries first
             if query_category == "MISSING_VALUES":
-                logger.info("Processing as missing values request")
+                logger.info("📊 Processing as MISSING_VALUES request")
                 df = self.data_handler.get_df()
                 if df is not None:
                     response = self._process_missing_values(question, df)
+                    # UNIFIED MEMORY: Add AI response to memory
+                    if response and not response.startswith("I encountered an error"):
+                        if hasattr(self, 'chat_history') and self.chat_history:
+                            self.chat_history.add_ai_message(response)
+                        logger.debug(f"💾 Added missing values response to unified conversation memory")
                     return response, None
                 else:
-                    return "No data loaded for missing values analysis.", None
+                    no_data_response = "I need some data to analyze first. Please upload a dataset and I can help identify and handle missing values."
+                    # Don't add "no data" responses to memory
+                    return no_data_response, None
             
             # Rest of the existing code for handling other categories
             question_lower = question.lower()
@@ -1377,11 +1442,11 @@ ONLY output the formula, nothing else.
                     return response, None
                 else:
                     logger.error("❌ No data loaded for duplicate removal")
-                    return "No data loaded for duplicate removal.", None
+                    return "I need some data to work with first. Please upload a dataset and I can help remove duplicates.", None
                 
             # For other queries, use the category-based approach
-            query_category = self.categorize_query(question)
-            logger.info(f"Query categorized as: {query_category}")
+            query_category, confidence = self.categorize_query(question)
+            logger.info(f"Query categorized as: {query_category} (confidence: {confidence}%)")
             
             # Process based on category
             if query_category == "VISUALIZATION":
@@ -1394,6 +1459,13 @@ ONLY output the formula, nothing else.
                 logger.debug(f"Visualization data: {visualization_data}")
                 
                 return response, visualization_data
+            elif query_category == "SPREADSHEET_COMMAND":
+                # Handle spreadsheet command requests
+                logger.info("Processing as SPREADSHEET_COMMAND request")
+                response = self.process_spreadsheet_command(question)
+                
+                # Return without any metadata to avoid frontend visualization processing
+                return response, None
             elif query_category == "TRANSLATION":
                 # Handle translation requests
                 logger.info("Processing as translation request")
@@ -1404,32 +1476,57 @@ ONLY output the formula, nothing else.
                     # Return without any metadata to avoid frontend visualization processing
                     return response, None
                 else:
-                    return "No data loaded for translation.", None
-            elif query_category == "TRANSFORMATION":
-                # Check again for duplicate patterns inside the TRANSFORMATION category
-                if is_duplicate_removal or "duplicate" in question_lower:
-                    # Handle duplicate removal requests
-                    logger.info("Processing as duplicate removal request within TRANSFORMATION category")
-                    df = self.data_handler.get_df()
-                    if df is not None:
+                    return "I need some data to translate first. Please upload a dataset and I can help translate text within it.", None
+            elif query_category == "JUNK_DETECTION":
+                # Handle junk detection requests
+                logger.info("🧹 Processing as JUNK_DETECTION request")
+                logger.info("🧹 This should use AI to analyze data quality, not literal text search")
+                df = self.data_handler.get_df()
+                if df is not None:
+                    response = self._process_junk_detection_request(question, df)
+                    return response, None
+                else:
+                    return "I need some data to analyze first. Please upload a dataset and I can help detect junk responses in text columns.", None
+            elif query_category == "DUPLICATE_CHECK":
+                # Handle duplicate checking and removal requests
+                logger.info("Processing as DUPLICATE_CHECK request")
+                df = self.data_handler.get_df()
+                if df is not None:
+                    # Determine if this is checking or removal
+                    check_patterns = [
+                        r'are there any duplicates',
+                        r'does.*have duplicates',
+                        r'how many duplicates',
+                        r'count.*duplicates',
+                        r'find.*duplicates',
+                        r'any duplicate',
+                        r'check.*duplicate'
+                    ]
+                    is_check_only = any(re.search(p, question.lower()) for p in check_patterns)
+                    
+                    if is_check_only:
+                        # Simple duplicate checking
+                        response = self._check_duplicates_simple(question, df)
+                    else:
+                        # Complex duplicate removal
                         response = self._process_duplicate_removal(question, df)
                         
-                        # Check if the response indicates data modification
-                        data_modified = False
-                        if response.startswith("DATA_MODIFIED:"):
-                            data_modified = True
-                            response = response.replace("DATA_MODIFIED:", "", 1).strip()
-                            
-                        # Return without any metadata to avoid frontend visualization processing
-                        return response, None
-                    else:
-                        return "No data loaded for duplicate removal.", None
-                else:
-                    # Handle other transformation requests
-                    response = self.process_non_visualization_query(question, query_category, is_speech)
+                        # Keep DATA_MODIFIED prefix so main endpoint can detect data changes
+                        # and include refresh data in response
                     
-                    # Return without any metadata to avoid frontend visualization processing
+                    # UNIFIED MEMORY: Add AI response to memory
+                    if response and not response.startswith("I encountered an error"):
+                        # Store the response without DATA_MODIFIED prefix in memory for context
+                        memory_response = response.replace("DATA_MODIFIED:", "", 1).strip() if response.startswith("DATA_MODIFIED:") else response
+                        if hasattr(self, 'chat_history') and self.chat_history:
+                            self.chat_history.add_ai_message(memory_response)
+                        logger.debug(f"💾 Added duplicate check response to unified conversation memory")
+                    
                     return response, None
+                else:
+                    no_data_response = "No data loaded for duplicate checking."
+                    # Don't add "no data" responses to memory
+                    return no_data_response, None
             else:
                 # Double-check for duplicate-related queries that might have been miscategorized
                 if "duplicate" in question_lower:
@@ -1440,23 +1537,42 @@ ONLY output the formula, nothing else.
                         
                         # Check if the response indicates data modification
                         data_modified = False
+                        memory_response = response
                         if response.startswith("DATA_MODIFIED:"):
                             data_modified = True
                             response = response.replace("DATA_MODIFIED:", "", 1).strip()
+                            memory_response = response  # Use clean response for memory
+                        
+                        # UNIFIED MEMORY: Add AI response to memory
+                        if response and not response.startswith("I encountered an error"):
+                            if hasattr(self, 'chat_history') and self.chat_history:
+                                self.chat_history.add_ai_message(memory_response)
+                            logger.debug(f"💾 Added miscategorized duplicate response to unified conversation memory")
                             
                         # Return without any metadata to avoid frontend visualization processing
                         return response, None
                     else:
-                        return "No data loaded for duplicate removal.", None
+                        no_data_response = "No data loaded for duplicate removal."
+                        # Don't add "no data" responses to memory
+                        return no_data_response, None
                 
                 # Handle other types of queries
                 logger.info(f"Processing as {query_category} request")
-                response = self.process_non_visualization_query(question, query_category, is_speech)
+                response = self.process_non_visualization_query(question, query_category, is_speech, mode)
+                
+                # UNIFIED MEMORY: Always add AI response to memory regardless of category
+                if response and not response.startswith("I encountered an error"):
+                    if hasattr(self, 'chat_history') and self.chat_history:
+                        self.chat_history.add_ai_message(response)
+                    logger.debug(f"💾 Added AI response to unified conversation memory")
+                
                 return response, None
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}")
             logger.exception("Full exception details:")
-            return f"I encountered an error while processing your request: {str(e)}", None
+            error_response = "I had trouble processing your request. Could you try rephrasing your question or providing more details about what you'd like me to do?"
+            # Don't add error responses to memory
+            return error_response, None
 
     def _process_visualization_request(self, question: str) -> Tuple[str, Optional[Dict[str, str]]]:
         """
@@ -1473,10 +1589,10 @@ ONLY output the formula, nothing else.
         logger.debug(f"💬 Query: {question}")
         
         if self.operation_cancelled_flag:
-            return "Operation was canceled by user.", None
+            return "I've stopped processing that request as you requested.", None
             
         if not self.data_handler or self.data_handler.get_df() is None:
-            return "No data loaded for visualization.", None
+            return "I need some data to create visualizations. Please upload a dataset first.", None
             
         df = self.data_handler.get_df()
         logger.debug(f"📊 DataFrame shape: {df.shape}")
@@ -2091,6 +2207,37 @@ Keep the analysis concise but thorough, focusing on business value and practical
             logger.exception("Full exception details:")
             return f"Error processing bulk translation request: {str(e)}"
 
+    def _check_duplicates_simple(self, question: str, df: pd.DataFrame) -> str:
+        """
+        Simple duplicate checking without removal.
+        Args:
+            question: The user's question/request
+            df: The current DataFrame
+        Returns:
+            A message with duplicate count information
+        """
+        logger.debug(f"🔍 === SIMPLE DUPLICATE CHECK ===")
+        logger.debug(f"💬 Question: {question}")
+        logger.debug(f"📊 DataFrame shape: {df.shape}")
+        
+        if df is None or df.empty:
+            return "No data loaded or data is empty, cannot check for duplicates."
+        
+        try:
+            # Simple duplicate count
+            num_duplicates = df.duplicated().sum()
+            total_rows = len(df)
+            
+            if num_duplicates > 0:
+                percentage = (num_duplicates / total_rows) * 100
+                return f"Found {num_duplicates} duplicate rows out of {total_rows} total rows ({percentage:.1f}% of data)."
+            else:
+                return "No duplicate rows found in the dataset."
+                
+        except Exception as e:
+            logger.error(f"❌ Error checking duplicates: {str(e)}")
+            return f"Error checking for duplicates: {str(e)}"
+
     def _process_duplicate_removal(self, question: str, df: pd.DataFrame) -> str:
         """
         Process a request to check for or remove duplicate rows from the data.
@@ -2110,7 +2257,6 @@ Keep the analysis concise but thorough, focusing on business value and practical
             return "No data loaded or data is empty, cannot check or remove duplicates."
             
         # --- Intent detection ---
-        import re
         check_patterns = [
             r'are there any duplicates',
             r'does.*have duplicates',
@@ -2165,7 +2311,7 @@ Keep the analysis concise but thorough, focusing on business value and practical
             analysis_response = self.llm.invoke(analysis_prompt)
             try:
                 # Parse the JSON response - handle markdown code blocks
-                import json, re
+                import json
                 response_content = analysis_response.content.strip()
                 
                 # Remove markdown code block formatting if present
@@ -2208,7 +2354,7 @@ Keep the analysis concise but thorough, focusing on business value and practical
                 reasoning = "Extracted from question using pattern matching."
                 
             # Move column_match outside the try block to fix scope issue
-                column_match = re.search(r'(?:based on|using|with|for|in|from|of|by)\s+(?:column(?:s)?\s+)?([A-Za-z0-9_,\s]+)', question.lower())
+            column_match = re.search(r'(?:based on|using|with|for|in|from|of|by)\s+(?:column(?:s)?\s+)?([A-Za-z0-9_,\s]+)', question.lower())
             
             if column_match:
                 # Extract column names or references
@@ -2426,13 +2572,11 @@ Keep the analysis concise but thorough, focusing on business value and practical
             sql_response = self.llm.invoke(sql_prompt)
             sql_query = sql_response.content.strip()
             # --- Remove markdown code block formatting if present ---
-            import re
             sql_query = re.sub(r'^```(?:sql)?\s*', '', sql_query, flags=re.IGNORECASE | re.MULTILINE)
             sql_query = re.sub(r'```$', '', sql_query, flags=re.MULTILINE)
             sql_query = sql_query.strip()
             logger.debug(f"🔍 Generated SQL Query (pre-rewrite): {sql_query}")
             # --- Post-process to force table name to 'data' ---
-            import re
             sql_query = re.sub(r'(FROM|from)\s+\w+', 'FROM data', sql_query)
             sql_query = re.sub(r'(JOIN|join)\s+\w+', 'JOIN data', sql_query)
             logger.debug(f"🔍 Generated SQL Query (post-rewrite): {sql_query}")
@@ -2457,24 +2601,28 @@ Keep the analysis concise but thorough, focusing on business value and practical
                 logger.debug(f"Query result type: {type(result)}")
                 logger.debug(f"Query result: {result}")
                 
+                # COMMENTED OUT: Agent executor fallback - using direct SQL results instead
                 # Since we can't get structured data this way, let's use the agent executor
-                try:
-                    enhanced_question = f"""
-                    Answer this question about the data: "{question}"
-                    
-                    IMPORTANT: When querying the data, include relevant context columns such as:
-                    - For games: name, developer, publisher, release_date, positive_ratings, negative_ratings
-                    - For ratings: both positive and negative ratings for comparison
-                    - For sales/owners: include price and other relevant metrics
-                    
-                    Provide a complete answer that includes all relevant context from the data.
-                    """
-                    agent_response = self.agent_executor.invoke({"input": enhanced_question})["output"]
-                    # Format the response to ensure it's contextual and helpful
-                    return self._format_sql_response(agent_response, question)
-                except Exception as agent_error:
-                    logger.error(f"Error using agent executor: {str(agent_error)}")
-                    return f"I encountered an error trying to query the data using the agent: {str(agent_error)}"
+                # try:
+                #     enhanced_question = f"""
+                #     Answer this question about the data: "{question}"
+                #     
+                #     IMPORTANT: When querying the data, include relevant context columns such as:
+                #     - For games: name, developer, publisher, release_date, positive_ratings, negative_ratings
+                #     - For ratings: both positive and negative ratings for comparison
+                #     - For sales/owners: include price and other relevant metrics
+                #     
+                #     Provide a complete answer that includes all relevant context from the data.
+                #     """
+                #     agent_response = self.agent_executor.invoke({"input": enhanced_question})["output"]
+                #     # Format the response to ensure it's contextual and helpful
+                #     return self._format_sql_response(agent_response, question)
+                # except Exception as agent_error:
+                #     logger.error(f"Error using agent executor: {str(agent_error)}")
+                #     return "I had trouble querying your data. Could you try rephrasing your question or check if your dataset is properly formatted?"
+                
+                # Process and format the direct SQL result
+                return self._format_direct_sql_result(result, question, sql_query)
                 
             # Use SQLAlchemy's connect method if available
             elif hasattr(db, "connect"):
@@ -2507,20 +2655,24 @@ Keep the analysis concise but thorough, focusing on business value and practical
                     logger.debug(f"Query tool result type: {type(result)}")
                     return result
                 else:
+                    # COMMENTED OUT: Agent executor fallback - user now controls mode selection
                     # Fall back to using the agent executor
-                    enhanced_question = f"""
-                    Answer this question about the data: "{question}"
+                    # enhanced_question = f"""
+                    # Answer this question about the data: "{question}"
+                    # 
+                    # IMPORTANT: When querying the data, include relevant context columns such as:
+                    # - For games: name, developer, publisher, release_date, positive_ratings, negative_ratings
+                    # - For ratings: both positive and negative ratings for comparison
+                    # - For sales/owners: include price and other relevant metrics
+                    # 
+                    # Provide a complete answer that includes all relevant context from the data.
+                    # """
+                    # agent_response = self.agent_executor.invoke({"input": enhanced_question})["output"]
+                    # # Format the response to ensure it's contextual and helpful
+                    # return self._format_sql_response(agent_response, question)
                     
-                    IMPORTANT: When querying the data, include relevant context columns such as:
-                    - For games: name, developer, publisher, release_date, positive_ratings, negative_ratings
-                    - For ratings: both positive and negative ratings for comparison
-                    - For sales/owners: include price and other relevant metrics
-                    
-                    Provide a complete answer that includes all relevant context from the data.
-                    """
-                    agent_response = self.agent_executor.invoke({"input": enhanced_question})["output"]
-                    # Format the response to ensure it's contextual and helpful
-                    return self._format_sql_response(agent_response, question)
+                    # Return error instead of automatic fallback
+                    return "Unable to process query with direct SQL. Please try Complex mode if you need advanced analysis."
             
             # Check if we got any results
             if not rows:
@@ -2589,67 +2741,401 @@ Keep the analysis concise but thorough, focusing on business value and practical
             logger.error(f"❌ Error executing SQL query directly: {str(e)}")
             logger.exception("Full exception details:")
             
+            # COMMENTED OUT: Agent executor fallback - user now controls mode selection
             # Fall back to using the agent executor directly
-            try:
-                logger.debug("Falling back to using the agent executor directly")
-                enhanced_question = f"""
-                Answer this question about the data: "{question}"
-                
-                IMPORTANT: When querying the data, include relevant context columns such as:
-                - For games: name, developer, publisher, release_date, positive_ratings, negative_ratings
-                - For ratings: both positive and negative ratings for comparison
-                - For sales/owners: include price and other relevant metrics
-                
-                Provide a complete answer that includes all relevant context from the data.
-                """
-                agent_response = self.agent_executor.invoke({"input": enhanced_question})["output"]
-                # Format the response to ensure it's contextual and helpful
-                return self._format_sql_response(agent_response, question)
-            except Exception as agent_error:
-                logger.error(f"Error using agent executor fallback: {str(agent_error)}")
-                return f"I encountered an error trying to query the data. Please try rephrasing your question."
+            # try:
+            #     logger.debug("Falling back to using the agent executor directly")
+            #     enhanced_question = f"""
+            #     Answer this question about the data: "{question}"
+            #     
+            #     IMPORTANT: When querying the data, include relevant context columns such as:
+            #     - For games: name, developer, publisher, release_date, positive_ratings, negative_ratings
+            #     - For ratings: both positive and negative ratings for comparison
+            #     - For sales/owners: include price and other relevant metrics
+            #     
+            #     Provide a complete answer that includes all relevant context from the data.
+            #     """
+            #     agent_response = self.agent_executor.invoke({"input": enhanced_question})["output"]
+            #     # Format the response to ensure it's contextual and helpful
+            #     return self._format_sql_response(agent_response, question)
+            # except Exception as agent_error:
+            #     logger.error(f"Error using agent executor fallback: {str(agent_error)}")
+            #     return "I had trouble understanding your question about the data. Could you try rephrasing it or being more specific about what information you're looking for?"
+            
+            # Return error instead of automatic fallback
+            return "Unable to process query with available SQL tools. Please try Complex mode for advanced analysis."
+
+    def _format_direct_sql_result(self, result: str, question: str, sql_query: str) -> str:
+        """
+        Format direct SQL result into a user-friendly response.
+        
+        Args:
+            result: The raw result string from db.run()
+            question: The original user question
+            sql_query: The SQL query that was executed
+            
+        Returns:
+            A formatted, user-friendly response
+        """
+        try:
+            # Log the raw result for debugging
+            logger.debug(f"🔍 Formatting direct SQL result: {result}")
+            
+            # Handle empty or "I don't know" results
+            if not result or result.strip().lower() in ['i don\'t know', 'none', '']:
+                return f"I couldn't find any data to answer your question: '{question}'. Please make sure your data is properly loaded and try rephrasing your question."
+            
+            # Use LLM to format the result with proper context and comprehensive insights
+            format_prompt = f"""
+            CONTEXT:
+            - User asked: "{question}"
+            - SQL query executed: {sql_query}
+            - Raw result: {result}
+            - Data type: Product feedback/review data with columns like Product_Name, User_Score, Feedback
+            
+            TASK: Create a comprehensive but focused business response (not too long, not too short).
+            
+            RESPONSE STRUCTURE:
+            [2-3 sentences providing immediate context and key findings - explain what this data represents and the main takeaway]
+            
+            Key highlights:
+            • [Business-meaningful insight with specific numbers]
+            • [Performance or customer satisfaction implication]
+            • [Data scope and coverage details]
+            • [Product or business context when relevant]
+            
+            Insights:
+            • [What this means for their business]
+            • [Pattern or trend observation]
+            • [Actionable suggestion or next step]
+            
+            IMPORTANT GUIDELINES:
+            - Interpret SQL results correctly (e.g., COUNT(*) = total records, AVG(User_Score) = average rating)
+            - Use business-friendly language (not "first value is 100" but "100 total records")
+            - Provide context about what the numbers mean for their business
+            - Include actionable insights users can act on
+            - Be comprehensive but not overwhelming
+            - NO template text like "RESPONSE FORMAT:" should appear in the final response
+            
+            EXAMPLE for summary statistics (100 records, 7.93 avg, 5 min, 10 max):
+            "You have 100 product reviews in your dataset with an average user rating of 7.93 out of 10. This indicates generally positive customer feedback across your product lineup, with ratings spanning the full range from 5 to 10.
+            
+            Key highlights:
+            • 100 total product reviews analyzed across all items
+            • Strong average rating of 7.93/10 shows good customer satisfaction
+            • Rating distribution spans 5-10, indicating varied but generally positive feedback
+            • Data covers products like Coffee Maker, Gaming Mouse, 4K Monitor, and others
+            
+            Insights:
+            • Your products are performing well with above-average ratings
+            • The wide rating range (5-10) suggests different products have varying reception
+            • Consider analyzing which specific products drive the highest ratings for expansion opportunities"
+            """
+            
+            formatted_response = self.llm.invoke(format_prompt).content.strip()
+            logger.debug(f"✅ Formatted response: {formatted_response}")
+            
+            return formatted_response
+            
+        except Exception as e:
+            logger.error(f"❌ Error formatting direct SQL result: {str(e)}")
+            # Fallback: return the raw result with some basic formatting
+            return f"Here's what I found for your question '{question}':\n\n{result}"
 
     def _format_sql_response(self, raw_response: str, question: str) -> str:
         """
-        Format a raw SQL response into a proper, contextual answer.
+        Format a raw SQL response into a proper, contextual answer with conversational tone and follow-up suggestions.
         
         Args:
             raw_response: The raw response from the SQL agent
             question: The original user question
             
         Returns:
-            A properly formatted response with context and explanation
+            A properly formatted response with context, explanation, and follow-up questions
         """
-        # If the response is already good (more than just a single word/value), return it
-        if len(raw_response.strip()) > 50 and not raw_response.strip().isupper():
-            return raw_response
-        
-        # If it's just a single value or very short response, enhance it
+        # Always enhance responses to make them more conversational and comprehensive
         enhanced_prompt = f"""
         The user asked: "{question}"
         
-        The raw data result is: "{raw_response}"
+        The data result is: "{raw_response}"
         
-        Please provide a complete, contextual answer that:
-        1. Directly answers the user's question
-        2. Explains what the result means
-        3. Provides relevant context and insights from the data
-        4. Uses proper sentences and formatting
-        5. Makes the response informative and helpful
-        6. If the data includes additional context (like developer, publisher, ratings, etc.), incorporate that information
-        7. Provide insights about what the data suggests or implies
+        Please provide a professional but friendly response using this EXACT structure:
+
+        [Brief direct answer in 1-2 sentences]
+
+        Key Details:
+        - [Developer/Publisher information]
+        - [Release date and rating numbers]
+        - [Any other relevant factual details]
+
+        Why This Matters:
+        - [Significance or context insight]
+        - [What makes this result interesting]
+        - [Additional analysis or implications]
+
+        Explore Further:
+        - [Generate a specific follow-up question based on the actual data and analysis results]
+        - [Suggest a complementary analysis that would provide additional insights]
+        - [Recommend a visualization or comparison that would enhance understanding]
+
+        CRITICAL FORMATTING RULES:
+        - Use markdown bullet points (-) for all structured information
+        - Keep the brief answer to 1-2 sentences maximum
+        - Each bullet point should be concise and focused
+        - Always use the exact section headers: "Key Details:", "Why This Matters:", "Explore Further:"
+        - Leave blank lines between sections
         
-        Do not mention that you're processing raw data or SQL results.
-        Just provide a natural, helpful answer that gives the user a complete understanding of the data.
+        For the "Explore Further" section, generate intelligent follow-up suggestions that:
+        - Reference specific columns, values, or patterns from the actual data
+        - Suggest logical next steps based on the analysis performed  
+        - Include different analysis types (comparative, temporal, correlational)
+        - Recommend relevant visualizations when appropriate
+        - Use actual data context rather than generic suggestions
+        
+        Do not mention that you're processing data results or SQL queries.
+        Write as a knowledgeable data analyst providing clear, helpful insights.
         """
         
         try:
             enhanced_response = self.llm.invoke(enhanced_prompt).content.strip()
+            # Convert any literal \n characters to actual newlines for proper markdown rendering
+            enhanced_response = enhanced_response.replace('\\n', '\n')
             return enhanced_response
         except Exception as e:
             logger.error(f"Error enhancing SQL response: {str(e)}")
-            # Fallback to a basic enhancement
-            return f"Based on the data, {raw_response}. This represents the result for your query: '{question}'."
+            # Fallback to a basic enhancement with follow-up questions
+            return f"Based on the data, {raw_response}.\n\nKey Details:\n- This represents the result for your query: '{question}'\n\nYou might also want to explore:\n- What other games are highly rated?\n- How do ratings compare across different categories?\n- What trends can we see in the data?"
+
+    def _process_junk_detection_request(self, question: str, df: pd.DataFrame) -> str:
+        """
+        Process a junk detection request using the DataCleaningAgent.
+        
+        Args:
+            question: The user's question about junk detection
+            df: The current DataFrame
+            
+        Returns:
+            A response with junk detection results or instructions
+        """
+        logger.debug(f"🧹 === PROCESSING JUNK DETECTION REQUEST ===")
+        logger.debug(f"💬 Question: {question}")
+        logger.debug(f"📊 DataFrame shape: {df.shape}")
+        
+        if not hasattr(self, 'data_cleaning_agent') or not self.data_cleaning_agent:
+            return "Data cleaning agent is not available. Please try again later."
+        
+        try:
+            # Use LLM to analyze the request and extract parameters
+            analysis_prompt = f"""
+            Analyze this junk detection request: "{question}"
+            
+            Available columns in the dataset: {', '.join(df.columns)}
+            
+            Extract the following information:
+            1. Which column should be analyzed for junk? (specify column name or "auto-detect")
+            2. Should we create a junk flag column? (yes/no)
+            3. Any specific examples of what user considers junk?
+            4. What confidence threshold should be used? (0-100, default 65)
+            
+            Return your analysis in this JSON format:
+            {{
+                "column_name": "column_name" or "auto-detect",
+                "create_flag_column": true/false,
+                "user_examples": ["example1", "example2"] or [],
+                "confidence_threshold": 65,
+                "question_context": "brief description of what the column represents"
+            }}
+            """
+            
+            analysis_response = self.llm.invoke(analysis_prompt)
+            
+            try:
+                import json
+                response_content = analysis_response.content.strip()
+                # Remove markdown code blocks if present
+                response_content = response_content.replace('```json', '').replace('```', '').strip()
+                analysis = json.loads(response_content)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse analysis response: {response_content}")
+                return "I had trouble understanding your junk detection request. Please specify which column to analyze."
+            
+            # Determine target column
+            column_name = analysis.get('column_name')
+            if column_name == "auto-detect" or not column_name:
+                # Find text columns automatically
+                text_columns = []
+                for col in df.columns:
+                    if df[col].dtype == 'object':
+                        # Check if it's likely text (not just IDs)
+                        sample_values = df[col].dropna().head(5).astype(str)
+                        avg_length = sample_values.str.len().mean()
+                        if avg_length > 5:  # Likely text, not just IDs
+                            text_columns.append(col)
+                
+                if not text_columns:
+                    return "No suitable text columns found for junk detection. Please specify a column name."
+                elif len(text_columns) == 1:
+                    column_name = text_columns[0]
+                else:
+                    return f"Multiple text columns found: {', '.join(text_columns)}. Please specify which column to analyze."
+            
+            if column_name not in df.columns:
+                return f"Column '{column_name}' not found. Available columns: {', '.join(df.columns)}"
+            
+            # Check if column is suitable for junk detection
+            if df[column_name].dtype != 'object':
+                return f"Column '{column_name}' doesn't appear to contain text data. Junk detection works best with text columns."
+            
+            # Perform junk detection
+            question_context = analysis.get('question_context', f"Responses in column '{column_name}'")
+            user_examples = analysis.get('user_examples', [])
+            confidence_threshold = analysis.get('confidence_threshold', 65)
+            
+            results = self.data_cleaning_agent.detect_junk_responses(
+                df, column_name, question_context, user_examples, confidence_threshold
+            )
+            
+            if 'error' in results:
+                return f"Junk detection failed: {results['error']}"
+            
+            # Check if user wants to create a flag column
+            create_flag_column = analysis.get('create_flag_column', False)
+            
+            if create_flag_column and results['flagged_count'] > 0:
+                # Create the junk flag column
+                updated_df = self.data_cleaning_agent.create_junk_flag_column(df, column_name, results)
+                # Update the data in data_handler
+                self.data_handler.update_df(updated_df)
+                flag_message = f"\n\n✅ Created '{column_name}_junk_flag' column with 1s marking junk responses.\n\nDATA_MODIFIED: Added junk flag column to dataset."
+            else:
+                flag_message = ""
+            
+            # Format response
+            response = f"""**Junk Detection Results for '{column_name}'**
+
+📊 **Summary:**
+• Total responses analyzed: {results['total_responses']:,}
+• Junk responses flagged: {results['flagged_count']:,} ({results['flagged_percentage']}%)
+• Confidence threshold: {results['confidence_threshold']}%
+
+"""
+            
+            if results['flagged_count'] > 0:
+                response += f"""🚫 **Sample Flagged Responses:**
+"""
+                for i, item in enumerate(results['sample_flagged'], 1):
+                    response += f"{i}. \"{item['text']}\" (confidence: {item['confidence']}% - {item['reason']})\n"
+                
+                if results['flagged_count'] > len(results['sample_flagged']):
+                    response += f"\n...and {results['flagged_count'] - len(results['sample_flagged'])} more flagged responses."
+            else:
+                response += "✅ No junk responses detected with the current criteria."
+            
+            response += flag_message
+            
+            if not create_flag_column and results['flagged_count'] > 0:
+                response += f"\n\n💡 **Tip:** Say \"add junk flag column to {column_name}\" to mark these responses in your data."
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"❌ Error in junk detection processing: {str(e)}")
+            return f"Error processing junk detection request: {str(e)}"
+
+    def process_clarification_choice(self, choice_id: str, original_query: str, category: str) -> Tuple[str, Optional[Dict[str, str]]]:
+        """
+        Process user's clarification choice and execute the appropriate action.
+        
+        Args:
+            choice_id: User's selected option ID
+            original_query: Original user query
+            category: Selected category
+            
+        Returns:
+            Tuple of response and visualization data
+        """
+        try:
+            # Process clarification choice directly (clarification system removed)
+            logger.info(f"🎯 Processing clarification choice: {choice_id} for category: {category}")
+            
+            # Simply execute the original query normally
+            logger.info(f"🎯 Executing query: '{original_query}' (clarification system removed)")
+            
+            # Process the query normally 
+            return self.process_query(original_query)
+                
+        except Exception as e:
+            logger.error(f"❌ Error processing clarification choice: {str(e)}")
+            return f"Error processing your choice: {str(e)}", None
+    
+    def _execute_with_category(self, question: str, forced_category: str) -> Tuple[str, Optional[Dict[str, str]]]:
+        """Execute a query with a specific category, bypassing categorization."""
+        try:
+            logger.info(f"🔧 Executing with forced category: {forced_category}")
+            
+            # Execute based on the forced category
+            if forced_category == "JUNK_DETECTION":
+                df = self.data_handler.get_df()
+                if df is not None:
+                    response = self._process_junk_detection_request(question, df)
+                    return response, None
+                else:
+                    return "I need some data to analyze first. Please upload a dataset and I can help detect junk responses in text columns.", None
+                    
+            elif forced_category == "SPREADSHEET_COMMAND":
+                response = self.process_spreadsheet_command(question)
+                return response, None
+                
+            elif forced_category == "SPECIFIC_DATA":
+                df = self.data_handler.get_df()
+                if df is not None:
+                    response = self._process_non_visualization_query(question, df)
+                    return response, None
+                else:
+                    return "I need some data to analyze first. Please upload a dataset.", None
+                    
+            elif forced_category == "VISUALIZATION":
+                response, visualization_data = self._process_visualization_request(question)
+                return response, visualization_data
+                
+            elif forced_category == "DUPLICATE_CHECK":
+                df = self.data_handler.get_df()
+                if df is not None:
+                    response = self._check_duplicates_simple(question, df)
+                    return response, None
+                else:
+                    return "I need some data to check for duplicates. Please upload a dataset first.", None
+                    
+            elif forced_category == "MISSING_VALUES":
+                df = self.data_handler.get_df()
+                if df is not None:
+                    response = self._process_missing_values(question, df)
+                    return response, None
+                else:
+                    return "I need some data to analyze missing values. Please upload a dataset first.", None
+                    
+            elif forced_category == "TRANSLATION":
+                df = self.data_handler.get_df()
+                if df is not None:
+                    response = self._process_translation_request(question, df)
+                    return response, None
+                else:
+                    return "I need some data to translate. Please upload a dataset first.", None
+                    
+            elif forced_category == "ANALYSIS":
+                df = self.data_handler.get_df()
+                if df is not None:
+                    response = self._process_non_visualization_query(question, df)
+                    return response, None
+                else:
+                    return "I need some data to analyze. Please upload a dataset first.", None
+                    
+            else:
+                return f"Category '{forced_category}' is not yet implemented.", None
+                
+        except Exception as e:
+            logger.error(f"❌ Error executing with forced category {forced_category}: {str(e)}")
+            return f"Error executing your request: {str(e)}", None
 
     def get_available_columns_for_extraction(self) -> Dict[str, any]:
         """
@@ -2931,3 +3417,528 @@ Keep the analysis concise but thorough, focusing on business value and practical
             logger.error(f"❌ Error converting to Luckysheet format: {str(e)}")
             logger.exception("Full exception details:")
             return None
+
+class DataCleaningAgent:
+    """AI-powered data cleaning agent for detecting junk responses in open-text fields."""
+    
+    def __init__(self, llm):
+        self.llm = llm
+        self.logger = logging.getLogger(__name__)
+    
+    def detect_junk_responses(self, df, column_name, question_context=None, user_examples=None, confidence_threshold=65):
+        """
+        Detect junk responses in a specific column using AI analysis.
+        
+        Args:
+            df: pandas DataFrame containing the data
+            column_name: name of the column to analyze
+            question_context: optional context about what the column represents
+            user_examples: optional list of user-provided junk examples
+            confidence_threshold: minimum confidence score to flag as junk (0-100)
+            
+        Returns:
+            dict with analysis results including flagged responses, confidence scores, and summary
+        """
+        try:
+            if column_name not in df.columns:
+                return {"error": f"Column '{column_name}' not found in dataset"}
+            
+            column_data = df[column_name].dropna()
+            if column_data.empty:
+                return {"error": f"Column '{column_name}' is empty"}
+            
+            self.logger.info(f"🔍 Analyzing {len(column_data)} responses in column '{column_name}'")
+            
+            # Get sample responses for context
+            sample_responses = column_data.head(10).tolist()
+            
+            # Prepare context for AI analysis
+            context_info = self._prepare_analysis_context(
+                column_name, question_context, sample_responses, user_examples
+            )
+            
+            # Analyze responses in batches to avoid token limits
+            batch_size = 50
+            all_results = []
+            
+            for i in range(0, len(column_data), batch_size):
+                batch = column_data.iloc[i:i+batch_size]
+                batch_results = self._analyze_response_batch(batch, context_info)
+                all_results.extend(batch_results)
+            
+            # Filter results by confidence threshold
+            flagged_responses = [
+                result for result in all_results 
+                if result['confidence'] >= confidence_threshold
+            ]
+            
+            # Create summary
+            summary = {
+                "total_responses": len(column_data),
+                "flagged_count": len(flagged_responses),
+                "flagged_percentage": round((len(flagged_responses) / len(column_data)) * 100, 1),
+                "confidence_threshold": confidence_threshold,
+                "flagged_responses": flagged_responses,
+                "sample_flagged": flagged_responses[:5] if flagged_responses else []
+            }
+            
+            self.logger.info(f"✅ Junk detection complete: {len(flagged_responses)}/{len(column_data)} flagged ({summary['flagged_percentage']}%)")
+            
+            return summary
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in junk detection: {str(e)}")
+            return {"error": f"Junk detection failed: {str(e)}"}
+    
+    def _prepare_analysis_context(self, column_name, question_context, sample_responses, user_examples):
+        """Prepare context information for AI analysis."""
+        context = {
+            "column_name": column_name,
+            "question_context": question_context or f"Analysis of responses in column '{column_name}'",
+            "sample_responses": sample_responses,
+            "user_examples": user_examples or []
+        }
+        return context
+    
+    def _analyze_response_batch(self, batch_responses, context_info):
+        """Analyze a batch of responses for junk detection."""
+        try:
+            responses_list = batch_responses.tolist()
+            
+            prompt = f"""
+            You are analyzing survey responses for data quality. Your task is to identify "junk" responses that are not meaningful or relevant.
+
+            CONTEXT:
+            - Column: {context_info['column_name']}
+            - Question context: {context_info['question_context']}
+            - Sample valid responses: {context_info['sample_responses'][:5]}
+            
+            USER-PROVIDED JUNK EXAMPLES:
+            {context_info['user_examples'] if context_info['user_examples'] else "None provided"}
+
+            JUNK RESPONSE INDICATORS:
+            1. Gibberish text (random characters, keyboard mashing)
+            2. Single characters or very short meaningless responses
+            3. Responses completely unrelated to the question context
+            4. Repeated characters or patterns (aaaa, 1111, etc.)
+            5. Test responses ("test", "testing", "asdf")
+            6. Non-responsive answers ("I don't know", "nothing", "n/a") when specific input expected
+            7. Spam-like content or promotional text
+            8. Responses in wrong language if English expected
+
+            RESPONSES TO ANALYZE:
+            {responses_list}
+
+            INSTRUCTIONS:
+            For each response, provide a JSON object with:
+            - "text": the original response text
+            - "is_junk": true/false
+            - "confidence": confidence score 0-100
+            - "reason": brief explanation why it's flagged as junk
+
+            Return ONLY a valid JSON array with no additional text:
+            [
+              {{"text": "response1", "is_junk": false, "confidence": 20, "reason": "Relevant and meaningful"}},
+              {{"text": "response2", "is_junk": true, "confidence": 95, "reason": "Gibberish text"}}
+            ]
+            """
+            
+            response = self.llm.invoke(prompt)
+            result_text = response.content.strip()
+            
+            # Parse JSON response with robust markdown cleaning
+            try:
+                # First, try to extract JSON from markdown code blocks using regex
+                import re
+                
+                # Look for JSON inside markdown code blocks
+                markdown_pattern = r'```(?:json)?\s*\n?(.*?)\n?```'
+                markdown_match = re.search(markdown_pattern, result_text, re.DOTALL | re.IGNORECASE)
+                
+                if markdown_match:
+                    # Extract JSON from markdown block
+                    json_content = markdown_match.group(1).strip()
+                    self.logger.info(f"Extracted JSON from markdown block: {len(json_content)} characters")
+                else:
+                    # No markdown blocks found, use original text
+                    json_content = result_text
+                    self.logger.info(f"No markdown blocks found, parsing raw content: {len(json_content)} characters")
+                
+                # Parse the cleaned JSON
+                results = json.loads(json_content)
+                self.logger.info(f"Successfully parsed JSON with {len(results)} items")
+                
+                # Filter only junk responses
+                junk_responses = [r for r in results if r.get('is_junk', False)]
+                self.logger.info(f"Found {len(junk_responses)} junk responses out of {len(results)} total")
+                
+                return junk_responses
+                
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse AI response as JSON: {str(e)}")
+                self.logger.error(f"Raw response content: {result_text}")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Error analyzing response batch: {str(e)}")
+            return []
+    
+    def create_junk_flag_column(self, df, column_name, junk_results):
+        """
+        Add a junk flag column to the dataframe based on detection results.
+        
+        Args:
+            df: pandas DataFrame
+            column_name: name of the column that was analyzed
+            junk_results: results from detect_junk_responses
+            
+        Returns:
+            DataFrame with new junk flag column added
+        """
+        try:
+            flag_column_name = f"{column_name}_junk_flag"
+            df[flag_column_name] = 0
+            
+            # Create a mapping of text to junk status
+            junk_texts = {item['text']: 1 for item in junk_results.get('flagged_responses', [])}
+            
+            # Apply flags based on text matching
+            for idx, row in df.iterrows():
+                text_value = str(row[column_name]) if pd.notna(row[column_name]) else ""
+                if text_value in junk_texts:
+                    df.at[idx, flag_column_name] = 1
+            
+            self.logger.info(f"✅ Created junk flag column '{flag_column_name}'")
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating junk flag column: {str(e)}")
+            return df
+
+class UniversalClarificationSystem:
+    """Universal system for handling ambiguous user queries by asking for clarification."""
+    
+    def __init__(self, llm):
+        self.llm = llm
+        self.logger = logging.getLogger(__name__)
+        self.user_preferences = {}  # Store user preference patterns
+        self.confidence_threshold = 75  # Queries below this trigger clarification
+    
+    def analyze_query_confidence(self, question: str, initial_category: str) -> tuple[str, int, list]:
+        """
+        Analyze query confidence and detect potential alternative interpretations.
+        
+        Args:
+            question: User's query
+            initial_category: Initially detected category
+            
+        Returns:
+            tuple: (category, confidence_score, alternative_categories)
+        """
+        self.logger.info(f"🔬 === CLARIFICATION SYSTEM ANALYSIS START ===")
+        self.logger.info(f"📝 Query: '{question}'")
+        self.logger.info(f"🎯 Initial category: {initial_category}")
+        
+        try:
+            analysis_prompt = f"""
+            Analyze this user query for ambiguity and confidence: "{question}"
+            
+            Initially categorized as: {initial_category}
+            
+            Your task:
+            1. Rate confidence (0-100%) that the initial category is correct
+            2. Identify alternative valid interpretations
+            3. Consider common user intentions
+            
+            Categories available:
+            - SPECIFIC_DATA: Ask about data points, summaries, context
+            - VISUALIZATION: Create charts, graphs, plots
+            - JUNK_DETECTION: Find/identify/flag junk/spam responses
+            - ANALYSIS: Statistical analysis, correlations, patterns
+            - SPREADSHEET_COMMAND: Format cells, sort, filter data
+            - DUPLICATE_CHECK: Find/remove duplicate rows
+            - TRANSLATION: Translate text content
+            - MISSING_VALUES: Handle null/empty values
+            
+            Common ambiguity patterns:
+            - "find X" could mean: analyze X, search X, highlight X, filter to show X
+            - "show me X" could mean: display data, create visualization, generate report
+            - "clean data" could mean: remove duplicates, fix missing values, identify junk
+            - "highlight X" could mean: format cells, mark important data, filter data
+            
+            Return ONLY this JSON:
+            {{
+                "confidence": 85,
+                "primary_category": "JUNK_DETECTION",
+                "alternatives": [
+                    {{"category": "SPREADSHEET_COMMAND", "reason": "Could want to highlight/search in spreadsheet", "likelihood": 30}},
+                    {{"category": "ANALYSIS", "reason": "Might want statistical analysis of junk patterns", "likelihood": 20}}
+                ],
+                "is_ambiguous": false,
+                "user_intent_keywords": ["find", "junk", "identify"]
+            }}
+            """
+            
+            self.logger.info(f"🤖 Sending confidence analysis to LLM...")
+            self.logger.info(f"🤖 Analysis prompt: {analysis_prompt}")
+            
+            response = self.llm.invoke(analysis_prompt)
+            self.logger.info(f"🤖 LLM raw response: '{response.content}'")
+            
+            raw_content = response.content.strip().replace('```json', '').replace('```', '').strip()
+            self.logger.info(f"🤖 Cleaned response: '{raw_content}'")
+            
+            result = json.loads(raw_content)
+            self.logger.info(f"🤖 Parsed JSON result: {result}")
+            
+            confidence = result.get('confidence', 50)
+            category = result.get('primary_category', initial_category)
+            alternatives = result.get('alternatives', [])
+            
+            self.logger.info(f"✅ Query confidence analysis complete:")
+            self.logger.info(f"   - Confidence: {confidence}%")
+            self.logger.info(f"   - Category: {category}")
+            self.logger.info(f"   - Alternatives: {alternatives}")
+            self.logger.info(f"   - Threshold check: {confidence}% {'<' if confidence < self.confidence_threshold else '>='} {self.confidence_threshold}%")
+            
+            return category, confidence, alternatives
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in confidence analysis: {str(e)}")
+            # Fallback: assume medium confidence
+            return initial_category, 60, []
+    
+    def generate_clarification_options(self, question: str, primary_category: str, alternatives: list) -> dict:
+        """
+        Generate user-friendly clarification response as conversational text.
+        
+        Args:
+            question: Original user query
+            primary_category: Primary detected category
+            alternatives: List of alternative interpretations
+            
+        Returns:
+            dict: Regular response with conversational clarification text
+        """
+        try:
+            # Generate conversational text explaining the options
+            response_parts = [f"I can help you with \"{question}\" in several ways:"]
+            
+            # Add primary option first (recommended)
+            primary_description = self._get_category_description(primary_category)
+            if primary_description:
+                response_parts.append(f"• **{primary_description}** (Recommended)")
+            
+            # Add alternative options
+            for alt in alternatives:
+                if alt.get('likelihood', 0) >= 20:  # Only show likely alternatives
+                    alt_description = self._get_category_description(alt['category'])
+                    if alt_description and alt_description != primary_description:
+                        response_parts.append(f"• {alt_description}")
+            
+            # Add general option
+            response_parts.append("• Or if you have something else in mind, just let me know!")
+            
+            # Combine into conversational response
+            response_parts.append("\nWhat would you like me to do?")
+            
+            conversational_response = "\n\n".join(response_parts)
+            
+            # Return as a regular response, not special clarification type
+            return {
+                "type": "regular",
+                "message": conversational_response,
+                "original_query": question
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generating clarification response: {str(e)}")
+            return {
+                "type": "regular",
+                "message": "I'm not sure how to help with that. Could you please rephrase your question or tell me more specifically what you'd like me to do?"
+            }
+    
+    def _get_category_description(self, category: str) -> str:
+        """Get conversational description for a category."""
+        
+        category_descriptions = {
+            "JUNK_DETECTION": "Analyze data quality and identify junk or spam responses",
+            "SPREADSHEET_COMMAND": "Format or manipulate your spreadsheet with visual changes",
+            "SPECIFIC_DATA": "Query and analyze specific information from your data",
+            "VISUALIZATION": "Create charts, graphs, or visual representations",
+            "ANALYSIS": "Perform statistical analysis, find correlations, or identify patterns",
+            "DUPLICATE_CHECK": "Find, analyze, or remove duplicate rows from your dataset",
+            "MISSING_VALUES": "Identify and handle missing or null values in your data",
+            "TRANSLATION": "Translate text content in your data to different languages"
+        }
+        
+        return category_descriptions.get(category, "Help with your data request")
+    
+    def _create_option_for_category(self, category: str, question: str, is_primary: bool = False) -> dict:
+        """Create a user-friendly option for a specific category."""
+        
+        option_templates = {
+            "JUNK_DETECTION": {
+                "id": "junk_analysis",
+                "title": "🧹 Analyze data quality",
+                "description": "Identify and summarize junk/spam responses with confidence scores",
+                "category": "JUNK_DETECTION"
+            },
+            "SPREADSHEET_COMMAND": {
+                "id": "spreadsheet_action", 
+                "title": "🎨 Format or manipulate spreadsheet",
+                "description": "Apply formatting, highlighting, or other visual changes to cells",
+                "category": "SPREADSHEET_COMMAND"
+            },
+            "SPECIFIC_DATA": {
+                "id": "data_query",
+                "title": "📊 Query and analyze data",
+                "description": "Get specific information, summaries, or insights from your data",
+                "category": "SPECIFIC_DATA"
+            },
+            "VISUALIZATION": {
+                "id": "create_chart",
+                "title": "📈 Create visualization",
+                "description": "Generate charts, graphs, or visual representations of your data",
+                "category": "VISUALIZATION"
+            },
+            "ANALYSIS": {
+                "id": "statistical_analysis",
+                "title": "🔬 Perform statistical analysis",
+                "description": "Run correlations, patterns analysis, or other statistical operations",
+                "category": "ANALYSIS"
+            },
+            "DUPLICATE_CHECK": {
+                "id": "duplicate_handling",
+                "title": "🔍 Handle duplicate data",
+                "description": "Find, analyze, or remove duplicate rows from your dataset",
+                "category": "DUPLICATE_CHECK"
+            },
+            "MISSING_VALUES": {
+                "id": "missing_data",
+                "title": "🔧 Handle missing values",
+                "description": "Identify, analyze, or fix missing/null values in your data",
+                "category": "MISSING_VALUES"
+            },
+            "TRANSLATION": {
+                "id": "translate_content",
+                "title": "🌍 Translate content",
+                "description": "Translate text content in your data to different languages",
+                "category": "TRANSLATION"
+            }
+        }
+        
+        template = option_templates.get(category)
+        if template:
+            option = template.copy()
+            if is_primary:
+                option["title"] = f"✨ {option['title']} (Recommended)"
+            return option
+        
+        return None
+    
+    def process_user_choice(self, choice_id: str, original_query: str, category: str) -> tuple[str, str]:
+        """
+        Process user's clarification choice and prepare for execution.
+        
+        Args:
+            choice_id: User's selected option ID
+            original_query: Original user query
+            category: Selected category
+            
+        Returns:
+            tuple: (processed_query, final_category)
+        """
+        try:
+            # Learn user preference
+            self._learn_user_preference(original_query, choice_id, category)
+            
+            # If user chose "other", ask for more details
+            if choice_id == "other":
+                return original_query, "CLARIFY_MORE"
+            
+            # Otherwise, return the query with the selected category
+            self.logger.info(f"✅ User chose {choice_id} for query: '{original_query}'")
+            return original_query, category
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error processing user choice: {str(e)}")
+            return original_query, category
+    
+    def _learn_user_preference(self, query: str, choice_id: str, category: str):
+        """Learn user preferences for similar future queries."""
+        try:
+            # Extract key patterns from the query
+            key_patterns = self._extract_key_patterns(query)
+            
+            # Store preference
+            for pattern in key_patterns:
+                if pattern not in self.user_preferences:
+                    self.user_preferences[pattern] = {}
+                
+                if category not in self.user_preferences[pattern]:
+                    self.user_preferences[pattern][category] = 0
+                
+                self.user_preferences[pattern][category] += 1
+            
+            self.logger.debug(f"📚 Learned preference: {key_patterns} → {category}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error learning user preference: {str(e)}")
+    
+    def _extract_key_patterns(self, query: str) -> list:
+        """Extract key patterns from user query for learning."""
+        patterns = []
+        query_lower = query.lower()
+        
+        # Action verbs
+        action_verbs = ['find', 'show', 'create', 'make', 'generate', 'analyze', 'identify', 'clean', 'remove', 'fix']
+        for verb in action_verbs:
+            if verb in query_lower:
+                patterns.append(f"action:{verb}")
+        
+        # Subject nouns
+        subjects = ['junk', 'duplicate', 'chart', 'graph', 'data', 'trend', 'pattern', 'missing', 'null']
+        for subject in subjects:
+            if subject in query_lower:
+                patterns.append(f"subject:{subject}")
+        
+        # Combined patterns
+        if 'junk' in query_lower and 'find' in query_lower:
+            patterns.append("pattern:find_junk")
+        if 'show' in query_lower and 'trend' in query_lower:
+            patterns.append("pattern:show_trend")
+        
+        return patterns
+    
+    def check_learned_preferences(self, query: str) -> tuple[str, int]:
+        """
+        Check if we've learned user preferences for this type of query.
+        
+        Args:
+            query: User's query
+            
+        Returns:
+            tuple: (preferred_category, confidence_boost)
+        """
+        try:
+            patterns = self._extract_key_patterns(query)
+            category_scores = {}
+            
+            for pattern in patterns:
+                if pattern in self.user_preferences:
+                    for category, count in self.user_preferences[pattern].items():
+                        category_scores[category] = category_scores.get(category, 0) + count
+            
+            if category_scores:
+                # Get the most preferred category
+                preferred_category = max(category_scores.items(), key=lambda x: x[1])
+                confidence_boost = min(30, preferred_category[1] * 10)  # Max 30 point boost
+                
+                self.logger.debug(f"📈 Learned preference boost: {preferred_category[0]} (+{confidence_boost}%)")
+                return preferred_category[0], confidence_boost
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error checking learned preferences: {str(e)}")
+        
+        return None, 0

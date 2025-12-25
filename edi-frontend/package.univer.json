@@ -1,0 +1,29 @@
+{
+  "name": "Univer Dependencies",
+  "description": "Dependencies to add for Univer migration",
+  "dependencies": {
+    "@univerjs/core": "^0.1.16",
+    "@univerjs/design": "^0.1.16",
+    "@univerjs/docs": "^0.1.16",
+    "@univerjs/docs-ui": "^0.1.16",
+    "@univerjs/engine-formula": "^0.1.16",
+    "@univerjs/engine-render": "^0.1.16",
+    "@univerjs/sheets": "^0.1.16",
+    "@univerjs/sheets-formula": "^0.1.16",
+    "@univerjs/sheets-ui": "^0.1.16",
+    "@univerjs/ui": "^0.1.16",
+    "@univerjs/facade": "^0.1.16",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0"
+  },
+  "notes": [
+    "Run: npm install @univerjs/core@^0.1.16 @univerjs/design@^0.1.16 @univerjs/docs@^0.1.16 @univerjs/docs-ui@^0.1.16 @univerjs/engine-formula@^0.1.16 @univerjs/engine-render@^0.1.16 @univerjs/sheets@^0.1.16 @univerjs/sheets-formula@^0.1.16 @univerjs/sheets-ui@^0.1.16 @univerjs/ui@^0.1.16 @univerjs/facade@^0.1.16",
+    "These packages are compatible with React 18 and Next.js 14+",
+    "Total additional bundle size: ~2-3MB (gzipped: ~500KB)"
+  ]
+}
+

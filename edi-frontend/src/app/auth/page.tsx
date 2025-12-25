@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
 import { motion } from 'framer-motion';
-import TextLogo from '@/components/TextLogo';
+import Image from 'next/image';
 
 export default function Auth() {
   const [email, setEmail] = useState('');
@@ -25,6 +25,7 @@ export default function Auth() {
       setError('Authentication code missing. Please try signing in again.');
     }
   }, [searchParams]);
+
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,8 +48,8 @@ export default function Auth() {
       }
 
       router.push(redirectedFrom);
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'An error occurred');
     } finally {
       setIsLoading(false);
     }
@@ -65,33 +66,32 @@ export default function Auth() {
         }
       });
       if (error) throw error;
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'An error occurred');
       setIsLoading(false);
     }
   };
 
+  // Prevent body scroll for this page
+  React.useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4 relative">
-      {/* Enhanced animated background elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {/* Subtle blue gradient backgrounds */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-700/20 via-transparent to-transparent"></div>
-        <div className="absolute inset-0 bg-gradient-to-tl from-blue-900/25 via-blue-900/5 to-transparent"></div>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(59,130,246,0.2),transparent_70%)]"></div>
-        
-        {/* Animated blue orbs */}
-        <div className="absolute w-96 h-96 bg-blue-500/10 rounded-full blur-3xl -top-48 -left-48 animate-pulse"></div>
-        <div className="absolute w-96 h-96 bg-blue-600/10 rounded-full blur-3xl -bottom-48 -right-48 animate-pulse delay-1000"></div>
-      </div>
+    <div className="h-screen bg-background flex items-center justify-center p-4 relative">
+      {/* Gradient background (same as home hero) */}
+      <div className="absolute inset-0 z-0 bg-[linear-gradient(135deg,rgba(34,211,238,0.28),transparent_40%),linear-gradient(225deg,rgba(236,72,153,0.28),transparent_45%),linear-gradient(180deg,#000,#000)]"></div>
 
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="w-full max-w-md"
+        className="w-full max-w-md relative z-20"
       >
-        <div className="bg-black/40 backdrop-blur-md border border-blue-900/30 rounded-3xl p-8 shadow-2xl">
+        <div className="bg-card/40 backdrop-blur-md border border-border rounded-3xl p-8 shadow-2xl">
           <div className="text-center mb-8">
             <motion.div
               initial={{ scale: 0.5, opacity: 0 }}
@@ -99,12 +99,12 @@ export default function Auth() {
               transition={{ delay: 0.2 }}
             >
               <div className="mb-4">
-                <TextLogo size="lg" variant="gradient" />
+                <Image src="/1.svg" alt="EDI.ai" width={80} height={80} className="h-20 w-auto drop-shadow-lg mx-auto" />
               </div>
               <h1 className="text-2xl font-bold text-white mb-2">
                 Welcome to EDI.ai
               </h1>
-              <p className="text-blue-100/70 text-lg">
+              <p className="text-white/70 text-lg">
                 {isSignUp ? 'Create your account to get started' : 'Sign in to continue your journey'}
               </p>
             </motion.div>
@@ -146,18 +146,13 @@ export default function Auth() {
               </span>
             </button>
 
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-blue-900/30"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 text-blue-200/70 bg-black/40">Or continue with email</span>
-              </div>
+            <div className="my-6 text-center">
+              <span className="text-white/70 text-sm">Or continue with email</span>
             </div>
 
             <form onSubmit={handleAuth} className="space-y-4">
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-blue-200 mb-1">
+                <label htmlFor="email" className="block text-sm font-medium text-white mb-1">
                   Email address
                 </label>
                 <input
@@ -165,14 +160,14 @@ export default function Auth() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/10 border border-blue-900/30 rounded-xl text-white placeholder-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-200 backdrop-blur-sm"
+                  className="w-full px-4 py-3 bg-white/10 border border-border rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all duration-200 backdrop-blur-sm"
                   placeholder="Enter your email"
                   required
                 />
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-blue-200 mb-1">
+                <label htmlFor="password" className="block text-sm font-medium text-white mb-1">
                   Password
                 </label>
                 <input
@@ -180,7 +175,7 @@ export default function Auth() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/10 border border-blue-900/30 rounded-xl text-white placeholder-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-200 backdrop-blur-sm"
+                  className="w-full px-4 py-3 bg-white/10 border border-border rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all duration-200 backdrop-blur-sm"
                   placeholder="Enter your password"
                   required
                 />
@@ -189,7 +184,7 @@ export default function Auth() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-6 group shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_30px_rgba(37,99,235,0.4)]"
+                className="w-full bg-primary hover:bg-primary/90 text-black font-medium py-3 px-4 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-6 group"
               >
                 <span className="group-hover:translate-x-1 transition-transform duration-200 inline-block">
                   {isLoading ? 'Please wait...' : (isSignUp ? 'Create Account' : 'Sign In')}
@@ -206,7 +201,7 @@ export default function Auth() {
           >
             <button
               onClick={() => setIsSignUp(!isSignUp)}
-              className="text-blue-400 hover:text-blue-300 text-sm transition-colors duration-200"
+              className="text-primary hover:text-primary/80 text-sm transition-colors duration-200"
             >
               {isSignUp
                 ? 'Already have an account? Sign in'

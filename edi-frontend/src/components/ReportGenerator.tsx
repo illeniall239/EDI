@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { generateReport, downloadReport, checkReportStatus } from '@/utils/api';
 
 interface ReportGeneratorProps {
@@ -29,7 +30,7 @@ export default function ReportGenerator({ workspaceId, isDataLoaded, collapsed =
           setError(data.error || 'Unknown error while checking report status');
           return false;
         }
-      } catch (e) {
+      } catch {
         // ignore, will retry
       }
       await new Promise((resolve) => setTimeout(resolve, interval));
@@ -111,91 +112,264 @@ export default function ReportGenerator({ workspaceId, isDataLoaded, collapsed =
       <button
         onClick={handleOpen}
         disabled={!isDataLoaded}
-        className={`${collapsed ? 'w-10 h-10 flex items-center justify-center bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/30' : 'w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white'} rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed`}
+        className={`${collapsed ? 'w-10 h-10 flex items-center justify-center bg-primary/10 hover:bg-primary/20 border border-primary/30' : 'flex items-center gap-1.5 px-2.5 py-1.5 bg-secondary hover:bg-primary border border-border hover:border-primary text-secondary-foreground hover:text-primary-foreground'} rounded-md text-xs transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed`}
         title={collapsed ? 'Generate Report' : ''}
       >
-        <svg className={`w-5 h-5 ${collapsed ? 'text-blue-400' : 'text-white mr-1'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className={`w-3.5 h-3.5 ${collapsed ? 'text-primary' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
         {!collapsed && 'Generate Report'}
       </button>
 
       {/* Waiting Modal */}
-      {waiting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-          <div className="bg-white bg-opacity-100 rounded-xl shadow-2xl p-8 max-w-sm w-full flex flex-col items-center pointer-events-auto">
-            <div className="text-lg font-semibold mb-4 text-gray-800">Generating report, please wait...</div>
-            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+      {waiting && createPortal(
+        <div 
+          className="fixed bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden z-[9999]"
+          style={{
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)'
+          }}
+        >
+          {/* Header */}
+          <div className="border-b border-border p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">
+                  Processing Report
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Analyzing data and generating insights
+                </p>
+              </div>
+            </div>
           </div>
-        </div>
+
+          {/* Content */}
+          <div className="p-6">
+            <div className="bg-muted/20 rounded-lg p-4 text-center">
+              <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-foreground leading-relaxed">
+                Please wait while we analyze your data and create a comprehensive report...
+              </p>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Error/Result Modal */}
-      {showResult && !waiting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-          <div className="bg-white bg-opacity-100 rounded-xl shadow-2xl p-8 max-w-sm w-full flex flex-col items-center pointer-events-auto">
-            {error ? (
-              <div className="text-lg font-semibold mb-4 text-red-600">{error}</div>
-            ) : reportId ? (
-              <>
-                <div className="text-lg font-semibold mb-2 text-green-700">Report generated!</div>
-                <div className="text-sm text-gray-700 mb-1">Filename: <span className="font-mono">report_{reportId}.pdf</span></div>
-                {reportTime && (
-                  <div className="text-xs text-gray-500 mb-2">Generated at: {reportTime}</div>
-                )}
-                <div className="flex gap-4 mt-2">
-                  <button
-                    className="px-4 py-2 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700"
-                    onClick={handleDownload}
-                    disabled={isDownloading}
-                  >
-                    {isDownloading ? 'Downloading...' : 'Download'}
-                  </button>
-                  <button
-                    className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
-                    onClick={handleGenerate}
-                    disabled={isGenerating}
-                  >
-                    {isGenerating ? 'Regenerating...' : 'Regenerate'}
-                  </button>
+      {showResult && !waiting && createPortal(
+        <div 
+          className="fixed bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden z-[9999]"
+          style={{
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)'
+          }}
+        >
+          {/* Header */}
+          <div className="border-b border-border p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${
+                  error 
+                    ? 'bg-destructive/10 text-destructive' 
+                    : 'bg-primary/10 text-primary'
+                }`}>
+                  {error ? (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  )}
                 </div>
-              </>
-            ) : (
-              <div className="text-lg font-semibold mb-4 text-gray-800">No report generated yet.</div>
-            )}
-            <button
-              className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 mt-6"
-              onClick={() => { setShowResult(false); setError(null); }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Prompt Modal */}
-      {showPrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-          <div className="bg-white bg-opacity-100 rounded-xl shadow-2xl p-8 max-w-sm w-full flex flex-col items-center pointer-events-auto">
-            <div className="text-lg font-semibold mb-4 text-gray-800">Generate a report?</div>
-            <div className="flex gap-4 mt-2">
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">
+                    {error ? 'Report Generation Failed' : 'Report Ready'}
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {error 
+                      ? 'An error occurred during generation' 
+                      : 'Your report has been generated successfully'
+                    }
+                  </p>
+                </div>
+              </div>
               <button
-                className="px-4 py-2 rounded-lg bg-purple-600 text-white font-medium hover:bg-purple-700"
-                onClick={handlePromptYes}
-                disabled={isGenerating}
+                onClick={() => { setShowResult(false); setError(null); }}
+                className="p-2 rounded-lg hover:bg-accent text-foreground hover:text-foreground transition-colors"
               >
-                {isGenerating ? 'Generating...' : 'Yes'}
-              </button>
-              <button
-                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200"
-                onClick={() => setShowPrompt(false)}
-                disabled={isGenerating}
-              >
-                Cancel
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
           </div>
-        </div>
+
+          {/* Content */}
+          <div className="p-6">
+            {error ? (
+              <div className="bg-destructive/10 rounded-lg p-4 mb-6">
+                <p className="text-destructive leading-relaxed">
+                  {error}
+                </p>
+              </div>
+            ) : reportId ? (
+              <div className="bg-muted/20 rounded-lg p-4 mb-6">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-foreground">Filename:</span>
+                    <span className="text-sm font-mono text-foreground bg-muted/50 px-2 py-1 rounded">
+                      report_{reportId}.pdf
+                    </span>
+                  </div>
+                  {reportTime && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-foreground">Generated:</span>
+                      <span className="text-sm text-muted-foreground">{reportTime}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-muted/20 rounded-lg p-4 mb-6">
+                <p className="text-foreground leading-relaxed">
+                  No report has been generated yet.
+                </p>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3">
+              {error ? (
+                <>
+                  <button
+                    onClick={() => { setShowResult(false); setError(null); }}
+                    className="px-4 py-2.5 rounded-lg border border-border bg-secondary hover:bg-accent text-secondary-foreground hover:text-accent-foreground transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/20 font-medium"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={handleGenerate}
+                    disabled={isGenerating}
+                    className="px-4 py-2.5 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 bg-primary hover:bg-primary/90 text-primary-foreground focus:ring-primary/20 shadow-sm shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isGenerating ? 'Retrying...' : 'Try Again'}
+                  </button>
+                </>
+              ) : reportId ? (
+                <>
+                  <button
+                    onClick={() => { setShowResult(false); setError(null); }}
+                    className="px-4 py-2.5 rounded-lg border border-border bg-secondary hover:bg-accent text-secondary-foreground hover:text-accent-foreground transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/20 font-medium"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={handleGenerate}
+                    disabled={isGenerating}
+                    className="px-4 py-2.5 rounded-lg border border-border bg-muted hover:bg-accent text-muted-foreground hover:text-accent-foreground transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/20 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isGenerating ? 'Regenerating...' : 'Regenerate'}
+                  </button>
+                  <button
+                    onClick={handleDownload}
+                    disabled={isDownloading}
+                    className="px-4 py-2.5 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 bg-primary hover:bg-primary/90 text-primary-foreground focus:ring-primary/20 shadow-sm shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isDownloading ? 'Downloading...' : 'Download'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => { setShowResult(false); setError(null); }}
+                  className="px-4 py-2.5 rounded-lg border border-border bg-secondary hover:bg-accent text-secondary-foreground hover:text-accent-foreground transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/20 font-medium"
+                >
+                  Close
+                </button>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Prompt Modal */}
+      {showPrompt && createPortal(
+        <div 
+          className="fixed bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden z-[9999]"
+          style={{
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)'
+          }}
+        >
+          {/* Header */}
+          <div className="border-b border-border p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">
+                    Generate Report
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Create a comprehensive analysis report
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPrompt(false)}
+                className="p-2 rounded-lg hover:bg-accent text-foreground hover:text-foreground transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-6">
+            <div className="bg-muted/20 rounded-lg p-4 mb-6">
+              <p className="text-foreground leading-relaxed">
+                Generate a detailed PDF report with insights and visualizations from your current dataset?
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowPrompt(false)}
+                disabled={isGenerating}
+                className="px-4 py-2.5 rounded-lg border border-border bg-secondary hover:bg-accent text-secondary-foreground hover:text-accent-foreground transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/20 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePromptYes}
+                disabled={isGenerating}
+                className="px-4 py-2.5 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 bg-primary hover:bg-primary/90 text-primary-foreground focus:ring-primary/20 shadow-sm shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isGenerating ? 'Generating...' : 'Generate'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </>
   );

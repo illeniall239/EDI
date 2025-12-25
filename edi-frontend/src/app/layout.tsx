@@ -1,18 +1,18 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Pixelify_Sans } from "next/font/google";
 import "./globals.css";
-import Providers from "@/components/Providers";
-import { StagewiseToolbar } from "@stagewise/toolbar-next";
+import ClientProviders from "@/components/ClientProviders";
 
 const inter = Inter({ subsets: ["latin"] });
+const pixelifySans = Pixelify_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-pixelify",
+});
 
 export const metadata: Metadata = {
   title: "EDI.ai - Intelligent Data Analysis",
   description: "Your personal AI-powered data analysis assistant.",
-};
-
-const stagewiseConfig = {
-  plugins: []
 };
 
 export default function RootLayout({
@@ -21,14 +21,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        <Providers>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.className} ${pixelifySans.variable} bg-background bg-black text-foreground text-white`}>
+        <ClientProviders>
           {children}
-        </Providers>
-        {process.env.NODE_ENV === 'development' && (
-          <StagewiseToolbar config={stagewiseConfig} />
-        )}
+        </ClientProviders>
       </body>
     </html>
   );

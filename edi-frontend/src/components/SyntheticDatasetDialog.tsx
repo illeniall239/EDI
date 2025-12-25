@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Database, X, Info, Hand, Lightbulb, ChevronUp, ChevronDown, Trash2, Play, Lock } from 'lucide-react';
 
 interface SyntheticDatasetDialogProps {
   isOpen: boolean;
@@ -30,6 +30,90 @@ export default function SyntheticDatasetDialog({
   ]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Input validation states
+  const [rowsInput, setRowsInput] = useState('100');
+  const [columnsInput, setColumnsInput] = useState('');
+  const [inputErrors, setInputErrors] = useState<{ rows?: string; columns?: string }>({});
+
+  // Dragging state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dialogPos, setDialogPos] = useState<{left: number, top: number} | null>(null);
+  const [dragOffset, setDragOffset] = useState<{x: number, y: number}>({x: 0, y: 0});
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Sync input states with actual values
+  useEffect(() => {
+    setRowsInput(rows.toString());
+  }, [rows]);
+
+  useEffect(() => {
+    setColumnsInput(typeof columns === 'number' ? columns.toString() : '');
+  }, [columns]);
+
+  // Drag handlers
+  const handleDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!modalRef.current) return;
+    
+    const rect = modalRef.current.getBoundingClientRect();
+    const offset = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+    
+    setDragOffset(offset);
+    setIsDragging(true);
+    
+    if (!dialogPos) {
+      setDialogPos({
+        left: rect.left,
+        top: rect.top
+      });
+    }
+  };
+
+  const handleDrag = useCallback((e: MouseEvent) => {
+    if (!isDragging) return;
+    
+    e.preventDefault();
+    
+    const newLeft = e.clientX - dragOffset.x;
+    const newTop = e.clientY - dragOffset.y;
+    
+    // Keep modal within viewport bounds
+    const maxLeft = window.innerWidth - 400;
+    const maxTop = window.innerHeight - 300;
+    
+    const boundedPos = {
+      left: Math.max(0, Math.min(newLeft, maxLeft)),
+      top: Math.max(0, Math.min(newTop, maxTop))
+    };
+    
+    setDialogPos(boundedPos);
+  }, [dragOffset, isDragging]);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  // Handle drag event listeners
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleDrag);
+      document.addEventListener('mouseup', handleDragEnd);
+    } else {
+      document.removeEventListener('mousemove', handleDrag);
+      document.removeEventListener('mouseup', handleDragEnd);
+    }
+    
+    return () => {
+      document.removeEventListener('mousemove', handleDrag);
+      document.removeEventListener('mouseup', handleDragEnd);
+    };
+  }, [isDragging, handleDrag, handleDragEnd]);
 
   const handleClose = () => {
     if (!isGenerating) {
@@ -39,7 +123,57 @@ export default function SyntheticDatasetDialog({
       setUseCustomColumns(false);
       setCustomColumns([{ name: '', description: '' }]);
       setError(null);
+      setRowsInput('100');
+      setColumnsInput('');
+      setInputErrors({});
+      setDialogPos(null); // Reset dialog position to center on next open
       onClose();
+    }
+  };
+
+  // Input validation functions
+  const validateAndSetRows = (inputValue: string) => {
+    const trimmed = inputValue.trim();
+    if (trimmed === '') {
+      setInputErrors(prev => ({ ...prev, rows: undefined }));
+      return;
+    }
+    
+    const value = parseInt(trimmed);
+    if (isNaN(value)) {
+      setInputErrors(prev => ({ ...prev, rows: 'Please enter a valid number' }));
+    } else if (value === 0) {
+      setInputErrors(prev => ({ ...prev, rows: "Can't generate 0 rows" }));
+    } else if (value < 1) {
+      setInputErrors(prev => ({ ...prev, rows: 'Rows must be at least 1' }));
+    } else if (value > 10000) {
+      setInputErrors(prev => ({ ...prev, rows: 'Maximum 10,000 rows allowed' }));
+    } else {
+      setRows(value);
+      setInputErrors(prev => ({ ...prev, rows: undefined }));
+    }
+  };
+
+  const validateAndSetColumns = (inputValue: string) => {
+    const trimmed = inputValue.trim();
+    if (trimmed === '') {
+      setColumns('');
+      setInputErrors(prev => ({ ...prev, columns: undefined }));
+      return;
+    }
+    
+    const value = parseInt(trimmed);
+    if (isNaN(value)) {
+      setInputErrors(prev => ({ ...prev, columns: 'Please enter a valid number' }));
+    } else if (value === 0) {
+      setInputErrors(prev => ({ ...prev, columns: "Can't generate 0 columns" }));
+    } else if (value < 1) {
+      setInputErrors(prev => ({ ...prev, columns: 'Columns must be at least 1' }));
+    } else if (value > 100) {
+      setInputErrors(prev => ({ ...prev, columns: 'Maximum 100 columns allowed' }));
+    } else {
+      setColumns(value);
+      setInputErrors(prev => ({ ...prev, columns: undefined }));
     }
   };
 
@@ -60,18 +194,40 @@ export default function SyntheticDatasetDialog({
   };
 
   const handleGenerate = async () => {
+    // Clear previous error
+    setError(null);
+    
+    // Validate all fields before generation
     if (!description.trim()) {
       setError('Please provide a description for the dataset');
       return;
     }
-
-    if (rows < 1 || rows > 10000) {
-      setError('Number of rows must be between 1 and 10,000');
+    
+    // Validate rows input
+    if (inputErrors.rows) {
+      setError('Please fix the rows field error before generating');
       return;
     }
-
+    if (rows < 1) {
+      setError("Can't generate 0 rows");
+      return;
+    }
+    if (rows > 10000) {
+      setError('Maximum 10,000 rows allowed');
+      return;
+    }
+    
+    // Validate columns input (if provided)
+    if (inputErrors.columns) {
+      setError('Please fix the columns field error before generating');
+      return;
+    }
+    if (typeof columns === 'number' && columns < 1) {
+      setError("Can't generate 0 columns");
+      return;
+    }
+    
     setIsGenerating(true);
-    setError(null);
 
     try {
       const specs: SyntheticDatasetSpecs = {
@@ -130,48 +286,41 @@ export default function SyntheticDatasetDialog({
   ];
 
   return (
-    <AnimatePresence>
+    <>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-            onClick={handleClose}
-          />
-          
-          {/* Dialog */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-2xl rounded-xl shadow-2xl border border-slate-700/50 overflow-hidden"
-            style={{ backgroundColor: 'rgb(2, 6, 23)' }}
+          <div
+            ref={modalRef}
+            className="fixed w-full max-w-2xl rounded-xl shadow-2xl border border-border overflow-hidden bg-card z-[9999]"
+            style={{
+              top: dialogPos?.top && dialogPos.top < window.innerHeight - 500 ? dialogPos.top : '50%',
+              left: dialogPos?.left && dialogPos.left < window.innerWidth - 500 ? dialogPos.left : '50%',
+              transform: dialogPos ? 'none' : 'translate(-50%, -50%)',
+              cursor: isDragging ? 'grabbing' : 'default',
+            }}
           >
             {/* Header */}
-            <div className="border-b border-slate-700/50 p-4">
+            <div 
+              className="border-b border-border p-4"
+              style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+              onMouseDown={handleDragStart}
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-600 rounded-lg">
-                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
+                  <div className="p-2 bg-primary/10 text-primary rounded-lg">
+                    <Database className="w-5 h-5" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-semibold text-white">AI Synthetic Dataset Generator</h2>
-                    <p className="text-sm text-slate-400">Generate realistic sample data using AI</p>
+                    <h2 className="text-lg font-semibold text-foreground">AI Synthetic Dataset Generator</h2>
+                    <p className="text-sm text-muted-foreground">Generate realistic sample data using AI</p>
                   </div>
                 </div>
                 <button
                   onClick={handleClose}
+                  onMouseDown={(e) => e.stopPropagation()}
                   disabled={isGenerating}
-                  className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+                  className="p-2 rounded-lg hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
                 >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
@@ -179,23 +328,24 @@ export default function SyntheticDatasetDialog({
             {/* Content */}
             <div className="p-6 max-h-[80vh] overflow-y-auto">
               {/* Welcome Message */}
-              <div className="mb-6 p-4 rounded-lg border border-slate-700/50" style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)' }}>
+              <div className="mb-6 p-4 rounded-lg border border-border bg-muted/50">
                 <div className="flex items-start gap-3">
-                  <div className="p-1.5 bg-amber-600 rounded-lg mt-0.5">
-                    <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                  <div className="p-1.5 bg-primary/10 text-primary rounded-lg mt-0.5">
+                    <Info className="w-4 h-4" />
                   </div>
                   <div>
-                    <p className="text-white font-medium mb-2">👋 Hi! I'm your data generation assistant. I can help you:</p>
-                    <ul className="text-sm text-slate-400 space-y-1">
+                    <p className="text-foreground font-medium mb-2 flex items-center gap-2">
+                      <Hand className="w-4 h-4" />
+                      Hi! I&apos;m your data generation assistant. I can help you:
+                    </p>
+                    <ul className="text-sm text-muted-foreground space-y-1">
                       <li>• Generate realistic sample datasets</li>
                       <li>• Create custom data structures</li>
                       <li>• Produce data with specific patterns</li>
                       <li>• Build test data for development</li>
                       <li>• Generate training datasets</li>
                     </ul>
-                    <p className="text-white mt-3">What type of dataset would you like to create?</p>
+                    <p className="text-foreground mt-3">What type of dataset would you like to create?</p>
                   </div>
                 </div>
               </div>
@@ -203,16 +353,15 @@ export default function SyntheticDatasetDialog({
               {/* Quick Questions */}
               <div className="mb-6">
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-amber-400">💡</span>
-                  <span className="text-sm font-medium text-slate-300">Quick Presets:</span>
+                  <Lightbulb className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-medium text-muted-foreground">Quick Presets:</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {presetDatasets.map((preset, index) => (
                     <button
                       key={index}
                       onClick={() => setDescription(preset.description)}
-                      className="px-3 py-2 text-xs hover:bg-blue-600 text-slate-300 hover:text-white rounded-lg border border-slate-700 hover:border-blue-500 transition-all duration-200 text-left"
-                      style={{ backgroundColor: 'rgba(15, 23, 42, 0.8)' }}
+                      className="px-3 py-2 text-xs hover:bg-primary text-foreground hover:text-primary-foreground rounded-lg border border-border hover:border-primary transition-all duration-200 text-left bg-muted/30"
                       disabled={isGenerating}
                     >
                       {preset.name}
@@ -228,43 +377,123 @@ export default function SyntheticDatasetDialog({
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Describe the dataset you want to generate... (e.g., 'Sales data for a retail company with product names, prices, quantities, customer information')"
-                    className="w-full px-4 py-3 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none text-sm"
+                    className="w-full px-4 py-3 border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary resize-none text-sm bg-input"
                     rows={3}
                     disabled={isGenerating}
-                    style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)' }}
                   />
                 </div>
 
                 {/* Settings */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm text-slate-400 mb-2">Rows</label>
-                    <input
-                      type="number"
-                      value={rows}
-                      onChange={(e) => setRows(Math.max(1, Math.min(10000, parseInt(e.target.value) || 1)))}
-                      min="1"
-                      max="10000"
-                      className="w-full px-3 py-2 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                      disabled={isGenerating}
-                      style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)' }}
-                    />
+                    <label className="block text-sm text-foreground mb-2">Rows</label>
+                    <div className="relative flex">
+                      <input
+                        type="text"
+                        value={rowsInput}
+                        onChange={(e) => {
+                          setRowsInput(e.target.value);
+                          setInputErrors(prev => ({ ...prev, rows: undefined }));
+                        }}
+                        onBlur={(e) => validateAndSetRows(e.target.value)}
+                        className={`flex-1 px-3 py-2 border rounded-l-lg text-foreground text-sm focus:outline-none focus:ring-1 bg-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                          inputErrors.rows 
+                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
+                            : 'border-border focus:border-primary focus:ring-primary'
+                        }`}
+                        disabled={isGenerating}
+                      />
+                      <div className="flex flex-col border-y border-r border-border rounded-r-lg overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newValue = Math.min(10000, rows + 1);
+                            setRows(newValue);
+                            setRowsInput(newValue.toString());
+                            setInputErrors(prev => ({ ...prev, rows: undefined }));
+                          }}
+                          disabled={isGenerating || rows >= 10000}
+                          className="px-2 py-1 bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border-b border-border"
+                        >
+                          <ChevronUp className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newValue = Math.max(1, rows - 1);
+                            setRows(newValue);
+                            setRowsInput(newValue.toString());
+                            setInputErrors(prev => ({ ...prev, rows: undefined }));
+                          }}
+                          disabled={isGenerating || rows <= 1}
+                          className="px-2 py-1 bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    {inputErrors.rows && (
+                      <p className="mt-1 text-xs text-red-500">{inputErrors.rows}</p>
+                    )}
                   </div>
                   
                   {!useCustomColumns && (
                     <div>
-                      <label className="block text-sm text-slate-400 mb-2">Columns (optional)</label>
-                                              <input
-                          type="number"
-                          value={columns}
-                          onChange={(e) => setColumns(e.target.value ? parseInt(e.target.value) : '')}
-                          min="1"
-                          max="50"
+                      <label className="block text-sm text-foreground mb-2">Columns (optional)</label>
+                      <div className="relative flex">
+                        <input
+                          type="text"
+                          value={columnsInput}
+                          onChange={(e) => {
+                            setColumnsInput(e.target.value);
+                            setInputErrors(prev => ({ ...prev, columns: undefined }));
+                          }}
+                          onBlur={(e) => validateAndSetColumns(e.target.value)}
                           placeholder="Auto"
-                          className="w-full px-3 py-2 border border-slate-600 rounded-lg text-white placeholder-slate-400 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          className={`flex-1 px-3 py-2 border rounded-l-lg text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:ring-1 bg-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                            inputErrors.columns 
+                              ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
+                              : 'border-border focus:border-primary focus:ring-primary'
+                          }`}
                           disabled={isGenerating}
-                          style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)' }}
-                      />
+                        />
+                        <div className="flex flex-col border-y border-r border-border rounded-r-lg overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newValue = typeof columns === 'number' ? Math.min(100, columns + 1) : 1;
+                              setColumns(newValue);
+                              setColumnsInput(newValue.toString());
+                              setInputErrors(prev => ({ ...prev, columns: undefined }));
+                            }}
+                            disabled={isGenerating || (typeof columns === 'number' && columns >= 100)}
+                            className="px-2 py-1 bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors border-b border-border"
+                          >
+                            <ChevronUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (typeof columns === 'number') {
+                                const newValue = Math.max(1, columns - 1);
+                                setColumns(newValue);
+                                setColumnsInput(newValue.toString());
+                              } else {
+                                setColumns('');
+                                setColumnsInput('');
+                              }
+                              setInputErrors(prev => ({ ...prev, columns: undefined }));
+                            }}
+                            disabled={isGenerating || (typeof columns === 'number' && columns <= 1)}
+                            className="px-2 py-1 bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                      {inputErrors.columns && (
+                        <p className="mt-1 text-xs text-red-500">{inputErrors.columns}</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -276,10 +505,10 @@ export default function SyntheticDatasetDialog({
                       type="checkbox"
                       checked={useCustomColumns}
                       onChange={(e) => setUseCustomColumns(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 bg-slate-800 border-slate-600 rounded focus:ring-blue-500"
+                      className="w-4 h-4 text-primary bg-input border-border rounded focus:ring-primary accent-primary"
                       disabled={isGenerating}
                     />
-                    <span className="text-sm text-slate-300">
+                    <span className="text-sm text-foreground">
                       Specify custom columns
                     </span>
                   </label>
@@ -287,7 +516,7 @@ export default function SyntheticDatasetDialog({
 
                 {/* Custom Columns */}
                 {useCustomColumns && (
-                  <div className="p-4 rounded-lg border border-slate-700" style={{ backgroundColor: 'rgba(15, 23, 42, 0.4)' }}>
+                  <div className="p-4 rounded-lg border border-border bg-muted/30">
                     <div className="space-y-3">
                       {customColumns.map((column, index) => (
                         <div key={index} className="flex gap-3 items-start">
@@ -296,8 +525,7 @@ export default function SyntheticDatasetDialog({
                             value={column.name}
                             onChange={(e) => handleColumnChange(index, 'name', e.target.value)}
                             placeholder="Column name"
-                            className="flex-1 px-3 py-2 border border-slate-600 rounded-lg text-white placeholder-slate-400 text-sm focus:outline-none focus:border-blue-500"
-                            style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)' }}
+                            className="flex-1 px-3 py-2 border border-border rounded-lg text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:border-primary bg-input"
                             disabled={isGenerating}
                           />
                           <input
@@ -305,26 +533,23 @@ export default function SyntheticDatasetDialog({
                             value={column.description}
                             onChange={(e) => handleColumnChange(index, 'description', e.target.value)}
                             placeholder="Description (e.g., 'Customer email addresses')"
-                            className="flex-2 px-3 py-2 border border-slate-600 rounded-lg text-white placeholder-slate-400 text-sm focus:outline-none focus:border-blue-500"
-                            style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)' }}
+                            className="flex-2 px-3 py-2 border border-border rounded-lg text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:border-primary bg-input"
                             disabled={isGenerating}
                           />
                           {customColumns.length > 1 && (
                             <button
                               onClick={() => handleRemoveColumn(index)}
-                              className="p-2 text-slate-400 hover:text-red-400 transition-colors"
+                              className="p-2 text-muted-foreground hover:text-destructive transition-colors"
                               disabled={isGenerating}
                             >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           )}
                         </div>
                       ))}
                       <button
                         onClick={handleAddColumn}
-                        className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+                        className="text-sm text-primary hover:text-primary/80 transition-colors"
                         disabled={isGenerating}
                       >
                         + Add Column
@@ -335,7 +560,7 @@ export default function SyntheticDatasetDialog({
 
                 {/* Error Display */}
                 {error && (
-                  <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">
+                  <div className="p-3 bg-destructive/20 border border-destructive rounded-lg text-destructive text-sm">
                     {error}
                   </div>
                 )}
@@ -345,7 +570,7 @@ export default function SyntheticDatasetDialog({
                   <button
                     onClick={handleGenerate}
                     disabled={isGenerating || !description.trim()}
-                    className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 px-6 py-2 bg-primary hover:bg-primary/90 disabled:bg-muted text-primary-foreground font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isGenerating ? (
                       <>
@@ -354,9 +579,7 @@ export default function SyntheticDatasetDialog({
                       </>
                     ) : (
                       <>
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                        </svg>
+                        <Play className="w-4 h-4" />
                         Generate Dataset
                       </>
                     )}
@@ -365,16 +588,15 @@ export default function SyntheticDatasetDialog({
               </div>
 
               {/* Footer */}
-              <div className="mt-6 pt-4 border-t border-slate-700/50">
-                <div className="flex items-center gap-2 text-xs text-slate-500">
-                  <span>🔒</span>
+              <div className="mt-6 pt-4 border-t border-border">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Lock className="w-3 h-3" />
                   <span>Your data specifications stay secure and private</span>
                 </div>
               </div>
             </div>
-          </motion.div>
-        </div>
+          </div>
       )}
-    </AnimatePresence>
+    </>
   );
 } 

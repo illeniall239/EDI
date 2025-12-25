@@ -1,0 +1,422 @@
+================================================================================
+LEARN MODE DATA PERSISTENCE ISSUE - INVESTIGATION REPORT
+================================================================================
+
+DATE: 2025-01-01
+STATUS: UNRESOLVED - Under Active Investigation
+PRIORITY: HIGH - Blocking core learn mode functionality
+
+================================================================================
+PROBLEM STATEMENT
+================================================================================
+
+When users manually enter data or formulas in learn mode spreadsheets and save
+their work, the changes do NOT persist after page reload. The spreadsheet
+reverts to either:
+- The initial synthetic dataset, OR
+- Empty state, OR
+- Previous saved state (depending on timing)
+
+This makes learn mode unusable for practice, as users lose all their work.
+
+================================================================================
+EXPECTED BEHAVIOR
+================================================================================
+
+1. User opens learn mode workspace
+2. Initial synthetic practice data loads
+3. User manually enters formulas (e.g., =SUM(A1:A5), =C2*D2)
+4. User manually edits cell values
+5. User clicks "Save" button in chat sidebar
+6. Success feedback shows ("Saved!")
+7. User reloads page / returns later
+8. All manual changes persist (formulas, values, everything)
+
+================================================================================
+ACTUAL BEHAVIOR
+================================================================================
+
+1. User opens learn mode workspace ✓
+2. Initial synthetic practice data loads ✓
+3. User manually enters formulas ✓
+4. User manually edits cell values ✓
+5. User clicks "Save" button ✓
+6. Success feedback shows ✓
+7. User reloads page
+8. Manual changes are GONE ✗
+   - Formulas lost
+   - Edited values lost
+   - Spreadsheet shows original/empty data
+
+================================================================================
+SYSTEM ARCHITECTURE
+================================================================================
+
+DATA FLOW - INITIALIZATION:
+┌─────────────────────────────────────────────────────────────┐
+│ 1. LearnModeWorkspace mounts                                │
+│ 2. Calls loadWorkspaceData(workspaceId)                     │
+│ 3. If data exists → load from Supabase                      │
+│ 4. If no data → generate synthetic dataset                  │
+│ 5. Pass data to NativeSpreadsheet component                 │
+│ 6. NativeSpreadsheet converts array to Luckysheet format    │
+│ 7. Luckysheet renders spreadsheet with data                 │
+└─────────────────────────────────────────────────────────────┘
+
+DATA FLOW - USER EDITS:
+┌─────────────────────────────────────────────────────────────┐
+│ 1. User enters formula in cell (e.g., =A1+A2)               │
+│ 2. Luckysheet stores in internal state:                     │
+│    - cell.v = calculated value (e.g., 150)                  │
+│    - cell.f = formula string (e.g., "=A1+A2")               │
+│ 3. Changes stay in Luckysheet memory (not React state)      │
+└─────────────────────────────────────────────────────────────┘
+
+DATA FLOW - SAVE:
+┌─────────────────────────────────────────────────────────────┐
+│ 1. User clicks "Save" button (ChatSidebar)                  │
+│ 2. handleSaveWorksheet() is called                          │
+│ 3. Calls getCurrentData() callback                          │
+│ 4. getCurrentSheetData() in NativeSpreadsheet:              │
+│    a. Calls window.luckysheet.getSheetData()                │
+│    b. Returns 2D array of cell objects                      │
+│ 5. convertLuckysheetToArrayData() converts:                 │
+│    - From: Luckysheet 2D array format                       │
+│    - To: Simple array-of-objects format                     │
+│    - Should capture: cell.f (formula) OR cell.v (value)     │
+│ 6. saveWorkspaceData() saves to Supabase                    │
+│ 7. Success message displayed                                │
+└─────────────────────────────────────────────────────────────┘
+
+DATA FLOW - RELOAD:
+┌─────────────────────────────────────────────────────────────┐
+│ 1. User reloads page                                         │
+│ 2. LearnModeWorkspace re-initializes                        │
+│ 3. loadWorkspaceData() loads from Supabase                  │
+│ 4. Data passed to NativeSpreadsheet                         │
+│ 5. prepareLuckysheetData() converts back:                   │
+│    - From: Array-of-objects                                  │
+│    - To: Luckysheet celldata format                         │
+│    - Should recognize formula strings (start with =)        │
+│ 6. Luckysheet re-initialized with loaded data               │
+└─────────────────────────────────────────────────────────────┘
+
+================================================================================
+ROOT CAUSE ANALYSIS
+================================================================================
+
+HYPOTHESIS 1: Formulas Not Captured During Save ✗
+- Theory: convertLuckysheetToArrayData only captures cell.v (value), not cell.f (formula)
+- Fix Applied: Modified to check cell.f first, then cell.v
+- Result: Still not persisting
+- Status: Partially addressed, but issue remains
+
+HYPOTHESIS 2: Formulas Not Recognized During Load ✗
+- Theory: prepareLuckysheetData treats "=SUM(...)" as text, not formula
+- Fix Applied: Modified to detect strings starting with = and set as formula
+- Result: Not yet tested (build issue)
+- Status: Pending verification
+
+HYPOTHESIS 3: Save Not Actually Reaching Supabase ?
+- Theory: getCurrentSheetData returns empty/stale data
+- Debug Added: Comprehensive logging throughout save chain
+- Result: Logs show successful save calls
+- Status: Under investigation
+
+HYPOTHESIS 4: Data Being Overwritten After Save ?
+- Theory: LearnModeWorkspace replaces saved data with synthetic data
+- Evidence: Second useEffect might overwrite on activeView/concept changes
+- Status: Needs investigation
+
+HYPOTHESIS 5: User Formulas Outside Header Range ?
+- Theory: Formulas in columns without headers are skipped
+- Test: User tried adding header - still didn't persist
+- Status: Ruled out (not the issue)
+
+================================================================================
+CHANGES MADE (CHRONOLOGICALLY)
+================================================================================
+
+CHANGE 1: Added Data Persistence to LearnModeWorkspace
+File: edi-frontend/src/components/LearnModeWorkspace.tsx
+- Imported saveWorkspaceData from @/utils/api
+- Created saveDataToWorkspace helper function
+- Added event listener for 'dataUpdate' CustomEvents
+- Created handleDataUpdate callback for manual edits
+- Passed handleDataUpdate to NativeSpreadsheet
+Result: Initial synthetic dataset now saves, manual edits don't
+
+CHANGE 2: Fixed Synthetic Dataset Regeneration on Reload
+File: edi-frontend/src/components/LearnModeWorkspace.tsx (line 79)
+- Added await saveDataToWorkspace() after generating initial dataset
+- Ensures first-time generated data persists
+Result: Initial load works, but manual edits still lost
+
+CHANGE 3: Added Manual Save Button
+File: edi-frontend/src/components/ChatSidebar.tsx
+- Added Save/Check icons import from lucide-react
+- Added isSaving and saveStatus state management
+- Created handleSaveWorksheet function
+- Added Save button UI in header (learn mode only)
+Result: Button works, shows feedback, but data doesn't persist
+
+CHANGE 4: Fixed Stale Data in Save Handler
+Files:
+- edi-frontend/src/components/ChatSidebar.tsx
+- edi-frontend/src/components/NativeSpreadsheet.tsx
+- Added getCurrentData prop to ChatSidebar interface
+- Created getCurrentSheetData callback in NativeSpreadsheet
+- Passes callback to ChatSidebar
+- handleSaveWorksheet now uses getCurrentData() instead of stale prop
+Result: Current live data fetched, but formulas still lost
+
+CHANGE 5: Modified Formula Capture in Conversion
+File: edi-frontend/src/components/NativeSpreadsheet.tsx (line 548-560)
+- Modified convertLuckysheetToArrayData
+- Changed to check cell.f (formula) before cell.v (value)
+- Added logging: "📝 [Formula] Saved formula at row X, col Y"
+Result: No formula logs appear - formulas not being captured
+
+CHANGE 6: Modified Formula Recognition on Load
+File: edi-frontend/src/components/NativeSpreadsheet.tsx (line 2110-2123)
+- Modified prepareLuckysheetData
+- Added check: isFormula = string starts with =
+- If formula: set in f field, else: set in v field
+Result: Not yet tested - build didn't reload properly
+
+CHANGE 7: Added Comprehensive Debug Logging
+Files:
+- edi-frontend/src/components/ChatSidebar.tsx (line 5325-5326)
+- edi-frontend/src/components/NativeSpreadsheet.tsx (line 692-706)
+- edi-frontend/src/components/LearnModeWorkspace.tsx (line 50-51)
+- Save flow: logs data being saved (first 2 rows as JSON)
+- getCurrentSheetData: logs raw Luckysheet cell structure
+- Load flow: logs data returned from Supabase
+Result: Logs show saves happening, but enhanced cell logging not appearing
+
+================================================================================
+DEBUG FINDINGS
+================================================================================
+
+CONSOLE OUTPUT ANALYSIS:
+
+When user clicks Save (expected):
+✓ "💾 [Save] Saving worksheet data... 20 rows"
+✓ "💾 [Save] First 2 rows of data being saved: [{...}, {...}]"
+✓ "✅ [Save] Worksheet saved successfully"
+
+Raw Luckysheet Data (ISSUE HERE):
+✓ "📊 [getCurrentSheetData] Raw Luckysheet data..."
+✗ "Row 0: Array(3)" ← Should show cell details, not just Array reference
+✗ "Row 1: Array(3)" ← Enhanced logging not taking effect
+✗ "Row 2: Array(3)"
+
+Formula Detection (NOT APPEARING):
+✗ No "📝 [Formula] Saved formula at row X, col Y" logs
+✗ Means: convertLuckysheetToArrayData never sees cell.f
+
+Saved Data Structure:
+✓ Shows proper JSON: {Date: 45296, Product: "Laptop", Sales: 2400}
+✗ But Sales is number (2400), NOT formula ("=C2*D2")
+✗ Confirms formulas are lost before/during conversion
+
+On Reload:
+✓ "📥 [Load] Loaded data from workspace: 20 rows"
+✓ "📥 [Load] First 2 rows loaded: [{...}]"
+✓ Data loads, but without formulas
+
+================================================================================
+CURRENT BLOCKERS
+================================================================================
+
+BLOCKER 1: Enhanced Logging Not Working
+- Modified getCurrentSheetData to show cell.v, cell.f, hasFormula
+- Code change confirmed in file
+- But console still shows "Array(3)" instead of cell details
+- Possible causes:
+  * Build not picking up changes (Turbopack caching?)
+  * Browser caching old code
+  * Component not re-rendering with new code
+- Impact: Cannot see if Luckysheet even has cell.f property
+
+BLOCKER 2: Formula Detection Not Triggering
+- Added logging: "📝 [Formula] Saved formula..."
+- This log never appears in console
+- Means: cell.f is either undefined or empty string
+- Possible causes:
+  * Luckysheet not storing formulas in cell.f
+  * Wrong property name (maybe cell.formula instead?)
+  * Formula entered wrong (not actually a formula?)
+  * User entering formulas in cells that aren't being checked
+
+BLOCKER 3: Build/Cache Issues
+- Changes to code not reflecting in browser
+- Fast Refresh reports "done in 359ms" but behavior unchanged
+- May need hard refresh, server restart, or cache clear
+
+================================================================================
+QUESTIONS TO ANSWER
+================================================================================
+
+1. Does Luckysheet actually store formulas in cell.f property?
+   - Or is it cell.formula, cell.func, or something else?
+   - Need to check Luckysheet documentation/source
+
+2. When user types "=A1+A2" and presses Enter, what happens?
+   - Does Luckysheet save it as formula immediately?
+   - Or does it need explicit API call?
+
+3. Why is enhanced logging not showing cell structure?
+   - Is the code actually running?
+   - Is console.log being overridden?
+
+4. Are formulas even being entered correctly?
+   - Does formula bar show "=A1+A2" or just the result?
+   - Does cell have green triangle (formula indicator)?
+
+5. Is window.luckysheet.getSheetData() the right API?
+   - Maybe need window.luckysheet.getCellFormula()?
+   - Or window.luckysheet.getAllSheets()?
+
+================================================================================
+NEXT STEPS - DIAGNOSTIC
+================================================================================
+
+STEP 1: Force Code Refresh
+1. Stop dev server (Ctrl+C)
+2. Clear browser cache completely
+3. Delete node_modules/.cache if exists
+4. npm run dev
+5. Hard refresh browser (Ctrl+Shift+R)
+6. Verify enhanced logging now shows cell details
+
+STEP 2: Verify Luckysheet Formula Storage
+1. Open browser console
+2. Enter formula manually: =A1+A2 in cell C3
+3. Run: window.luckysheet.getSheetData()[2][2]
+4. Check if returned object has .f property
+5. Document exact property structure
+
+STEP 3: Check Formula Bar
+1. Click on cell where formula was entered
+2. Look at formula bar at top
+3. Does it show "=A1+A2" or just "150"?
+4. This confirms if formula is even stored
+
+STEP 4: Try Alternative Luckysheet APIs
+1. window.luckysheet.getAllSheets()
+2. window.luckysheet.getCellValue(row, col, 'f')
+3. Check if these return formula data
+
+STEP 5: Manual Save Test
+1. Enter formula in cell
+2. Open console
+3. Run: JSON.stringify(window.luckysheet.getSheetData()[2][2])
+4. See exact structure before conversion
+
+================================================================================
+NEXT STEPS - IMPLEMENTATION
+================================================================================
+
+Once diagnostic completes:
+
+IF formulas found in cell.f:
+→ Fix convertLuckysheetToArrayData to capture them
+→ Fix prepareLuckysheetData to restore them
+
+IF formulas NOT in cell.f:
+→ Find correct property name
+→ Update conversion logic accordingly
+
+IF formulas not stored at all:
+→ Check if Luckysheet configured wrong
+→ May need to enable formula mode
+→ Check Luckysheet initialization options
+
+IF code changes not taking effect:
+→ Investigate build system issue
+→ May need to restart or clear caches
+
+================================================================================
+RELEVANT FILES
+================================================================================
+
+Frontend Components:
+- edi-frontend/src/components/LearnModeWorkspace.tsx
+  * Loads data, manages learn mode state
+  * Handles initial synthetic dataset generation
+  * Lines 47-87: Data loading and generation logic
+
+- edi-frontend/src/components/NativeSpreadsheet.tsx
+  * Wraps Luckysheet spreadsheet library
+  * Lines 476-582: convertLuckysheetToArrayData (save side)
+  * Lines 2073-2140: prepareLuckysheetData (load side)
+  * Lines 673-704: getCurrentSheetData (live data fetcher)
+
+- edi-frontend/src/components/ChatSidebar.tsx
+  * Chat interface with Save button
+  * Lines 5313-5344: handleSaveWorksheet function
+
+API Utilities:
+- edi-frontend/src/utils/api.ts
+  * Lines 192-221: saveWorkspaceData - saves to Supabase
+  * Lines 223-245: loadWorkspaceData - loads from Supabase
+
+Backend:
+- backend/workspace_ai_processor.py
+  * Learn mode AI processor with system prompts
+
+Database:
+- Supabase workspaces table
+  * Fields: id, data (JSONB), filename, column_order, last_modified
+
+================================================================================
+TECHNICAL NOTES
+================================================================================
+
+Luckysheet Cell Object Structure (Expected):
+{
+  v: <any>,           // Cell value (calculated result)
+  f: <string>,        // Formula (e.g., "=SUM(A1:A5)")
+  ct: { fa, t },      // Cell type/format
+  m: <string>,        // Display text
+  bg: <string>,       // Background color
+  bl: <number>,       // Bold (0 or 1)
+  ...
+}
+
+Current Array Format (Saved to Supabase):
+[
+  { "Date": 45296, "Product": "Laptop", "Sales": 2400 },
+  { "Date": 45299, "Product": "Keyboard", "Sales": 375 }
+]
+
+Desired Array Format (With Formulas):
+[
+  { "Date": 45296, "Product": "Laptop", "Sales": "=C2*D2" },
+  { "Date": 45299, "Product": "Keyboard", "Sales": "=C3*D3" }
+]
+
+Note: Formulas should be stored as strings starting with =
+When loaded, strings starting with = should be set as formulas in Luckysheet
+
+================================================================================
+CONTACT / REFERENCES
+================================================================================
+
+User: Experiencing issue in learn mode
+Environment: Windows, Next.js 15.3.2, React, Luckysheet
+Browser: (need to document)
+Luckysheet Version: (need to document)
+
+Luckysheet Documentation:
+- https://mengshukeji.github.io/LuckysheetDocs/
+- API Reference: Check for formula-related methods
+
+Similar Issues:
+- Search: "luckysheet formula not saving"
+- Search: "luckysheet getSheetData formula"
+
+================================================================================
+END OF REPORT
+================================================================================

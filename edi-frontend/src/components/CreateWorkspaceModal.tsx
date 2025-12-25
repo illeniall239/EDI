@@ -4,6 +4,8 @@ import { Fragment, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { supabase } from '@/utils/supabase';
 import { useRouter } from 'next/navigation';
+import { WorkspaceType } from '@/types';
+import { BarChart3, BookOpen } from 'lucide-react';
 
 interface CreateWorkspaceModalProps {
     isOpen: boolean;
@@ -14,6 +16,7 @@ interface CreateWorkspaceModalProps {
 export default function CreateWorkspaceModal({ isOpen, onClose, onWorkspaceCreated }: CreateWorkspaceModalProps) {
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
+    const [workspaceType, setWorkspaceType] = useState<WorkspaceType>('work');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const router = useRouter();
@@ -35,6 +38,7 @@ export default function CreateWorkspaceModal({ isOpen, onClose, onWorkspaceCreat
                     {
                         name,
                         description,
+                        workspace_type: workspaceType,
                         user_id: session.user.id
                     }
                 ])
@@ -69,7 +73,7 @@ export default function CreateWorkspaceModal({ isOpen, onClose, onWorkspaceCreat
                     leaveFrom="opacity-100"
                     leaveTo="opacity-0"
                 >
-                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
+                    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" />
                 </Transition.Child>
 
                 <div className="fixed inset-0 overflow-y-auto">
@@ -83,7 +87,7 @@ export default function CreateWorkspaceModal({ isOpen, onClose, onWorkspaceCreat
                             leaveFrom="opacity-100 scale-100"
                             leaveTo="opacity-0 scale-95"
                         >
-                            <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-lg bg-black/80 backdrop-blur-md p-8 text-left align-middle transition-all border border-blue-900/50 shadow-[0_0_30px_rgba(37,99,235,0.3)]">
+                            <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-lg bg-card/40 backdrop-blur-md p-8 text-left align-middle transition-all border border-border">
                                 <Dialog.Title
                                     as="h3"
                                     className="text-xl font-semibold leading-6 text-white mb-1"
@@ -91,14 +95,98 @@ export default function CreateWorkspaceModal({ isOpen, onClose, onWorkspaceCreat
                                     Create New Workspace
                                 </Dialog.Title>
                                 
-                                <p className="text-blue-100/70 text-sm mb-6">
-                                    Create a workspace to organize your data analysis projects
+                                <p className="text-white/70 text-sm mb-6">
+                                    Choose between Work mode for data analysis or Learn mode for spreadsheet education
                                 </p>
 
                                 <form onSubmit={handleSubmit} className="mt-4">
                                     <div className="space-y-5">
+                                        {/* Workspace Type Selection */}
                                         <div>
-                                            <label htmlFor="name" className="block text-sm font-medium text-blue-100 mb-2">
+                                            <label className="block text-sm font-medium text-white mb-3">
+                                                Workspace Type
+                                            </label>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {/* Work Mode Card */}
+                                                <div
+                                                    onClick={() => setWorkspaceType('work')}
+                                                    className={`cursor-pointer p-4 rounded-lg border-2 transition-all duration-200 ${
+                                                        workspaceType === 'work'
+                                                            ? 'border-primary bg-primary/10'
+                                                            : 'border-border bg-card/20 hover:border-primary/50'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-start space-x-3">
+                                                        <div className={`p-2 rounded-lg ${
+                                                            workspaceType === 'work'
+                                                                ? 'bg-primary/20 text-primary'
+                                                                : 'bg-muted/20 text-muted-foreground'
+                                                        }`}>
+                                                            <BarChart3 className="w-5 h-5" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <h3 className={`font-semibold text-sm ${
+                                                                workspaceType === 'work' ? 'text-white' : 'text-white/80'
+                                                            }`}>
+                                                                Work Mode
+                                                            </h3>
+                                                            <p className="text-xs text-white/60 mt-1">
+                                                                Analyze real data, generate business insights, create reports
+                                                            </p>
+                                                            <div className="mt-2 flex flex-wrap gap-1">
+                                                                <span className="px-2 py-1 bg-accent/20 text-accent text-xs rounded-md">
+                                                                    Any data upload
+                                                                </span>
+                                                                <span className="px-2 py-1 bg-accent/20 text-accent text-xs rounded-md">
+                                                                    Business intelligence
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Learn Mode Card */}
+                                                <div
+                                                    onClick={() => setWorkspaceType('learn')}
+                                                    className={`cursor-pointer p-4 rounded-lg border-2 transition-all duration-200 ${
+                                                        workspaceType === 'learn'
+                                                            ? 'border-primary bg-primary/10'
+                                                            : 'border-border bg-card/20 hover:border-primary/50'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-start space-x-3">
+                                                        <div className={`p-2 rounded-lg ${
+                                                            workspaceType === 'learn'
+                                                                ? 'bg-primary/20 text-primary'
+                                                                : 'bg-muted/20 text-muted-foreground'
+                                                        }`}>
+                                                            <BookOpen className="w-5 h-5" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <h3 className={`font-semibold text-sm ${
+                                                                workspaceType === 'learn' ? 'text-white' : 'text-white/80'
+                                                            }`}>
+                                                                Learn Mode
+                                                            </h3>
+                                                            <p className="text-xs text-white/60 mt-1">
+                                                                Master spreadsheet skills with guided tutorials
+                                                            </p>
+                                                            <div className="mt-2 flex flex-wrap gap-1">
+                                                                <span className="px-2 py-1 bg-accent/20 text-accent text-xs rounded-md">
+                                                                    Curated datasets
+                                                                </span>
+                                                                <span className="px-2 py-1 bg-accent/20 text-accent text-xs rounded-md">
+                                                                    Step-by-step guidance
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label htmlFor="name" className="block text-sm font-medium text-white mb-2">
                                                 Workspace Name
                                             </label>
                                             <input
@@ -106,14 +194,14 @@ export default function CreateWorkspaceModal({ isOpen, onClose, onWorkspaceCreat
                                                 id="name"
                                                 value={name}
                                                 onChange={(e) => setName(e.target.value)}
-                                                className="w-full px-4 py-3 bg-black/50 border border-blue-900/50 rounded-md text-white placeholder-blue-300/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
+                                                className="w-full px-4 py-3 bg-card/20 border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                                                 placeholder="My Workspace"
                                                 required
                                             />
                                         </div>
 
                                         <div>
-                                            <label htmlFor="description" className="block text-sm font-medium text-blue-100 mb-2">
+                                            <label htmlFor="description" className="block text-sm font-medium text-white mb-2">
                                                 Description
                                             </label>
                                             <textarea
@@ -121,7 +209,7 @@ export default function CreateWorkspaceModal({ isOpen, onClose, onWorkspaceCreat
                                                 value={description}
                                                 onChange={(e) => setDescription(e.target.value)}
                                                 rows={3}
-                                                className="w-full px-4 py-3 bg-black/50 border border-blue-900/50 rounded-md text-white placeholder-blue-300/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200 resize-none"
+                                                className="w-full px-4 py-3 bg-card/20 border border-border rounded-md text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 resize-none"
                                                 placeholder="Describe your workspace..."
                                             />
                                         </div>
@@ -141,17 +229,17 @@ export default function CreateWorkspaceModal({ isOpen, onClose, onWorkspaceCreat
                                             <button
                                                 type="button"
                                                 onClick={onClose}
-                                                className="bg-transparent hover:bg-blue-900/20 text-blue-300 px-6 py-2.5 rounded-md font-medium transition-all duration-200 border border-blue-900/30"
+                                                className="bg-transparent hover:bg-accent text-primary px-6 py-2.5 rounded-md font-medium transition-all duration-200 border border-border"
                                             >
                                                 Cancel
                                             </button>
                                             <button
                                                 type="submit"
                                                 disabled={loading}
-                                                className={`px-6 py-2.5 rounded-md font-medium text-white transition-all duration-300 ${
+                                                className={`px-6 py-2.5 rounded-md font-medium text-black transition-all duration-300 ${
                                                     loading
-                                                        ? 'bg-blue-600/50 cursor-not-allowed'
-                                                        : 'bg-blue-600 hover:bg-blue-700 shadow-[0_0_15px_rgba(37,99,235,0.4)] hover:shadow-[0_0_20px_rgba(37,99,235,0.6)]'
+                                                        ? 'bg-primary/50 cursor-not-allowed'
+                                                        : 'bg-primary hover:bg-primary/90'
                                                 }`}
                                             >
                                                 {loading ? 'Creating...' : 'Create Workspace'}

@@ -16,68 +16,53 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
 
-# --- Gemini Integration ---
-import google.generativeai as genai
+# --- Kimi Integration via Groq ---
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage
 
 # --- ReportGenerator Class ---
 class ReportGenerator:
-    def __init__(self, data_handler, agent_services_instance, gemini_api_key=None):
-        # self.llm is no longer passed; it's instantiated here
+    def __init__(self, data_handler, agent_services_instance, groq_api_key=None):
+        # self.llm is instantiated here
         self.data_handler = data_handler
         self.agent_services = agent_services_instance # For cancellation flag
-        
+
         # ReportLab specific setup
         self.styles = getSampleStyleSheet()
         self._setup_reportlab_styles()
         self.story = [] # For ReportLab elements
         self.figure_count = 0
         self.table_count = 0
-        self.max_plots_per_section = 3 
-        self.max_cat_for_bivariate = 10 
+        self.max_plots_per_section = 3
+        self.max_cat_for_bivariate = 10
 
-        # --- Instantiate Gemini LLM ---
-        if gemini_api_key:
-            genai.configure(api_key=gemini_api_key)
-        elif os.getenv("GOOGLE_API_KEY"):
-            # Assumes GOOGLE_API_KEY is set in the environment
-            genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        else:
-            raise ValueError("Gemini API key not provided or GOOGLE_API_KEY environment variable not set.")
+        # --- Instantiate Kimi LLM via Groq ---
+        api_key = groq_api_key or os.getenv("NEXT_PUBLIC_GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("Groq API key not provided or NEXT_PUBLIC_GROQ_API_KEY environment variable not set.")
 
-        # Using gemini-1.5-flash-latest for speed and cost-effectiveness
-        # Adjust model name if needed, e.g., "gemini-1.5-pro-latest" for more power
-        self.gemini_model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash-latest",
-            # Optional: Add safety settings if needed
-            # safety_settings=[
-            #     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            #     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            #     {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            #     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            # ],
-            generation_config=genai.types.GenerationConfig(
-                # candidate_count=1, # Default
-                # stop_sequences=['...'], # If needed
-                # max_output_tokens=2048, # Default for flash is 8192, adjust if necessary for specific prompts
-                temperature=0.6, # Adjust for creativity vs. factuality in reports
-                # top_p=0.9,
-                # top_k=40
-            )
+        self.llm = ChatGroq(
+            model="moonshotai/kimi-k2-instruct-0905",
+            temperature=0.6,  # Adjust for creativity vs. factuality in reports
+            groq_api_key=api_key,
+            max_tokens=8192,  # Set max tokens to ensure complete responses
         )
-        print("ReportGenerator initialized with Gemini model (gemini-1.5-flash-latest).")
+        print("ReportGenerator initialized with Kimi model via Groq (moonshotai/kimi-k2-instruct-0905).")
 
 
-    def _invoke_gemini(self, prompt_text, max_retries=3, delay=5):
-        """Helper function to call Gemini API with retries and basic error handling."""
+    def _invoke_llm(self, prompt_text, max_retries=3, delay=5):
+        """Helper function to call Kimi LLM via Groq with retries and error handling."""
         self._check_cancellation() # Check before making an API call
         for attempt in range(max_retries):
             try:
-                response = self.gemini_model.generate_content(prompt_text)
-                # Check if response.parts is empty or if text is missing
-                if not response.parts or not hasattr(response.parts[0], 'text'):
-                    # Sometimes Gemini might return a finish_reason without content if blocked etc.
-                    finish_reason = response.prompt_feedback.block_reason if response.prompt_feedback else "Unknown reason (no content)"
-                    error_message = f"Gemini API call resulted in no content. Finish Reason: {finish_reason}. Prompt: '{prompt_text[:200]}...'"
+                # Use LangChain invoke method
+                response = self.llm.invoke([HumanMessage(content=prompt_text)])
+
+                # Extract text from LangChain response
+                if hasattr(response, 'content') and response.content:
+                    return response.content.strip()
+                else:
+                    error_message = f"Kimi API call resulted in no content. Prompt: '{prompt_text[:200]}...'"
                     if attempt < max_retries - 1:
                         print(f"Warning: {error_message} Retrying ({attempt + 1}/{max_retries})...")
                         time.sleep(delay * (attempt + 1))
@@ -87,9 +72,8 @@ class ReportGenerator:
                         # Fallback to a safe string to avoid breaking report generation
                         return "Error: LLM response not available after multiple retries."
 
-                return response.text # Accessing the text directly from the response object
             except Exception as e:
-                error_message = f"Error calling Gemini API: {str(e)}. Prompt: '{prompt_text[:200]}...'"
+                error_message = f"Error calling Kimi API via Groq: {str(e)}. Prompt: '{prompt_text[:200]}...'"
                 if attempt < max_retries - 1:
                     print(f"Warning: {error_message} Retrying ({attempt + 1}/{max_retries})...")
                     time.sleep(delay * (attempt + 1))
@@ -97,7 +81,8 @@ class ReportGenerator:
                     print(f"Error: {error_message} Max retries reached.")
                     # Fallback to a safe string to avoid breaking report generation
                     return f"Error: LLM communication failed after multiple retries - {str(e)}"
-        return "Error: LLM response not available after multiple retries." # Should be unreachable if logic is correct
+
+        return "Error: LLM response not available after multiple retries."
 
     def _setup_reportlab_styles(self):
         # (Style setup remains the same as before)
@@ -210,7 +195,7 @@ class ReportGenerator:
         return numerical_cols, categorical_cols, datetime_cols
         
     # --- Report Sections ---
-    # ALL LLM calls will now use self._invoke_gemini(prompt) instead of self.llm.invoke(prompt).content.strip()
+    # ALL LLM calls will now use self._invoke_llm(prompt) instead of self.llm.invoke(prompt).content.strip()
 
     def _generate_executive_summary(self, df_summary_info):
         self._check_cancellation()
@@ -227,7 +212,7 @@ class ReportGenerator:
         4. Conclude with a forward-looking statement about the utility of this initial scan.
         Maintain a professional and highly condensed tone. This is for a busy executive.
         """
-        summary_text = self._invoke_gemini(prompt).strip() # MODIFIED
+        summary_text = self._invoke_llm(prompt).strip() # MODIFIED
         self._rl_add_paragraph(summary_text, style='ExecSummary')
         self.story.append(PageBreak())
 
@@ -249,7 +234,7 @@ class ReportGenerator:
         self._rl_add_table(dtype_summary, "Summary of Feature Data Types")
         num_cols, cat_cols, dt_cols = self._get_column_types(df)
         
-        # For Gemini, it's good practice to frame prompts clearly.
+        # For Kimi, it's good practice to frame prompts clearly.
         # Let's make the prompt for data types interpretation more direct.
         data_types_context = f"""
         The dataset comprises:
@@ -263,7 +248,7 @@ class ReportGenerator:
         Please provide a brief (1-2 sentence) interpretation of this data type distribution and its general implication for analysis.
         For example, mention if the mix of types is typical or if any type is notably dominant/absent and what that might mean.
         """
-        dtype_interpretation = self._invoke_gemini(prompt).strip() # MODIFIED
+        dtype_interpretation = self._invoke_llm(prompt).strip() # MODIFIED
         self._rl_add_llm_interpretation(dtype_interpretation, title="Data Types Distribution Interpretation:")
         return f"Dataset '{filename}' has {df.shape[0]} rows, {df.shape[1]} columns. Numerical: {len(num_cols)}, Categorical: {len(cat_cols)}, Datetime: {len(dt_cols)}."
 
@@ -336,7 +321,7 @@ class ReportGenerator:
         What are the potential implications of these findings for further analysis (e.g., impact on modeling, reliability of insights)?
         Suggest general strategies to address any identified issues.
         """
-        dq_interpretation = self._invoke_gemini(prompt).strip() # MODIFIED
+        dq_interpretation = self._invoke_llm(prompt).strip() # MODIFIED
         self._rl_add_llm_interpretation(dq_interpretation, title="Data Quality Summary & Implications:")
         self.story.append(PageBreak())
         return f"Data Quality: Missing values status: {'Found' if not missing_summary.empty else 'None'}. Duplicates: {num_duplicates}. Constant columns: {len(constant_cols)}."
@@ -387,7 +372,7 @@ class ReportGenerator:
                 - Spread or variability of features (e.g., high/low standard deviation).
                 Focus on patterns or striking characteristics relevant for data analysis.
                 """
-                num_interpretation = self._invoke_gemini(prompt_num).strip() # MODIFIED
+                num_interpretation = self._invoke_llm(prompt_num).strip() # MODIFIED
                 self._rl_add_llm_interpretation(num_interpretation, title="Observations on Numerical Feature Distributions:")
 
         if categorical_cols:
@@ -426,7 +411,7 @@ class ReportGenerator:
                 - Features with dominant categories or relatively even distributions.
                 - Any implications for feature encoding or analysis (e.g., high cardinality might need special handling).
                 """
-                cat_interpretation = self._invoke_gemini(prompt_cat).strip() # MODIFIED
+                cat_interpretation = self._invoke_llm(prompt_cat).strip() # MODIFIED
                 self._rl_add_llm_interpretation(cat_interpretation, title="Observations on Categorical Feature Distributions:")
         
         self.story.append(PageBreak())
@@ -493,7 +478,7 @@ class ReportGenerator:
                 What might these specific strong correlations imply in simple terms? If no strong correlations are apparent (e.g., all |value| < 0.3), state that.
                 Comment on any interesting patterns observed in scatter plots if described. (1-2 paragraphs)
                 """
-                corr_interpretation = self._invoke_gemini(prompt_corr).strip() # MODIFIED
+                corr_interpretation = self._invoke_llm(prompt_corr).strip() # MODIFIED
                 self._rl_add_llm_interpretation(corr_interpretation, title="Interpretation of Numerical Correlations:")
             except Exception as e:
                 self._rl_add_paragraph(f"Error generating numerical vs. numerical analysis: {str(e)}")
@@ -534,7 +519,7 @@ class ReportGenerator:
                 What kind of insights can be drawn if significant differences are observed in medians or spreads across categories?
                 (e.g., 'Category A tends to have higher values of Numeric X than Category B').
                 """
-                num_cat_interpretation = self._invoke_gemini(prompt_num_cat).strip() # MODIFIED
+                num_cat_interpretation = self._invoke_llm(prompt_num_cat).strip() # MODIFIED
                 self._rl_add_llm_interpretation(num_cat_interpretation, title="Interpretation of Numerical vs. Categorical Interactions:")
 
         # Categorical vs. Categorical
@@ -575,7 +560,7 @@ class ReportGenerator:
                 Provide a general interpretation (1-2 paragraphs) of what these analyses reveal.
                 How can one interpret a crosstabulation (especially a normalized one)? What kind of associations or dependencies might be uncovered?
                 """
-                cat_cat_interpretation = self._invoke_gemini(prompt_cat_cat).strip() # MODIFIED
+                cat_cat_interpretation = self._invoke_llm(prompt_cat_cat).strip() # MODIFIED
                 self._rl_add_llm_interpretation(cat_cat_interpretation, title="Interpretation of Categorical vs. Categorical Interactions:")
 
         if not bivar_observations_for_llm:
@@ -601,7 +586,7 @@ class ReportGenerator:
         5.  Avoid making recommendations here; just summarize observations.
         The goal is to provide a consolidated view of what the data seems to be telling us at this initial stage.
         """
-        findings_text = self._invoke_gemini(prompt).strip() # MODIFIED
+        findings_text = self._invoke_llm(prompt).strip() # MODIFIED
         self._rl_add_llm_interpretation(findings_text, title=None) 
 
     def _generate_conclusion_and_next_steps(self, df, all_summaries_str):
@@ -622,14 +607,14 @@ class ReportGenerator:
         - If high cardinality cat: "Consider dimensionality reduction or feature engineering techniques for high-cardinality categorical features like R."
         (3-4 paragraphs total, including conclusion)
         """
-        llm_conclusion = self._invoke_gemini(prompt).strip() # MODIFIED
+        llm_conclusion = self._invoke_llm(prompt).strip() # MODIFIED
         self._rl_add_paragraph(llm_conclusion)
 
     # --- Main Report Generation Method ---
     def generate_report_pdf_reportlab(self, output_filepath=None, progress_callback=None):
-        """Generate a comprehensive PDF report using ReportLab and Gemini."""
+        """Generate a comprehensive PDF report using ReportLab and Kimi."""
         self._check_cancellation()  # Check before starting
-        print("Using ReportLab and Gemini for PDF generation with enhanced structure.")
+        print("Using ReportLab and Kimi for PDF generation with enhanced structure.")
         
         df = self.data_handler.get_df()
         if df is None or df.empty:
@@ -651,7 +636,7 @@ class ReportGenerator:
             report_filename_pdf = output_filepath
         else:
             report_uuid = uuid.uuid4()
-            report_filename_pdf = os.path.join(reports_dir, f"Automated_Gemini_Analysis_{sanitized_base_filename}_{report_uuid}.pdf")
+            report_filename_pdf = os.path.join(reports_dir, f"Automated_Kimi_Analysis_{sanitized_base_filename}_{report_uuid}.pdf")
 
         doc = SimpleDocTemplate(report_filename_pdf, pagesize=letter,
                               rightMargin=0.75*inch, leftMargin=0.75*inch,
@@ -662,7 +647,7 @@ class ReportGenerator:
             canvas.setFont('Helvetica', 8)
             report_date = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
             footer_title = (safe_report_title_name[:50] + '...') if len(safe_report_title_name) > 50 else safe_report_title_name
-            page_num_text = f"Page {doc.page} | EDI.ai Gemini Analysis: {footer_title} | Generated: {report_date}" # Updated footer
+            page_num_text = f"Page {doc.page} | EDI.ai Kimi Analysis: {footer_title} | Generated: {report_date}" # Updated footer
             canvas.drawCentredString(letter[0]/2, 0.5*inch, page_num_text)
             canvas.restoreState()
 
@@ -679,33 +664,33 @@ class ReportGenerator:
                 progress_callback(current_step / max_steps, desc)
 
         try:
-            self._rl_add_title(f"Automated Data Analysis Report (via Gemini): {safe_report_title_name}") # Updated title
+            self._rl_add_title(f"Automated Data Analysis Report (via Kimi): {safe_report_title_name}") # Updated title
             
             exec_summary_placeholder_index = len(self.story)
             self.story.append(Spacer(1,0.01*inch))
 
             self._check_cancellation()
-            update_progress("Generating Data Overview (Gemini)...")
+            update_progress("Generating Data Overview (Kimi)...")
             df_overview_summary = self._generate_data_overview(df.copy()) 
             all_section_summaries.append(f"Overview: {df_overview_summary}")
 
             self._check_cancellation()
-            update_progress("Assessing Data Quality (Gemini)...")
+            update_progress("Assessing Data Quality (Kimi)...")
             dq_summary = self._generate_data_quality_assessment(df.copy())
             all_section_summaries.append(f"Quality: {dq_summary}")
             
             self._check_cancellation()
-            update_progress("Performing Univariate Analysis (Gemini)...")
+            update_progress("Performing Univariate Analysis (Kimi)...")
             univar_summary = self._generate_univariate_analysis(df.copy())
             all_section_summaries.append(f"Univariate: {univar_summary}")
             
             self._check_cancellation()
-            update_progress("Performing Bivariate Analysis (Gemini)...")
+            update_progress("Performing Bivariate Analysis (Kimi)...")
             bivar_summary = self._generate_bivariate_analysis(df.copy())
             all_section_summaries.append(f"Bivariate: {bivar_summary}")
 
             self._check_cancellation()
-            update_progress("Synthesizing Key Findings (Gemini)...")
+            update_progress("Synthesizing Key Findings (Kimi)...")
             current_full_summary_for_findings = "\n".join(all_section_summaries)
             self._generate_key_findings_summary(df.copy(), current_full_summary_for_findings)
             all_section_summaries.append("Key findings synthesized based on quality, univariate, and bivariate analyses.") 
@@ -714,20 +699,20 @@ class ReportGenerator:
             story_after_placeholder = self.story[exec_summary_placeholder_index+1:]
             self.story = self.story[:exec_summary_placeholder_index] 
             
-            update_progress("Generating Executive Summary (Gemini)...") 
+            update_progress("Generating Executive Summary (Kimi)...") 
             self._generate_executive_summary(current_full_summary_for_findings) 
             self.story.extend(story_after_placeholder) 
 
             self._check_cancellation()
-            update_progress("Formulating Conclusion & Next Steps (Gemini)...")
+            update_progress("Formulating Conclusion & Next Steps (Kimi)...")
             current_full_summary_for_conclusion = "\n".join(all_section_summaries)
             self._generate_conclusion_and_next_steps(df.copy(), current_full_summary_for_conclusion)
             
             update_progress("Building PDF Document...")
             doc.build(self.story, onFirstPage=my_page_template, onLaterPages=my_page_template)
 
-            if progress_callback: progress_callback(1.0, "Report PDF generated successfully with Gemini!")
-            return report_filename_pdf, f"Report (Gemini) generated: {os.path.basename(report_filename_pdf)}"
+            if progress_callback: progress_callback(1.0, "Report PDF generated successfully with Kimi!")
+            return report_filename_pdf, f"Report (Kimi) generated: {os.path.basename(report_filename_pdf)}"
         
         except InterruptedError: 
             # Cleanup
@@ -740,10 +725,10 @@ class ReportGenerator:
             if os.path.exists(report_filename_pdf):
                 try: os.remove(report_filename_pdf)
                 except OSError: pass
-            print(f"Error building PDF with ReportLab (Gemini workflow): {e}")
+            print(f"Error building PDF with ReportLab (Kimi workflow): {e}")
             import traceback
             traceback.print_exc()
-            return None, f"Error building PDF (Gemini): {str(e)}"
+            return None, f"Error building PDF (Kimi): {str(e)}"
 
     def generate_report(self, output_filepath=None, progress_callback=None):
         """Main method to generate the entire report. Wrapper around generate_report_pdf_reportlab."""

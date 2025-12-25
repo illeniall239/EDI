@@ -7,8 +7,16 @@ export const API_ENDPOINTS = {
     generateReport: `${API_BASE_URL}/api/generate-report`,
     cancelOperation: `${API_BASE_URL}/api/cancel-operation`,
     resetState: `${API_BASE_URL}/api/reset-state`,
-    spreadsheetCommand: `${API_BASE_URL}/api/spreadsheet-command`,
-    generateSyntheticDataset: `${API_BASE_URL}/api/generate-synthetic-dataset`
+    // spreadsheetCommand removed: deprecated backend endpoint
+    rangeFilter: `${API_BASE_URL}/api/range-filter`,
+    generateSyntheticDataset: `${API_BASE_URL}/api/generate-synthetic-dataset`,
+    // NEW: Universal Query Router endpoint
+    orchestrate: `${API_BASE_URL}/api/orchestrate`,
+    // Learn Mode endpoints
+    learnQuery: `${API_BASE_URL}/api/learn/query`,
+    learnProgress: (workspaceId: string) => `${API_BASE_URL}/api/learn/progress/${workspaceId}`,
+    learnDatasets: `${API_BASE_URL}/api/learn/datasets`,
+    learnPracticeChallenge: `${API_BASE_URL}/api/learn/practice-challenge`
 };
 
 // Static files base URL for visualizations

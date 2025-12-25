@@ -1,0 +1,277 @@
+
+> edi-frontend@0.1.0 build
+> next build
+
+   ▲ Next.js 15.3.2
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.0s
+   Linting and checking validity of types ...
+
+./src/app/auth/callback/route.ts
+26:32  Warning: '_options' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/auth/page.tsx
+101:17  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/page.tsx
+576:49  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/workspace/[id]/page.tsx
+26:12  Warning: '_showSyntheticDatasetDialog' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+27:12  Warning: '_showColumnExtraction' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+32:5  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+117:5  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+133:17  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+135:21  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+459:30  Warning: '_e' is defined but never used.  @typescript-eslint/no-unused-vars
+505:11  Warning: '_handleShowFormulaAssistant' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/workspaces/page.tsx
+30:12  Warning: '_user' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/AnimatedElement.tsx
+23:14  Warning: '_threshold' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+31:5  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+
+./src/components/ChatSidebar.tsx
+8:50  Warning: 'saveChatHistory' is defined but never used.  @typescript-eslint/no-unused-vars
+8:67  Warning: 'loadChatHistory' is defined but never used.  @typescript-eslint/no-unused-vars
+8:158  Warning: 'updateChatTitle' is defined but never used.  @typescript-eslint/no-unused-vars
+10:10  Warning: 'FlexiblePatternBuilder' is defined but never used.  @typescript-eslint/no-unused-vars
+10:34  Warning: 'extractPatternData' is defined but never used.  @typescript-eslint/no-unused-vars
+12:10  Warning: 'SpreadsheetCommandProcessor' is defined but never used.  @typescript-eslint/no-unused-vars
+79:12  Warning: 'isLoadingChats' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+79:28  Warning: 'setIsLoadingChats' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+270:11  Warning: 'learnCtx' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+273:9  Warning: Unused eslint-disable directive (no problems were reported from 'react-hooks/rules-of-hooks').
+284:8  Warning: React Hook useEffect has a missing dependency: 'generateLearningTips'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+291:11  Warning: 'handleSendMessage' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+454:21  Warning: 'sheetContext' is never reassigned. Use 'const' instead.  prefer-const
+521:90  Warning: 'userMessage' is defined but never used.  @typescript-eslint/no-unused-vars
+656:9  Warning: 'userMessage' is defined but never used.  @typescript-eslint/no-unused-vars
+768:9  Warning: 'userMessage' is defined but never used.  @typescript-eslint/no-unused-vars
+954:9  Warning: 'userMessage' is defined but never used.  @typescript-eslint/no-unused-vars
+1050:9  Warning: 'userMessage' is defined but never used.  @typescript-eslint/no-unused-vars
+1399:9  Warning: 'userMessage' is defined but never used.  @typescript-eslint/no-unused-vars
+1531:9  Warning: 'userMessage' is defined but never used.  @typescript-eslint/no-unused-vars
+1605:9  Warning: 'userMessage' is defined but never used.  @typescript-eslint/no-unused-vars
+1732:5  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-unused-vars').
+1735:9  Warning: '_userMessage' is defined but never used.  @typescript-eslint/no-unused-vars
+1988:73  Warning: '_' is defined but never used.  @typescript-eslint/no-unused-vars
+2187:13  Warning: 'context' is never reassigned. Use 'const' instead.  prefer-const
+2329:11  Warning: 'formatActionTitle' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+2352:11  Warning: 'unifiedClassificationAndAmbiguityDetection' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+2546:48  Warning: 'query' is defined but never used.  @typescript-eslint/no-unused-vars
+2892:11  Warning: 'checkForAmbiguity' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+2956:11  Warning: 'handlePreClarificationChoice' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+3109:26  Warning: 'e' is defined but never used.  @typescript-eslint/no-unused-vars
+3134:63  Warning: 'query' is defined but never used.  @typescript-eslint/no-unused-vars
+3401:118  Warning: 'i' is defined but never used.  @typescript-eslint/no-unused-vars
+3527:11  Warning: 'handleConversationalClarification' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+3609:17  Warning: 'timeoutId' is never reassigned. Use 'const' instead.  prefer-const
+3610:17  Warning: 'eventHandler' is never reassigned. Use 'const' instead.  prefer-const
+4106:35  Warning: 'cmd' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+4219:11  Warning: 'executeLuckysheetCommand' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+4219:45  Warning: 'actionPayload' is defined but never used.  @typescript-eslint/no-unused-vars
+5791:41  Warning: Expected an assignment or function call and instead saw an expression.  @typescript-eslint/no-unused-expressions
+5821:41  Warning: Expected an assignment or function call and instead saw an expression.  @typescript-eslint/no-unused-expressions
+5837:43  Warning: 'msg' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+5869:41  Warning: Expected an assignment or function call and instead saw an expression.  @typescript-eslint/no-unused-expressions
+6058:35  Warning: 'height' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+6375:35  Warning: 'freezeType' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+6935:22  Warning: 'e' is defined but never used.  @typescript-eslint/no-unused-vars
+7192:11  Warning: 'handleSwitchChat' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+7227:11  Warning: 'handleDeleteChat' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+7302:8  Warning: React Hook useEffect has a missing dependency: 'loadWorkspaceChats'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+7466:41  Warning: `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`.  react/no-unescaped-entities
+7466:44  Warning: `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`.  react/no-unescaped-entities
+7599:69  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+7731:45  Warning: Expected an assignment or function call and instead saw an expression.  @typescript-eslint/no-unused-expressions
+7805:25  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/ColumnExtractionDialog.tsx
+112:6  Warning: React Hook useEffect has a missing dependency: 'handleDrag'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/CreateWorkspaceModal.tsx
+8:31  Warning: 'Users' is defined but never used.  @typescript-eslint/no-unused-vars
+8:38  Warning: 'Target' is defined but never used.  @typescript-eslint/no-unused-vars
+8:46  Warning: 'Lightbulb' is defined but never used.  @typescript-eslint/no-unused-vars
+8:57  Warning: 'TrendingUp' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/DataQualityReportModal.tsx
+84:6  Warning: React Hook useEffect has a missing dependency: 'handleDrag'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/FileUploadManager.tsx
+113:9  Warning: 'cycleToNextFile' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+119:9  Warning: 'cycleToPreviousFile' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/FileUploadStage.tsx
+63:6  Warning: React Hook useCallback has an unnecessary dependency: 'onComplete'. Either exclude it or remove the dependency array.  react-hooks/exhaustive-deps
+226:22  Warning: `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.  react/no-unescaped-entities
+
+./src/components/learn/FormulaSandbox.tsx
+77:10  Warning: 'selectedExample' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+78:36  Warning: 'clearTutor' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+100:13  Warning: 'guidance' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/learn/SkillTreePanel.tsx
+160:31  Warning: '_difficulty' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/LearnModeWorkspace.tsx
+6:8  Warning: 'SkillTreePanel' is defined but never used.  @typescript-eslint/no-unused-vars
+9:8  Warning: 'FormulaSandbox' is defined but never used.  @typescript-eslint/no-unused-vars
+21:10  Warning: 'onboardAnswers' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+22:10  Warning: 'activeTopic' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+22:23  Warning: 'setActiveTopic' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+23:23  Warning: 'progress' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+136:6  Warning: React Hook useEffect has missing dependencies: 'initialize' and 'saveDataToWorkspace'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+192:6  Warning: React Hook useEffect has a missing dependency: 'saveDataToWorkspace'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+194:9  Warning: 'handleFormulaTest' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/NativeSpreadsheet.tsx
+30:62  Warning: 'props' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/Navigation.tsx
+15:63  Warning: 'darkMode' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/QueryRouterTest.tsx
+12:62  Warning: 'interactiveTest' is defined but never used.  @typescript-eslint/no-unused-vars
+151:11  Warning: `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`.  react/no-unescaped-entities
+151:39  Warning: `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`.  react/no-unescaped-entities
+
+./src/components/ReportGenerator.tsx
+33:16  Warning: 'e' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/SpreadsheetNavbar.tsx
+4:144  Warning: 'ChevronUp' is defined but never used.  @typescript-eslint/no-unused-vars
+6:8  Warning: 'ReportGenerator' is defined but never used.  @typescript-eslint/no-unused-vars
+54:3  Warning: 'onGenerateDataset' is defined but never used.  @typescript-eslint/no-unused-vars
+57:3  Warning: 'onExtractColumns' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/SyntheticDatasetDialog.tsx
+116:6  Warning: React Hook useEffect has a missing dependency: 'handleDrag'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+339:28  Warning: `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.  react/no-unescaped-entities
+
+./src/components/TextLogo.tsx
+11:49  Warning: 'variant' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+20:5  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/ui/textarea.tsx
+4:18  Warning: An interface declaring no members is equivalent to its supertype.  @typescript-eslint/no-empty-object-type
+
+./src/components/UniversalSpreadsheet.tsx
+11:10  Warning: 'motion' is defined but never used.  @typescript-eslint/no-unused-vars
+34:10  Warning: 'UniverSheetsNumfmtPlugin' is defined but never used.  @typescript-eslint/no-unused-vars
+60:10  Warning: 'UNIVER_CONFIG' is defined but never used.  @typescript-eslint/no-unused-vars
+65:10  Warning: 'API_ENDPOINTS' is defined but never used.  @typescript-eslint/no-unused-vars
+66:10  Warning: 'commandService' is defined but never used.  @typescript-eslint/no-unused-vars
+91:3  Warning: 'onClearData' is defined but never used.  @typescript-eslint/no-unused-vars
+96:3  Warning: 'disableFormulaErrorUI' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+112:9  Warning: 'disposedRef' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+127:10  Warning: 'hasUnsavedChanges' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+133:31  Warning: 'setIsProcessingCommand' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+134:28  Warning: 'setCurrentSelection' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+158:15  Warning: 'univerInstance' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+332:6  Warning: React Hook useEffect has missing dependencies: 'columnOrder', 'data', 'initialSheets', 'onAdapterReady', and 'trackDataChange'. Either include them or remove the dependency array. If 'onAdapterReady' changes too often, find the parent component that defines it and wrap that definition in useCallback.  react-hooks/exhaustive-deps
+337:9  Warning: 'setupEventListeners' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+337:44  Warning: 'univer' is defined but never used.  @typescript-eslint/no-unused-vars
+337:57  Warning: 'univerAPI' is defined but never used.  @typescript-eslint/no-unused-vars
+379:9  Warning: The 'allColumns' conditional could make the dependencies of useCallback Hook (at line 460) change on every render. To fix this, wrap the initialization of 'allColumns' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+555:9  Warning: 'handleFileInput' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+620:9  Warning: 'handleCommand' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+652:6  Warning: React Hook useCallback has a missing dependency: 'saveCurrentState'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+730:9  Warning: 'refreshData' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+741:6  Warning: React Hook useCallback has an unnecessary dependency: 'columnOrder'. Either exclude it or remove the dependency array.  react-hooks/exhaustive-deps
+868:37  Warning: 'selectedColumns' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/UserProfile.tsx
+18:11  Warning: 'router' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+147:29  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+166:37  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+228:25  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+247:33  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/WorkModeWorkspace.tsx
+47:3  Warning: 'onExtractColumns' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/contexts/LearnModeContext.tsx
+3:63  Warning: 'useEffect' is defined but never used.  @typescript-eslint/no-unused-vars
+237:7  Warning: React Hook useMemo has missing dependencies: 'askTutor', 'clearLearnConversation', 'refreshProgress', and 'startNewLearnConversation'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/global.d.ts
+5:15  Warning: An interface declaring no members is equivalent to its supertype.  @typescript-eslint/no-empty-object-type
+
+./src/hooks/useUnicornStudio.ts
+277:6  Warning: React Hook useEffect has a missing dependency: 'manager'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/services/commandService.ts
+223:24  Warning: 'e' is defined but never used.  @typescript-eslint/no-unused-vars
+236:22  Warning: 'e' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/services/llmCommandClassifier.ts
+1185:54  Warning: '_originalCommand' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/services/universalQueryRouter.ts
+13:10  Warning: 'llmCommandClassifier' is defined but never used.  @typescript-eslint/no-unused-vars
+250:49  Warning: 'context' is defined but never used.  @typescript-eslint/no-unused-vars
+281:60  Warning: 'context' is defined but never used.  @typescript-eslint/no-unused-vars
+282:41  Warning: 'complexity' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+401:48  Warning: 'operations' is defined but never used.  @typescript-eslint/no-unused-vars
+410:45  Warning: 'operations' is defined but never used.  @typescript-eslint/no-unused-vars
+419:48  Warning: 'operations' is defined but never used.  @typescript-eslint/no-unused-vars
+427:48  Warning: 'operations' is defined but never used.  @typescript-eslint/no-unused-vars
+435:43  Warning: 'operations' is defined but never used.  @typescript-eslint/no-unused-vars
+447:47  Warning: 'operations' is defined but never used.  @typescript-eslint/no-unused-vars
+456:44  Warning: 'operations' is defined but never used.  @typescript-eslint/no-unused-vars
+465:41  Warning: 'operations' is defined but never used.  @typescript-eslint/no-unused-vars
+482:46  Warning: 'operations' is defined but never used.  @typescript-eslint/no-unused-vars
+490:48  Warning: 'operations' is defined but never used.  @typescript-eslint/no-unused-vars
+501:62  Warning: 'entities' is defined but never used.  @typescript-eslint/no-unused-vars
+579:64  Warning: 'entities' is defined but never used.  @typescript-eslint/no-unused-vars
+679:71  Warning: 'context' is defined but never used.  @typescript-eslint/no-unused-vars
+768:51  Warning: 'context' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/types/index.ts
+1:8  Warning: 'React' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/utils/api.ts
+633:21  Warning: 'isTyping' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+633:31  Warning: 'isAnalyzing' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/utils/dataQualityUtils.ts
+1:1  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+
+./src/utils/duplicateDetector.ts
+1:1  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+
+./src/utils/spreadsheetCommandProcessor.ts
+1:1  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+
+./src/utils/supabase.ts
+1:1  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+
+./src/utils/univerAdapter.ts
+15:1  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+
+./src/utils/univerCommands.ts
+1:1  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+
+./src/utils/univerConverter.ts
+1:1  Warning: Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any').
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/api-reference/config/eslint#disabling-rules
+Failed to compile.
+
+./src/components/ChatSidebar.tsx:356:36
+Type error: 'msg.timestamp' is possibly 'undefined'.
+
+[0m [90m 354 |[39m                         role[33m:[39m msg[33m.[39mtype [33m===[39m [32m'user'[39m [33m?[39m [32m'user'[39m [33m:[39m [32m'assistant'[39m[33m,[39m[0m
+[0m [90m 355 |[39m                         content[33m:[39m msg[33m.[39mcontent[33m,[39m[0m
+[0m[31m[1m>[22m[39m[90m 356 |[39m                         timestamp[33m:[39m msg[33m.[39mtimestamp[33m.[39mgetTime()[0m
+[0m [90m     |[39m                                    [31m[1m^[22m[39m[0m
+[0m [90m 357 |[39m                     }))[0m
+[0m [90m 358 |[39m                 })[33m;[39m[0m
+[0m [90m 359 |[39m[0m
+Next.js build worker exited with code: 1 and signal: null

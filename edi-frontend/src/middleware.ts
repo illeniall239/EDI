@@ -67,10 +67,22 @@ export async function middleware(request: NextRequest) {
     return redirectResponse
   }
 
+  // Learn concept deep-link redirect: /workspace/:id/learn/:concept -> /workspace/:id
+  const learnConceptMatch = pathname.match(/^\/workspace\/([^\/]+)\/learn\/[A-Za-z0-9_-]+$/)
+  if (learnConceptMatch) {
+    const workspaceId = learnConceptMatch[1]
+    const redirectResponse = NextResponse.redirect(new URL(`/workspace/${workspaceId}`, request.url))
+    res.cookies.getAll().forEach(cookie => {
+      redirectResponse.cookies.set(cookie)
+    })
+    return redirectResponse
+  }
+
   return res
 }
 
 // Specify which routes this middleware should run on
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  // Exclude API routes, Next.js internals, favicon, and any file with an extension (public assets)
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 }

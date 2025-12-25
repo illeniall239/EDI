@@ -1,4 +1,12 @@
 // Spreadsheet Command Processor for Natural Language Operations
+import { FlexiblePatternBuilder, extractPatternData } from './flexiblePatterns';
+
+declare global {
+  interface Window {
+    luckysheet: any;
+  }
+}
+
 export interface SpreadsheetCommand {
   action: string;
   params: any;
@@ -92,57 +100,222 @@ export class SpreadsheetCommandProcessor {
       };
     }
 
-    // Column width operations with letter references
-    const columnWidthMatch = lowerCommand.match(/^(?:make|set|adjust)?\s*column\s+([a-z])\s+(?:wider|bigger|larger|increase|expand)$/);
-    if (columnWidthMatch) {
-      console.log('✅ Matched column letter width pattern:', columnWidthMatch);
-      const columnLetter = columnWidthMatch[1].toUpperCase();
-      const columnIndex = columnLetter.charCodeAt(0) - 65; // A=0, B=1, etc.
-      console.log(`📍 Column letter "${columnLetter}" → index ${columnIndex}`);
-      return {
-        action: 'setColumnWidth',
-        params: { [columnIndex]: 200 },
-        target: { type: 'column' as const, identifier: columnIndex },
-        success_message: `✅ Column ${columnLetter} made wider`
-      };
+    // FLEXIBLE Column Operations - handles both letter and name references with natural language
+    const flexibleColumnPattern = FlexiblePatternBuilder.columnOperation();
+    const columnFlexibleMatch = command.match(flexibleColumnPattern);
+    if (columnFlexibleMatch) {
+      console.log('✅ Matched FLEXIBLE column operation pattern:', columnFlexibleMatch);
+      const extractedData = extractPatternData(command, 'columnOperation');
+      
+      if (extractedData && extractedData.column && extractedData.operation) {
+        let colIndex: number | null = null;
+        let targetColumn = '';
+        
+        // Determine column index - could be name or letter
+        if (/^[A-Za-z]$/.test(extractedData.column)) {
+          // Single letter column reference (A, B, C...)
+          colIndex = this.columnLetterToIndex(extractedData.column.toUpperCase());
+          targetColumn = extractedData.column.toUpperCase();
+        } else {
+          // Column name reference
+          colIndex = this.findColumnByName(extractedData.column);
+          targetColumn = extractedData.column;
+        }
+        
+        if (colIndex !== null && colIndex >= 0) {
+          // Determine the new width based on operation
+          const isWidening = /wider|bigger|larger|broader|increase|expand|stretch/.test(extractedData.operation.toLowerCase());
+          const newWidth = isWidening ? 200 : 100;
+          const actionDescription = isWidening ? 'wider' : 'narrower';
+          
+          console.log(`📍 Column "${targetColumn}" → index ${colIndex}, making ${actionDescription}`);
+          return {
+            action: 'setColumnWidth',
+            params: { [colIndex]: newWidth },
+            target: { type: 'column' as const, identifier: colIndex },
+            success_message: `✅ Column ${targetColumn} made ${actionDescription}`
+          };
+        }
+      }
     }
 
-    const columnNarrowMatch = lowerCommand.match(/^(?:make|set|adjust)?\s*column\s+([a-z])\s+(?:narrower|smaller|thinner|decrease|shrink)$/);
-    if (columnNarrowMatch) {
-      console.log('✅ Matched column letter narrow pattern:', columnNarrowMatch);
-      const columnLetter = columnNarrowMatch[1].toUpperCase();
-      const columnIndex = columnLetter.charCodeAt(0) - 65;
-      console.log(`📍 Column letter "${columnLetter}" → index ${columnIndex}`);
-      return {
-        action: 'setColumnWidth',
-        params: { [columnIndex]: 100 },
-        target: { type: 'column' as const, identifier: columnIndex },
-        success_message: `✅ Column ${columnLetter} made narrower`
-      };
-    }
-
-    // Row operations
-    const insertRowMatch = lowerCommand.match(/(?:add|insert)\s*(\d+)?\s*(?:new\s*)?rows?/);
+    // Enhanced Row operations with natural language support
+    const insertRowMatch = lowerCommand.match(/(?:add|insert|create)\s*(?:a\s*)?(?:new\s*)?(?:(\d+)\s*)?(?:rows?|lines?)(?:\s+(?:at|to|above|below|after|before)\s+(?:row\s*)?(\d+))?/);
     if (insertRowMatch) {
       console.log('✅ Matched insert row pattern:', insertRowMatch);
       const count = insertRowMatch[1] ? parseInt(insertRowMatch[1]) : 1;
-      console.log(`📊 Inserting ${count} rows`);
+      const position = insertRowMatch[2] ? parseInt(insertRowMatch[2]) - 1 : 1; // Default to row 1, convert to 0-based
+      console.log(`📊 Inserting ${count} rows at position ${position}`);
       return {
         action: 'insertRow',
-        params: [1, { number: count }], // Insert at row 1
-        success_message: `✅ Added ${count} row${count > 1 ? 's' : ''}`
+        params: [position, { number: count }],
+        success_message: `✅ Added ${count} row${count > 1 ? 's' : ''} at row ${position + 1}`
       };
     }
 
-    const deleteRowMatch = lowerCommand.match(/(?:delete|remove)\s*(?:row\s*)?(\d+)/);
+    // Enhanced delete row patterns
+    const deleteRowMatch = lowerCommand.match(/(?:delete|remove|clear)\s*(?:row\s*)?(\d+)(?:\s*(?:to|through|-)\s*(\d+))?/);
     if (deleteRowMatch) {
       console.log('✅ Matched delete row pattern:', deleteRowMatch);
-      const rowNum = parseInt(deleteRowMatch[1]) - 1; // Convert to 0-based
-      console.log(`🗑️ Deleting row ${deleteRowMatch[1]} (index ${rowNum})`);
+      const startRow = parseInt(deleteRowMatch[1]) - 1; // Convert to 0-based
+      const endRow = deleteRowMatch[2] ? parseInt(deleteRowMatch[2]) - 1 : startRow;
+      console.log(`🗑️ Deleting rows ${deleteRowMatch[1]}${deleteRowMatch[2] ? ` to ${deleteRowMatch[2]}` : ''} (index ${startRow} to ${endRow})`);
       return {
         action: 'deleteRow',
-        params: [rowNum, rowNum],
-        success_message: `✅ Deleted row ${deleteRowMatch[1]}`
+        params: [startRow, endRow],
+        success_message: `✅ Deleted row${startRow === endRow ? '' : 's'} ${startRow + 1}${startRow === endRow ? '' : ` to ${endRow + 1}`}`
+      };
+    }
+    
+    // Hide row patterns
+    const hideRowMatch = lowerCommand.match(/(?:hide)\s*(?:row\s*)?(\d+)(?:\s*(?:to|through|-)\s*(\d+))?/);
+    if (hideRowMatch) {
+      console.log('✅ Matched hide row pattern:', hideRowMatch);
+      const startRow = parseInt(hideRowMatch[1]) - 1; // Convert to 0-based
+      const endRow = hideRowMatch[2] ? parseInt(hideRowMatch[2]) - 1 : startRow;
+      console.log(`👁️‍🗨️ Hiding rows ${hideRowMatch[1]}${hideRowMatch[2] ? ` to ${hideRowMatch[2]}` : ''} (index ${startRow} to ${endRow})`);
+      return {
+        action: 'hideRow',
+        params: [startRow, endRow],
+        success_message: `✅ Hidden row${startRow === endRow ? '' : 's'} ${startRow + 1}${startRow === endRow ? '' : ` to ${endRow + 1}`}`
+      };
+    }
+    
+    // Show row patterns
+    const showRowMatch = lowerCommand.match(/(?:show|unhide|display)\s*(?:row\s*)?(\d+)(?:\s*(?:to|through|-)\s*(\d+))?/);
+    if (showRowMatch) {
+      console.log('✅ Matched show row pattern:', showRowMatch);
+      const startRow = parseInt(showRowMatch[1]) - 1; // Convert to 0-based
+      const endRow = showRowMatch[2] ? parseInt(showRowMatch[2]) - 1 : startRow;
+      console.log(`👁️ Showing rows ${showRowMatch[1]}${showRowMatch[2] ? ` to ${showRowMatch[2]}` : ''} (index ${startRow} to ${endRow})`);
+      return {
+        action: 'showRow',
+        params: [startRow, endRow],
+        success_message: `✅ Shown row${startRow === endRow ? '' : 's'} ${startRow + 1}${startRow === endRow ? '' : ` to ${endRow + 1}`}`
+      };
+    }
+
+    // Column operations - Insert column
+    const insertColumnMatch = lowerCommand.match(/(?:add|insert|create)\s*(?:a\s*)?(?:new\s*)?(?:(\d+)\s*)?(?:columns?|cols?)(?:\s+(?:at|to|before|after)\s+(?:column\s*)?([a-z]|\d+))?/);
+    if (insertColumnMatch) {
+      console.log('✅ Matched insert column pattern:', insertColumnMatch);
+      const count = insertColumnMatch[1] ? parseInt(insertColumnMatch[1]) : 1;
+      let position = 0; // Default to column A (index 0)
+      
+      if (insertColumnMatch[2]) {
+        // Handle both letter (A, B, C) and number (1, 2, 3) references
+        const positionRef = insertColumnMatch[2].toLowerCase();
+        if (/^[a-z]$/.test(positionRef)) {
+          position = positionRef.charCodeAt(0) - 97; // a=0, b=1, etc.
+        } else {
+          position = parseInt(positionRef) - 1; // Convert 1-based to 0-based
+        }
+      }
+      
+      console.log(`📊 Inserting ${count} columns at position ${position}`);
+      return {
+        action: 'insertColumn',
+        params: [position, { number: count }],
+        success_message: `✅ Added ${count} column${count > 1 ? 's' : ''} at position ${String.fromCharCode(65 + position)}`
+      };
+    }
+
+    // Column operations - Delete column
+    const deleteColumnMatch = lowerCommand.match(/(?:delete|remove|clear)\s*(?:column\s*)?([a-z]|\d+)(?:\s*(?:to|through|-)\s*([a-z]|\d+))?/);
+    if (deleteColumnMatch) {
+      console.log('✅ Matched delete column pattern:', deleteColumnMatch);
+      
+      // Parse start column
+      let startCol = 0;
+      const startRef = deleteColumnMatch[1].toLowerCase();
+      if (/^[a-z]$/.test(startRef)) {
+        startCol = startRef.charCodeAt(0) - 97; // a=0, b=1, etc.
+      } else {
+        startCol = parseInt(startRef) - 1; // Convert 1-based to 0-based
+      }
+      
+      // Parse end column (if range specified)
+      let endCol = startCol;
+      if (deleteColumnMatch[2]) {
+        const endRef = deleteColumnMatch[2].toLowerCase();
+        if (/^[a-z]$/.test(endRef)) {
+          endCol = endRef.charCodeAt(0) - 97;
+        } else {
+          endCol = parseInt(endRef) - 1;
+        }
+      }
+      
+      console.log(`🗑️ Deleting columns ${String.fromCharCode(65 + startCol)}${startCol === endCol ? '' : ` to ${String.fromCharCode(65 + endCol)}`} (index ${startCol} to ${endCol})`);
+      return {
+        action: 'deleteColumn',
+        params: [startCol, endCol],
+        success_message: `✅ Deleted column${startCol === endCol ? '' : 's'} ${String.fromCharCode(65 + startCol)}${startCol === endCol ? '' : ` to ${String.fromCharCode(65 + endCol)}`}`
+      };
+    }
+    
+    // Hide column patterns
+    const hideColumnMatch = lowerCommand.match(/(?:hide)\s*(?:column\s*)?([a-z]|\d+)(?:\s*(?:to|through|-)\s*([a-z]|\d+))?/);
+    if (hideColumnMatch) {
+      console.log('✅ Matched hide column pattern:', hideColumnMatch);
+      
+      // Parse start column
+      let startCol = 0;
+      const startRef = hideColumnMatch[1].toLowerCase();
+      if (/^[a-z]$/.test(startRef)) {
+        startCol = startRef.charCodeAt(0) - 97; // a=0, b=1, etc.
+      } else {
+        startCol = parseInt(startRef) - 1; // Convert 1-based to 0-based
+      }
+      
+      // Parse end column (if range specified)
+      let endCol = startCol;
+      if (hideColumnMatch[2]) {
+        const endRef = hideColumnMatch[2].toLowerCase();
+        if (/^[a-z]$/.test(endRef)) {
+          endCol = endRef.charCodeAt(0) - 97;
+        } else {
+          endCol = parseInt(endRef) - 1;
+        }
+      }
+      
+      console.log(`👁️‍🗨️ Hiding columns ${String.fromCharCode(65 + startCol)}${startCol === endCol ? '' : ` to ${String.fromCharCode(65 + endCol)}`} (index ${startCol} to ${endCol})`);
+      return {
+        action: 'hideColumn',
+        params: [startCol, endCol],
+        success_message: `✅ Hidden column${startCol === endCol ? '' : 's'} ${String.fromCharCode(65 + startCol)}${startCol === endCol ? '' : ` to ${String.fromCharCode(65 + endCol)}`}`
+      };
+    }
+    
+    // Show column patterns
+    const showColumnMatch = lowerCommand.match(/(?:show|unhide|display)\s*(?:column\s*)?([a-z]|\d+)(?:\s*(?:to|through|-)\s*([a-z]|\d+))?/);
+    if (showColumnMatch) {
+      console.log('✅ Matched show column pattern:', showColumnMatch);
+      
+      // Parse start column
+      let startCol = 0;
+      const startRef = showColumnMatch[1].toLowerCase();
+      if (/^[a-z]$/.test(startRef)) {
+        startCol = startRef.charCodeAt(0) - 97; // a=0, b=1, etc.
+      } else {
+        startCol = parseInt(startRef) - 1; // Convert 1-based to 0-based
+      }
+      
+      // Parse end column (if range specified)
+      let endCol = startCol;
+      if (showColumnMatch[2]) {
+        const endRef = showColumnMatch[2].toLowerCase();
+        if (/^[a-z]$/.test(endRef)) {
+          endCol = endRef.charCodeAt(0) - 97;
+        } else {
+          endCol = parseInt(endRef) - 1;
+        }
+      }
+      
+      console.log(`👁️ Showing columns ${String.fromCharCode(65 + startCol)}${startCol === endCol ? '' : ` to ${String.fromCharCode(65 + endCol)}`} (index ${startCol} to ${endCol})`);
+      return {
+        action: 'showColumn',
+        params: [startCol, endCol],
+        success_message: `✅ Shown column${startCol === endCol ? '' : 's'} ${String.fromCharCode(65 + startCol)}${startCol === endCol ? '' : ` to ${String.fromCharCode(65 + endCol)}`}`
       };
     }
 
@@ -166,6 +339,56 @@ export class SpreadsheetCommandProcessor {
       };
     }
 
+    // FLEXIBLE Sorting Operations - handles natural language variations
+    // Examples: "sort by Name ascending", "order Price column Z-A", "arrange data by Date desc"
+    const flexibleSortPattern = FlexiblePatternBuilder.sorting();
+    const sortFlexibleMatch = command.match(flexibleSortPattern);
+    if (sortFlexibleMatch) {
+      console.log('✅ Matched FLEXIBLE sorting pattern:', sortFlexibleMatch);
+      const extractedData = extractPatternData(command, 'sorting');
+      
+      if (extractedData && extractedData.column) {
+        let colIndex: number | null = null;
+        let targetColumn = '';
+        
+        // Determine column index - could be name or letter
+        if (/^[A-Za-z]$/.test(extractedData.column)) {
+          // Single letter column reference (A, B, C...)
+          colIndex = this.columnLetterToIndex(extractedData.column.toUpperCase());
+          targetColumn = extractedData.column.toUpperCase();
+        } else {
+          // Column name reference
+          colIndex = this.findColumnByName(extractedData.column);
+          targetColumn = extractedData.column;
+        }
+        
+        if (colIndex !== null && colIndex >= 0 && this.currentData && this.currentData.length > 1) {
+          // Determine sort direction
+          const directionText = extractedData.direction || 'asc';
+          const sortDir = /desc|z-?a|down|decreasing/.test(directionText.toLowerCase()) ? 'desc' : 'asc';
+          const lastColIndex =
+            this.currentData && this.currentData[0]
+              ? Math.max(Object.keys(this.currentData[0]).length - 1, 0)
+              : colIndex;
+          const lastColLetter = indexToColumnLetter(lastColIndex);
+          const lastRow1Based = this.currentData.length; // includes header
+          const range = `A2:${lastColLetter}${lastRow1Based}`;
+
+          const multiCommands: SpreadsheetCommand[] = [
+            { action: 'setRangeShow', params: [range] },
+            { action: 'setRangeSortMulti', params: [false, [{ i: colIndex, sort: sortDir }]] }
+          ];
+
+          console.log(`📍 Sorting column "${targetColumn}" (index ${colIndex}) ${sortDir === 'asc' ? 'A-Z' : 'Z-A'}`);
+          return {
+            action: 'multi',
+            params: multiCommands,
+            success_message: `✅ Sorted by ${targetColumn} ${sortDir === 'asc' ? 'A-Z' : 'Z-A'}`
+          };
+        }
+      }
+    }
+
     // Sort operations
     if (/sort\s*(?:data\s*)?(?:ascending|asc|a-z)/i.test(lowerCommand)) {
       console.log('✅ Matched sort ascending pattern');
@@ -180,8 +403,335 @@ export class SpreadsheetCommandProcessor {
       console.log('✅ Matched sort descending pattern');
       return {
         action: 'setRangeSort',
-        params: ['des'],
+        params: ['desc'],
         success_message: '✅ Data sorted Z-A'
+      };
+    }
+
+    // =============================
+    // Conditional Formatting (CF)
+    // =============================
+    // Helper to compute a column range excluding header
+    const buildColumnRange = (colIndex: number): string | null => {
+      if (colIndex < 0 || !this.currentData || this.currentData.length <= 1) return null;
+      const lastRow1Based = this.currentData.length; // includes header in row 1
+      const colLetter = indexToColumnLetter(colIndex);
+      return `${colLetter}2:${colLetter}${lastRow1Based}`;
+    };
+
+    // Helper to compute full data range excluding header
+    const buildFullDataRange = (): string | null => {
+      if (!this.currentData || this.currentData.length <= 1) return null;
+      const lastRow1Based = this.currentData.length;
+      const lastColIndex =
+        this.currentData && this.currentData[0]
+          ? Math.max(Object.keys(this.currentData[0]).length - 1, 0)
+          : 0;
+      const lastColLetter = indexToColumnLetter(lastColIndex);
+      return `A2:${lastColLetter}${lastRow1Based}`;
+    };
+
+    // FLEXIBLE CF: Universal conditional formatting pattern using flexible library
+    // Handles both column names and letters with natural language variations
+    const flexibleCfPattern = FlexiblePatternBuilder.conditionalFormatting();
+    const cfFlexibleMatch = command.match(flexibleCfPattern);
+    if (cfFlexibleMatch) {
+      console.log('✅ Matched FLEXIBLE CF pattern:', cfFlexibleMatch);
+      const extractedData = extractPatternData(command, 'conditionalFormatting');
+      
+      if (extractedData && extractedData.comparison && extractedData.value1 !== null) {
+        let colIndex: number | null = null;
+        let targetColumn = '';
+        
+        // Determine column index - could be name, letter, or unspecified (use all data)
+        if (extractedData.column) {
+          // Try as column letter first (A, B, C...)
+          if (/^[A-Za-z]$/.test(extractedData.column)) {
+            colIndex = this.columnLetterToIndex(extractedData.column.toUpperCase());
+            targetColumn = extractedData.column.toUpperCase();
+          } else {
+            // Try as column name
+            colIndex = this.findColumnByName(extractedData.column);
+            targetColumn = extractedData.column;
+          }
+        }
+        
+        // Build range - use specific column or full data range
+        let range: string | null;
+        if (colIndex !== null && colIndex >= 0) {
+          range = buildColumnRange(colIndex);
+          targetColumn = targetColumn || indexToColumnLetter(colIndex);
+        } else {
+          // Apply to full data range if no specific column
+          range = buildFullDataRange();
+          targetColumn = 'all data';
+        }
+        
+        if (!range) return null;
+        
+        // Use manual highlight instead of problematic setRangeConditionalFormatDefault API
+        const comparisonLower = extractedData.comparison.toLowerCase();
+        let command = '';
+        let description = '';
+        let condition = '';
+        let values = [extractedData.value1];
+        
+        if (/less|below|under|smaller|fewer|</.test(comparisonLower)) {
+          command = `highlight less than ${extractedData.value1} in column ${targetColumn}`;
+          description = `Highlight cells with values less than ${extractedData.value1}`;
+          condition = 'lessThan';
+        } else if (/equal|is|matches|same|=/.test(comparisonLower)) {
+          command = `highlight equal to ${extractedData.value1} in column ${targetColumn}`;
+          description = `Highlight cells with values equal to ${extractedData.value1}`;
+          condition = 'equal';
+        } else if (/between/.test(comparisonLower) && extractedData.value2 !== null) {
+          command = `highlight between ${extractedData.value1} and ${extractedData.value2} in column ${targetColumn}`;
+          description = `Highlight cells with values between ${extractedData.value1} and ${extractedData.value2}`;
+          condition = 'betweenness';
+          values = [extractedData.value1, extractedData.value2];
+        } else if (/greater|above|over|more|bigger|larger|>/.test(comparisonLower)) {
+          command = `highlight greater than ${extractedData.value1} in column ${targetColumn}`;
+          description = `Highlight cells with values greater than ${extractedData.value1}`;
+          condition = 'greaterThan';
+        } else {
+          // Default to greater than
+          command = `highlight greater than ${extractedData.value1} in column ${targetColumn}`;
+          description = `Highlight cells with values greater than ${extractedData.value1}`;
+          condition = 'greaterThan';
+        }
+        
+        return {
+          action: 'manual_highlight',
+          params: {
+            command,
+            description,
+            column: targetColumn,
+            condition,
+            values
+          },
+          success_message: `✅ ${description}`
+        };
+      }
+    }
+
+    // CF: text contains/equal in a named column (e.g., highlight Name column equal to "Valve")
+    const cfContainsByName = lowerCommand.match(/(?:conditional\s*format|highlight)\s+(?:the\s+)?(.+?)\s+column\s+(?:containing|contains|contain|equal(?:s)?\s+to|equal)\s+("[^"]+"|'[^']+'|[^\s]+)/i);
+    if (cfContainsByName) {
+      console.log('✅ Matched CF contains by NAME pattern:', cfContainsByName);
+      const colName = cfContainsByName[1].trim();
+      let value = cfContainsByName[2].trim();
+      value = value.replace(/^['"]|['"]$/g, '');
+      const colIndex = this.findColumnByName(colName);
+      if (colIndex !== null && colIndex >= 0) {
+        const range = buildColumnRange(colIndex);
+        if (!range) return null;
+        const multiCommands: SpreadsheetCommand[] = [
+          { action: 'setRangeShow', params: [range] },
+          { action: 'setRangeConditionalFormatDefault', params: ['textContains', { type: 'value', content: [value] }, { cellrange: range, matchMode: 'exact' }] }
+        ];
+        return {
+          action: 'multi',
+          params: multiCommands,
+          success_message: `✅ Highlighted ${indexToColumnLetter(colIndex)} cells containing "${value}"`
+        };
+      }
+    }
+
+    // Flexible phrasing: highlight/color/mark/shade VALUE in <column name> column (substring by default, exact if equality words present)
+    const genericValueInNamedColumn = command.match(/(?:highlight|color|mark|shade)\s+(?:all\s+)?(?:cells|values)?(?:\s+that\s+)?(?:(are|is|equal(?:s)?\s*to|=|contain(?:s)?)\s+)?(\"[^\"]+\"|'[^']+'|[^\s]+)\s+(?:in|on|within)\s+(?:the\s+)?(.+?)\s+column\s*$/i);
+    if (genericValueInNamedColumn) {
+      const value = (genericValueInNamedColumn[2] || '').trim().replace(/^['"]|['"]$/g, '');
+      const colName = (genericValueInNamedColumn[3] || '').trim();
+      const op = (genericValueInNamedColumn[1] || '').toLowerCase();
+      const colIndex = this.findColumnByName(colName);
+      if (colIndex !== null && colIndex >= 0) {
+        const range = buildColumnRange(colIndex);
+        if (!range) return null;
+        const useExact = /^(are|is|equal|=|equals)/.test(op);
+        const multiCommands: SpreadsheetCommand[] = [
+          { action: 'setRangeShow', params: [range] },
+          { action: 'setRangeConditionalFormatDefault', params: ['textContains', { type: 'value', content: [value] }, { cellrange: range, matchMode: useExact ? 'exact' : 'contains' }] }
+        ];
+        return {
+          action: 'multi',
+          params: multiCommands,
+          success_message: `✅ Highlighted ${indexToColumnLetter(colIndex)} cells ${useExact ? 'equal to' : 'containing'} "${value}"`
+        };
+      }
+    }
+
+    // Flexible phrasing: highlight/color/mark/shade VALUE in column <letter>
+    const genericValueInLetterColumn = command.match(/(?:highlight|color|mark|shade)\s+(?:all\s+)?(?:cells|values)?(?:\s+that\s+)?(?:(are|is|equal(?:s)?\s*to|=|contain(?:s)?)\s+)?(\"[^\"]+\"|'[^']+'|[^\s]+)\s+(?:in|on|within)\s+(?:the\s+)?(?:column\s+)?([A-Za-z])\b/i);
+    if (genericValueInLetterColumn) {
+      const value = (genericValueInLetterColumn[2] || '').trim().replace(/^['"]|['"]$/g, '');
+      const letter = (genericValueInLetterColumn[3] || '').toUpperCase();
+      const op = (genericValueInLetterColumn[1] || '').toLowerCase();
+      const colIndex = this.columnLetterToIndex(letter);
+      if (colIndex >= 0) {
+        const range = buildColumnRange(colIndex);
+        if (!range) return null;
+        const useExact = /^(are|is|equal|=|equals)/.test(op);
+        const multiCommands: SpreadsheetCommand[] = [
+          { action: 'setRangeShow', params: [range] },
+          { action: 'setRangeConditionalFormatDefault', params: ['textContains', { type: 'value', content: [value] }, { cellrange: range, matchMode: useExact ? 'exact' : 'contains' }] }
+        ];
+        return {
+          action: 'multi',
+          params: multiCommands,
+          success_message: `✅ Highlighted ${letter} cells ${useExact ? 'equal to' : 'containing'} "${value}"`
+        };
+      }
+    }
+    // CF: phrase "highlight all values that are X in <column> column" → substring match in specified column
+    const cfValuesInColumn = lowerCommand.match(/highlight\s+all\s+values\s+that\s+are\s+("[^"]+"|'[^']+'|[^\s]+)\s+in\s+(?:the\s+)?(.+?)\s+column/i);
+    if (cfValuesInColumn) {
+      console.log('✅ Matched CF values-in-column pattern:', cfValuesInColumn);
+      const value = cfValuesInColumn[1].trim().replace(/^['"]|['"]$/g, '');
+      const colName = cfValuesInColumn[2].trim();
+      const colIndex = this.findColumnByName(colName);
+      if (colIndex !== null && colIndex >= 0) {
+        const range = buildColumnRange(colIndex);
+        if (!range) return null;
+        const multiCommands: SpreadsheetCommand[] = [
+          { action: 'setRangeShow', params: [range] },
+          // Use contains for this phrasing
+          { action: 'setRangeConditionalFormatDefault', params: ['textContains', { type: 'value', content: [value] }, { cellrange: range, matchMode: 'contains' }] }
+        ];
+        return {
+          action: 'multi',
+          params: multiCommands,
+          success_message: `✅ Highlighted ${indexToColumnLetter(colIndex)} cells containing "${value}"`
+        };
+      }
+    }
+
+    // CF: highlight all duplicates (entire dataset)
+    const cfAllDuplicates = lowerCommand.match(/(?:conditional\s*format|highlight)\s+(?:all\s+)?(?:the\s+)?duplicates?\b/i);
+    if (cfAllDuplicates) {
+      console.log('✅ Matched CF highlight ALL duplicates pattern:', cfAllDuplicates);
+      
+      // Apply duplicate highlighting to full data range
+      const range = buildFullDataRange();
+      if (!range) return null;
+      
+      const multiCommands: SpreadsheetCommand[] = [
+        { action: 'setRangeShow', params: [range] },
+        { action: 'setRangeConditionalFormatDefault', params: ['duplicateValue', { type: 'value', content: ['0'] }, { cellrange: range }] }
+      ];
+      
+      return {
+        action: 'multi',
+        params: multiCommands,
+        success_message: `✅ Highlighted all duplicate values in the dataset`
+      };
+    }
+
+    // CF: duplicates/unique in a column
+    // Using manual highlight instead of problematic setRangeConditionalFormatDefault API
+    const cfDupName = lowerCommand.match(/(?:conditional\s*format|highlight)\s+(duplicates?|repeats?|unique)\s+(?:in|on|for)\s+(?:the\s+)?(.+?)\s+column/i);
+    if (cfDupName) {
+      console.log('✅ Matched CF duplicate/unique by NAME pattern:', cfDupName);
+      const kind = cfDupName[1];
+      const colName = cfDupName[2].trim();
+      const colIndex = this.findColumnByName(colName);
+      if (colIndex !== null && colIndex >= 0) {
+        const colLetter = indexToColumnLetter(colIndex);
+        const isUnique = /unique/i.test(kind);
+        
+        const command = isUnique ? `highlight unique in column ${colLetter}` : `highlight duplicates in column ${colLetter}`;
+        const description = isUnique ? `Highlight unique values in column ${colLetter}` : `Highlight duplicate values in column ${colLetter}`;
+        
+        return {
+          action: 'manual_highlight',
+          params: {
+            command,
+            description,
+            column: colLetter,
+            condition: isUnique ? 'unique' : 'duplicates'
+          },
+          success_message: isUnique ? `✅ Highlighted unique values in ${colLetter}` : `✅ Highlighted duplicates in ${colLetter}`
+        };
+      }
+    }
+
+    // CF: top/bottom N or percent in a column
+    const cfTopBottom = lowerCommand.match(/(?:conditional\s*format|highlight)\s+(top|bottom)\s+(\d+)(\s*%|\s*percent)?\s+(?:in|on|for)\s+(?:the\s+)?(.+?)\s+column/i);
+    if (cfTopBottom) {
+      console.log('✅ Matched CF top/bottom pattern:', cfTopBottom);
+      const which = cfTopBottom[1].toLowerCase();
+      const num = parseInt(cfTopBottom[2]);
+      const isPercent = !!cfTopBottom[3];
+      const colName = cfTopBottom[4].trim();
+      const colIndex = this.findColumnByName(colName);
+      if (colIndex !== null && colIndex >= 0) {
+        const range = buildColumnRange(colIndex);
+        if (!range) return null;
+        const conditionName = which === 'top' ? (isPercent ? 'topPercent' : 'top') : (isPercent ? 'lastPercent' : 'last');
+      const multiCommands: SpreadsheetCommand[] = [
+        { action: 'setRangeShow', params: [range] },
+        { action: 'setRangeConditionalFormatDefault', params: [conditionName, { type: 'value', content: [num] }, { cellrange: range }] }
+      ];
+        return {
+          action: 'multi',
+          params: multiCommands,
+          success_message: `✅ Highlighted ${which} ${num}${isPercent ? '%' : ''} in ${indexToColumnLetter(colIndex)}`
+        };
+      }
+    }
+
+    // CF: above/below average in a column
+    const cfAverage = lowerCommand.match(/(?:conditional\s*format|highlight)\s+(above\s+average|below\s+average)\s+(?:in|on|for)\s+(?:the\s+)?(.+?)\s+column/i);
+    if (cfAverage) {
+      console.log('✅ Matched CF average pattern:', cfAverage);
+      const which = cfAverage[1].toLowerCase();
+      const colName = cfAverage[2].trim();
+      const colIndex = this.findColumnByName(colName);
+      if (colIndex !== null && colIndex >= 0) {
+        const range = buildColumnRange(colIndex);
+        if (!range) return null;
+        const conditionName = which.includes('above') ? 'AboveAverage' : 'SubAverage';
+      const multiCommands: SpreadsheetCommand[] = [
+        { action: 'setRangeShow', params: [range] },
+        // Pass explicit empty content array within object for compatibility
+        { action: 'setRangeConditionalFormatDefault', params: [conditionName, { type: 'value', content: [] }, { cellrange: range }] }
+      ];
+        return {
+          action: 'multi',
+          params: multiCommands,
+          success_message: `✅ Highlighted ${which} in ${indexToColumnLetter(colIndex)}`
+        };
+      }
+    }
+
+    // CF: color scale / data bars / icon set on a column or full table
+    const cfVisual = lowerCommand.match(/(?:apply|add|use|set)\s+(?:a\s+)?(color\s*(?:scale|gradation)|data\s*bars?|icon\s*set|icons?)\s+(?:to|on|for)\s+(?:the\s+)?(?:(.+?)\s+column|entire\s*(?:table|sheet|range)|all\s*cells?)/i);
+    if (cfVisual) {
+      console.log('✅ Matched CF visual pattern:', cfVisual);
+      const typeToken = cfVisual[1].toLowerCase();
+      const targetColName = cfVisual[2]?.trim();
+      let cfType: 'dataBar' | 'icons' | 'colorGradation' = 'dataBar';
+      if (/color/.test(typeToken)) cfType = 'colorGradation';
+      else if (/icon/.test(typeToken) || /icons/.test(typeToken)) cfType = 'icons';
+      else cfType = 'dataBar';
+
+      let range: string | null = null;
+      if (targetColName && targetColName.length > 0) {
+        const colIndex = this.findColumnByName(targetColName);
+        if (colIndex !== null && colIndex >= 0) range = buildColumnRange(colIndex);
+      } else {
+        range = buildFullDataRange();
+      }
+      if (!range) return null;
+
+      const multiCommands: SpreadsheetCommand[] = [
+        { action: 'setRangeShow', params: [range] },
+        { action: 'setRangeConditionalFormat', params: [cfType, { format: cfType === 'dataBar' ? ["#63c384", "#ffffff"] : undefined }] }
+      ];
+
+      return {
+        action: 'multi',
+        params: multiCommands,
+        success_message: `✅ Applied ${cfType} conditional format to ${targetColName ? targetColName + ' column' : 'selected range'}`
       };
     }
 
@@ -329,7 +879,8 @@ export class SpreadsheetCommandProcessor {
       { op: 'min', regex: /min(imum)? (value)?( in| of| from)? ?([\w\s]+)? ?column/i, fn: 'MIN' },
       { op: 'max', regex: /max(imum)? (value)?( in| of| from)? ?([\w\s]+)? ?column/i, fn: 'MAX' },
     ];
-    for (const { op, regex, fn } of formulaOps) {
+    for (const { op: _op, regex, fn } of formulaOps) {
+      void _op;
       const match = command.match(regex);
       if (match) {
         let colName = match[4]?.trim();
@@ -476,7 +1027,7 @@ export class SpreadsheetCommandProcessor {
           const colLetter = indexToColumnLetter(colIndex);
           
           // Analyze sample data to detect delimiter
-          let sampleData: string[] = [];
+          const sampleData: string[] = [];
           for (let r = 1; r < Math.min(this.currentData.length, 6); r++) {
             if (this.currentData[r] && this.currentData[r][colIndex] && 
                 typeof this.currentData[r][colIndex] === 'string') {
@@ -529,11 +1080,31 @@ export class SpreadsheetCommandProcessor {
     const clearFilterRegex = /(?:clear|remove|reset)(?:\s+(?:all|the))?\s+(?:filter|filters)/i;
     if (clearFilterRegex.test(command)) {
       console.log('✅ Clear filter command matched');
-      return {
-        action: 'clearFilter',
-        params: {},
-        success_message: '✅ All filters cleared'
-      };
+      
+      try {
+        // Import commandService dynamically to avoid circular dependency
+        const { commandService } = await import('@/services/commandService');
+        
+        // Use the range filter API endpoint to clear filters
+        const filterResponse = await commandService.processRangeFilter({
+          action: 'close'
+        });
+        
+        if (filterResponse.success && filterResponse.action?.type === 'luckysheet_api') {
+          // Return setRangeFilter command for local execution
+          return {
+            action: 'setRangeFilter',
+            params: filterResponse.action.payload.params,
+            success_message: filterResponse.message || '✅ All filters cleared'
+          };
+        } else {
+          console.error('❌ Clear filter processing failed:', filterResponse.message);
+          return null;
+        }
+      } catch (error) {
+        console.error('❌ Error in clear filter processing:', error);
+        return null;
+      }
     }
     
     // Handle filtering commands with improved pattern matching
@@ -558,27 +1129,32 @@ export class SpreadsheetCommandProcessor {
       
       // Try to find column index either by cell reference or column name
       let columnIndex: number | null = null;
+      let columnSpecifier: string | number = columnIdentifier; // Keep original for backend processing
       
       // First try as cell reference (e.g., A1, B2)
       if (/^[a-z]\d+$/i.test(columnIdentifier)) {
         const colLetter = columnIdentifier.match(/[A-Za-z]+/)?.[0] || '';
         columnIndex = this.columnLetterToIndex(colLetter);
+        columnSpecifier = columnIndex; // Use index for backend
         console.log(`📍 Resolved column index from letter ${colLetter}: ${columnIndex}`);
       } 
       // Try as column letter only (e.g., A, B)
       else if (/^[a-z]$/i.test(columnIdentifier)) {
         columnIndex = this.columnLetterToIndex(columnIdentifier.toUpperCase());
+        columnSpecifier = columnIndex; // Use index for backend
         console.log(`📍 Resolved column index from letter ${columnIdentifier}: ${columnIndex}`);
       }
       else {
         // Try as column name
         columnIndex = this.findColumnByName(columnIdentifier);
+        columnSpecifier = columnIdentifier; // Use name for backend processing
         console.log(`📍 Resolved column index from name "${columnIdentifier}": ${columnIndex}`);
         
         // If not found, try removing "column" word if present
         if (columnIndex === null && columnIdentifier.toLowerCase().includes('column')) {
           const cleanIdentifier = columnIdentifier.toLowerCase().replace(/\s*column\s*/g, '').trim();
           columnIndex = this.findColumnByName(cleanIdentifier);
+          columnSpecifier = cleanIdentifier;
           console.log(`📍 Retried with clean identifier "${cleanIdentifier}": ${columnIndex}`);
         }
       }
@@ -586,24 +1162,38 @@ export class SpreadsheetCommandProcessor {
       console.log(`📍 Final column index: ${columnIndex}`);
       console.log('🗺️ Available column mappings:', this.columnMapping);
       
-      if (columnIndex !== null) {
-        // Create filter command
-        const command = {
-          action: 'rowFilter',
-          params: {
-            column: columnIndex,
-            value: filterValue,
-            type: filterType
-          },
-          target: {
-            type: 'column' as const,
-            identifier: columnIndex
-          },
-          success_message: `✅ Filtered ${columnIdentifier} column to show values ${filterType === 'exact' ? 'matching' : 'containing'} "${filterValue}"`
-        };
-        
-        console.log('🎯 Generated filter command:', command);
-        return command;
+      if (columnIndex !== null || typeof columnSpecifier === 'string') {
+        try {
+          // Import commandService dynamically to avoid circular dependency
+          const { commandService } = await import('@/services/commandService');
+          
+          // Use the range filter API endpoint to apply filter
+          const filterResponse = await commandService.processRangeFilter({
+            action: 'open',
+            column: columnSpecifier,
+            filter_value: filterValue,
+            filter_type: filterType
+          });
+          
+          if (filterResponse.success && filterResponse.action?.type === 'luckysheet_api') {
+            // Return setRangeFilter command for local execution
+            return {
+              action: 'setRangeFilter',
+              params: filterResponse.action.payload.params,
+              target: {
+                type: 'column' as const,
+                identifier: columnIndex || columnIdentifier
+              },
+              success_message: filterResponse.message || `✅ Filtered ${columnIdentifier} column to show values ${filterType === 'exact' ? 'matching' : 'containing'} "${filterValue}"`
+            };
+          } else {
+            console.error('❌ Range filter processing failed:', filterResponse.message);
+            return null;
+          }
+        } catch (error) {
+          console.error('❌ Error in range filter processing:', error);
+          return null;
+        }
       } else {
         console.log('❌ Could not resolve column index');
       }
@@ -809,11 +1399,11 @@ export class SpreadsheetCommandProcessor {
   executeCommand(command: SpreadsheetCommand): boolean {
     try {
       // Enhanced check for Luckysheet availability
-      if (!window.luckysheet) {
+      if (!(window as any).luckysheet) {
         console.error('Luckysheet is not available');
         
         // Attempt to find Luckysheet in alternative ways
-        if (window.luckysheet === null || window.luckysheet === undefined) {
+        if ((window as any).luckysheet === null || (window as any).luckysheet === undefined) {
           console.log('Attempting to wait for Luckysheet to initialize...');
           
           // Create a promise that resolves when Luckysheet is available
@@ -822,7 +1412,7 @@ export class SpreadsheetCommandProcessor {
               let attempts = 0;
               
               const checkLuckysheet = () => {
-                if (window.luckysheet) {
+                if ((window as any).luckysheet) {
                   console.log('Luckysheet found after waiting!');
                   resolve(true);
                 } else if (attempts >= maxAttempts) {
@@ -872,12 +1462,217 @@ export class SpreadsheetCommandProcessor {
           window.luckysheet.deleteRow(...command.params);
           break;
           
+        case 'insertColumn':
+          window.luckysheet.insertColumn(...command.params);
+          break;
+          
+        case 'deleteColumn':
+          window.luckysheet.deleteColumn(...command.params);
+          break;
+          
+        case 'hideRow':
+          window.luckysheet.hideRow(...command.params);
+          break;
+          
+        case 'showRow':
+          window.luckysheet.showRow(...command.params);
+          break;
+          
+        case 'hideColumn':
+          window.luckysheet.hideColumn(...command.params);
+          break;
+          
+        case 'showColumn':
+          window.luckysheet.showColumn(...command.params);
+          break;
+          
         case 'setHorizontalFrozen':
           window.luckysheet.setHorizontalFrozen(...command.params);
           break;
           
+        case 'setRangeShow':
+          window.luckysheet.setRangeShow(...command.params);
+          break;
+
         case 'setRangeSort':
           window.luckysheet.setRangeSort(...command.params);
+          break;
+
+        case 'setRangeSortMulti':
+          // params: [title:boolean, sortArray: Array<{i:number, sort:'asc'|'desc'}>, optionalSetting]
+          window.luckysheet.setRangeSortMulti(...command.params);
+          break;
+
+        case 'setRangeConditionalFormatDefault':
+          // params: [conditionName: string, conditionValue: { type: 'value'|'range', content: any[] } | any[], optionalSetting]
+          // Example: setRangeConditionalFormatDefault('greaterThan', { type: 'value', content: [2] }, { cellrange: 'A2:A100' })
+          try {
+            const [condName, condValue, setting] = command.params as [any, any, any];
+
+            // Short-circuit: for duplicate highlighting, bypass Luckysheet CF API completely and do manual highlight
+            if (String(condName) === 'duplicateValue') {
+              const rangeStr: string = (setting && (setting as any).cellrange) ? (setting as any).cellrange : '';
+              const m = rangeStr.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+              if (m && (window as any).luckysheet && typeof (window as any).luckysheet.getSheetData === 'function') {
+                const startColLetter = m[1];
+                const startRowRaw = parseInt(m[2], 10);
+                const endColLetter = m[3];
+                const endRow = parseInt(m[4], 10);
+                const startRow = Math.max(2, startRowRaw); // Exclude header
+                const colStartIndex = startColLetter.charCodeAt(0) - 65;
+                const colEndIndex = endColLetter.charCodeAt(0) - 65;
+                const sheetData = (window as any).luckysheet.getSheetData();
+
+                const normalize = (cell: any): string => {
+                  if (cell === null || cell === undefined) return '';
+                  if (typeof cell === 'object' && cell !== null) {
+                    const m = (cell as any).m;
+                    const v = (cell as any).v;
+                    if (m !== undefined && m !== null) return String(m).trim();
+                    if (v !== undefined && v !== null) {
+                      if (typeof v === 'object') {
+                        const nm = (v as any).m;
+                        const nv = (v as any).v;
+                        if (nm !== undefined && nm !== null) return String(nm).trim();
+                        if (nv !== undefined && nv !== null) return String(nv).trim();
+                        return String(v).trim();
+                      }
+                      return String(v).trim();
+                    }
+                    return '';
+                  }
+                  return String(cell).trim();
+                };
+
+                if (colStartIndex === colEndIndex) {
+                  // Single-column duplicates
+                  const counts: Record<string, number> = {};
+                  for (let r = startRow - 1; r <= endRow - 1 && r < sheetData.length; r++) {
+                    const value = normalize(sheetData[r]?.[colStartIndex]);
+                    if (value !== '') counts[value] = (counts[value] || 0) + 1;
+                  }
+                  const targetRows: number[] = [];
+                  for (let r = startRow - 1; r <= endRow - 1 && r < sheetData.length; r++) {
+                    const value = normalize(sheetData[r]?.[colStartIndex]);
+                    if (value !== '' && (counts[value] || 0) > 1) targetRows.push(r + 1);
+                  }
+                  if (targetRows.length > 0) {
+                    let s = targetRows[0];
+                    let p = targetRows[0];
+                    const blocks: Array<{ s: number; e: number }> = [];
+                    for (let k = 1; k < targetRows.length; k++) {
+                      if (targetRows[k] === p + 1) p = targetRows[k];
+                      else { blocks.push({ s, e: p }); s = p = targetRows[k]; }
+                    }
+                    blocks.push({ s, e: p });
+                    blocks.forEach(b => {
+                      const blockRange = `${startColLetter}${b.s}:${startColLetter}${b.e}`;
+                      try { 
+                        window.luckysheet.setRangeFormat('bg', '#ffcccc', { range: blockRange }); 
+                      } catch {}
+                    });
+                  }
+                } else {
+                  // Multi-column: duplicate rows across selected columns
+                  const sigCounts: Record<string, number> = {};
+                  const makeSig = (r: number): string => {
+                    const parts: string[] = [];
+                    for (let c = colStartIndex; c <= colEndIndex; c++) parts.push(normalize(sheetData[r]?.[c]));
+                    return parts.join('\u241F');
+                  };
+                  for (let r = startRow - 1; r <= endRow - 1 && r < sheetData.length; r++) {
+                    const sig = makeSig(r);
+                    if (sig.replace(/\u241F/g, '') === '') continue; // ignore fully empty
+                    sigCounts[sig] = (sigCounts[sig] || 0) + 1;
+                  }
+                  const dupRows: number[] = [];
+                  for (let r = startRow - 1; r <= endRow - 1 && r < sheetData.length; r++) {
+                    const sig = makeSig(r);
+                    if (sig.replace(/\u241F/g, '') === '') continue;
+                    if ((sigCounts[sig] || 0) > 1) dupRows.push(r + 1);
+                  }
+                  if (dupRows.length > 0) {
+                    let s = dupRows[0];
+                    let p = dupRows[0];
+                    const blocks: Array<{ s: number; e: number }> = [];
+                    for (let k = 1; k < dupRows.length; k++) {
+                      if (dupRows[k] === p + 1) p = dupRows[k];
+                      else { blocks.push({ s, e: p }); s = p = dupRows[k]; }
+                    }
+                    blocks.push({ s, e: p });
+                    blocks.forEach(b => {
+                      const rowRange = `${startColLetter}${b.s}:${endColLetter}${b.e}`;
+                      try { 
+                        window.luckysheet.setRangeFormat('bg', '#ffcccc', { range: rowRange }); 
+                      } catch {}
+                    });
+                  }
+                }
+                return true;
+              }
+              // If range/sheet not available, do nothing to avoid API errors
+              return false;
+            }
+
+            // Default path for other condition types: try Luckysheet CF API with fallbacks
+            const attempts: any[] = [];
+            const buildAttempt = (second: any) => [condName, second, setting].filter(v => v !== undefined);
+            const isObject = (v: any) => v && typeof v === 'object' && !Array.isArray(v);
+            const isArray = (v: any) => Array.isArray(v);
+
+            let contentArray: any[] | undefined = undefined;
+            if (isArray(condValue)) {
+              contentArray = condValue as any[];
+              attempts.push(buildAttempt(contentArray));
+              attempts.push(buildAttempt({ type: 'value', content: contentArray }));
+            } else if (isObject(condValue)) {
+              const obj = condValue as any;
+              if (isArray(obj.content)) contentArray = obj.content;
+              attempts.push(buildAttempt(obj));
+              if (contentArray) attempts.push(buildAttempt(contentArray));
+            } else if (condValue !== undefined) {
+              contentArray = [condValue];
+              attempts.push(buildAttempt(contentArray));
+              attempts.push(buildAttempt({ type: 'value', content: contentArray }));
+            } else {
+              // Ensure there is at least one attempt with empty content
+              attempts.push(buildAttempt({ type: 'value', content: [] }));
+            }
+
+            let success = false;
+            let lastErr: any = null;
+            for (const attempt of attempts) {
+              try {
+                window.luckysheet.setRangeConditionalFormatDefault(...attempt);
+                success = true;
+                break;
+              } catch (err) {
+                lastErr = err;
+              }
+            }
+
+            if (!success) {
+              throw lastErr || new Error('Conditional format application failed');
+            }
+          } catch (error) {
+            console.error('Error in setRangeConditionalFormatDefault execution:', error);
+            return false;
+          }
+          break;
+
+        case 'setRangeConditionalFormat':
+          // params: [type: 'dataBar'|'icons'|'colorGradation', { format?: any }]
+          // Example: setRangeConditionalFormat('dataBar', { format: ["#63c384", "#ffffff"] })
+          window.luckysheet.setRangeConditionalFormat(...command.params);
+          break;
+
+        case 'deleteRangeConditionalFormat':
+          // params: [index: number]
+          if (typeof window.luckysheet.deleteRangeConditionalFormat === 'function') {
+            window.luckysheet.deleteRangeConditionalFormat(...command.params);
+          } else {
+            console.warn('deleteRangeConditionalFormat is not available in this Luckysheet build');
+          }
           break;
           
         case 'setCellFormat':
@@ -887,6 +1682,16 @@ export class SpreadsheetCommandProcessor {
             command.params.attr, 
             command.params.value
           );
+          break;
+          
+        case 'setRangeFormat':
+          console.log('🎨 Executing setRangeFormat with params:', command.params);
+          window.luckysheet.setRangeFormat(
+            command.params[0],  // attr
+            command.params[1],  // value  
+            command.params[2]   // settings object with range
+          );
+          console.log('✅ setRangeFormat executed successfully');
           break;
           
         case 'setCellValue':
@@ -917,6 +1722,13 @@ export class SpreadsheetCommandProcessor {
               cmd.params.column,
               cmd.params.value
             );
+          });
+          break;
+
+        case 'multi':
+          // Execute a sequence of Luckysheet commands
+          (command.params as SpreadsheetCommand[]).forEach((sub: SpreadsheetCommand) => {
+            this.executeCommand(sub);
           });
           break;
           
@@ -1029,7 +1841,6 @@ export class SpreadsheetCommandProcessor {
                   // Try to use alternative refresh methods
                   if (typeof window.luckysheet.jfrefreshgrid === 'function') {
                     console.log('Using jfrefreshgrid with custom config');
-                    // @ts-ignore - Ignore potential type errors with custom parameters
                     window.luckysheet.jfrefreshgrid(undefined, undefined, undefined, undefined, customConfig);
                     console.log('🔍 Row filtering applied through alternative method');
                     return true;
@@ -1138,7 +1949,7 @@ export class SpreadsheetCommandProcessor {
               }
               
               // Calculate width based on content length
-              let optimalWidth = Math.max(
+              const optimalWidth = Math.max(
                 MIN_WIDTH,
                 Math.min(MAX_WIDTH, maxContentLength * DEFAULT_CHAR_WIDTH + PADDING)
               );
@@ -1157,6 +1968,30 @@ export class SpreadsheetCommandProcessor {
             return false;
           }
           break;
+          
+        case 'setRangeFilter':
+          // Handle both opening and closing filters using the actual Luckysheet API
+          console.log('🔍 Executing setRangeFilter command:', command.params);
+          
+          // Extract parameters - should be [type, setting] format
+          const filterType = command.params[0]; // "open" or "close"
+          const filterSetting = command.params[1] || {}; // {range: "A1:B2", order: 0}
+          
+          console.log(`🔍 Filter type: ${filterType}, setting:`, filterSetting);
+          
+          try {
+            if (typeof window.luckysheet.setRangeFilter === 'function') {
+              window.luckysheet.setRangeFilter(filterType, filterSetting);
+              console.log('✅ setRangeFilter executed successfully');
+              return true;
+            } else {
+              console.error('❌ setRangeFilter method not available in Luckysheet');
+              return false;
+            }
+          } catch (error) {
+            console.error('❌ Error executing setRangeFilter:', error);
+            return false;
+          }
           
         case 'clearFilter':
           console.log('🔍 Clearing all filters');

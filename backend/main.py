@@ -9,10 +9,22 @@ import sys
 import json
 import uuid
 import time
+import re
 from typing import Optional, Dict, Any, List
 import pandas as pd
 import numpy as np
 import logging
+from difflib import SequenceMatcher
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("[OK] Environment variables loaded from .env file")
+except ImportError:
+    print("[WARN] python-dotenv not installed. Install with: pip install python-dotenv")
+except Exception as e:
+    print(f"[WARN] Error loading .env file: {str(e)}")
 
 # Add the parent directory to sys.path to import our modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,6 +34,10 @@ from data_handler import DataHandler
 from agent_services import AgentServices
 from report_generator import ReportGenerator
 from speech_utils import SpeechUtil
+from query_orchestrator import get_orchestrator
+from workspace_ai_processor import create_ai_processor
+from intelligent_analysis import IntelligentAnalyzer
+from smart_formatter import SmartFormatter
 import settings
 
 app = FastAPI()
@@ -55,7 +71,7 @@ speech_util = SpeechUtil(api_key=settings.AZURE_SPEECH_KEY, region=settings.AZUR
 
 # Check if LLM is properly configured
 if settings.LLM is None:
-    logger.error("LLM is not properly configured. Please check your GOOGLE_API_KEY environment variable.")
+    logger.error("LLM is not properly configured. Please check your NEXT_PUBLIC_GROQ_API_KEY environment variable.")
     agent_services = None
     report_generator = None
 else:
@@ -63,7 +79,7 @@ else:
         # Test the LLM connection
         test_response = settings.LLM.invoke("Hello")
         logger.info("LLM connection successful")
-        
+
         agent_services = AgentServices(llm=settings.LLM, speech_util_instance=speech_util, charts_dir=CHARTS_DIR)
         agent_services.initialize_agents(data_handler)
         report_generator = ReportGenerator(
@@ -72,15 +88,17 @@ else:
         )
     except Exception as e:
         logger.error(f"Failed to initialize LLM services: {str(e)}")
-        logger.error("Please check your GOOGLE_API_KEY and ensure it's valid")
+        logger.error("Please check your NEXT_PUBLIC_GROQ_API_KEY and ensure it's valid")
         agent_services = None
         report_generator = None
 
 # --- Request/Response Models ---
 class QueryRequest(BaseModel):
     question: str
+    chat_id: Optional[str] = None  # NEW: Chat ID for context management
     is_speech: bool = False
     workspace_id: Optional[str] = None
+    workspace_type: Optional[str] = "work"  # NEW: Workspace type for AI context
 
 class ReportRequest(BaseModel):
     format: str = "pdf"
@@ -106,7 +124,13 @@ class SyntheticDatasetRequest(BaseModel):
     rows: Optional[int] = 100
     columns: Optional[int] = None
     column_specs: Optional[Dict[str, str]] = None
-    workspace_id: Optional[str] = None
+
+class CompoundQueryRequest(BaseModel):
+    query: str
+    workspace_id: str
+    chat_id: Optional[str] = None
+    workspace_type: Optional[str] = "work"  # NEW: Workspace type for AI context
+    preview_only: bool = False  # If true, return execution plan without executing
 
 def create_fallback_dataset(description: str, rows: int) -> Dict:
     """Create a simple fallback dataset when LLM parsing fails"""
@@ -222,7 +246,7 @@ async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
             "success": True
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="I had trouble processing your file. Please make sure it's a valid data file (CSV, Excel, etc.) and try again.")
 
 @app.post("/api/query")
 async def process_query(query: Dict[str, Any]):
@@ -233,16 +257,21 @@ async def process_query(query: Dict[str, Any]):
     
     try:
         question = query.get("question")
+        chat_id = query.get("chat_id")  # NEW: Extract chat_id
         is_speech = query.get("is_speech", False)
-        
-        print(f"💬 Extracted question: {question}")
-        print(f"🎤 Is speech: {is_speech}")
-        print(f"❓ Question type: {type(question)}")
-        print(f"📏 Question length: {len(question) if question else 0}")
+        mode = query.get("mode", "simple")  # NEW: Extract mode, default to simple
+        workspace_type = query.get("workspace_type", "work")  # NEW: Extract workspace type
+
+        print(f"📝 === EXTRACTED PARAMETERS ===")
+        print(f"   - Question: '{question}'")
+        print(f"   - Chat ID: {chat_id}")
+        print(f"   - Is Speech: {is_speech}")
+        print(f"   - Mode: {mode}")
+        print(f"   - Workspace Type: {workspace_type}")
         
         if not question:
             print("❌ No question provided in request")
-            raise HTTPException(status_code=400, detail="No question provided")
+            raise HTTPException(status_code=400, detail="I'm ready to help! What would you like to know or do with your data?")
         
         # Check for duplicate removal patterns first for more reliable detection
         duplicate_keywords = [
@@ -260,6 +289,26 @@ async def process_query(query: Dict[str, Any]):
             initial_df = data_handler.get_df()
             initial_shape = initial_df.shape if initial_df is not None else None
             print(f"📊 Initial data shape: {initial_shape}")
+
+        # Check for junk detection patterns for reliable refresh detection  
+        junk_keywords = [
+            'junk', 'detect junk', 'find junk', 'junk responses', 'junk detection',
+            'find spam', 'detect spam', 'spam responses', 'meaningless responses',
+            'gibberish', 'bad responses', 'quality analysis'
+        ]
+        
+        is_junk_detection = any(keyword in question.lower() for keyword in junk_keywords)
+        print(f"🔍 Junk detection check: {is_junk_detection}")
+        if is_junk_detection:
+            print("🧹 === JUNK DETECTION DETECTED IN API ENDPOINT ===")
+            print(f"💬 Query: {question}")
+            print(f"🔍 Matched keywords: {[k for k in junk_keywords if k in question.lower()]}")
+            # Capture initial columns for comparison
+            initial_df = data_handler.get_df()
+            initial_columns = list(initial_df.columns) if initial_df is not None else []
+            print(f"📊 Initial columns count: {len(initial_columns)}")
+            print(f"📊 Initial columns: {initial_columns}")
+            print("🧹 Initial columns captured for junk detection")
         
         print("🔄 === CALLING AGENT SERVICES ===")
         print(f"🤖 Agent services instance: {agent_services}")
@@ -268,7 +317,7 @@ async def process_query(query: Dict[str, Any]):
         if agent_services is None:
             raise HTTPException(
                 status_code=503, 
-                detail="AI services are not available. Please check your API configuration and restart the server."
+                detail="I'm having trouble accessing my AI capabilities right now. Please try again in a moment or contact support if the issue persists."
             )
         
         print(f"🗃️ Data handler has data: {data_handler.get_df() is not None}")
@@ -278,10 +327,62 @@ async def process_query(query: Dict[str, Any]):
             print(f"🏷️ Data columns: {df.columns.tolist()}")
         
         # Ensure AgentServices is always linked to an active DataHandler (covers direct page refresh w/ saved data)
-        if agent_services.data_handler is None:
-            agent_services.initialize_agents(data_handler)
+        print(f"🔍 DEBUG - agent_services.data_handler is None: {agent_services.data_handler is None}")
+        print(f"🔍 DEBUG - data_handler is None: {data_handler is None}")
+        if data_handler is not None:
+            df = data_handler.get_df()
+            print(f"🔍 DEBUG - data_handler.get_df() is None: {df is None}")
+            if df is not None:
+                print(f"🔍 DEBUG - DataFrame shape: {df.shape}")
+            db_obj = data_handler.get_db_sqlalchemy_object()
+            print(f"🔍 DEBUG - data_handler.get_db_sqlalchemy_object() is None: {db_obj is None}")
         
-        response, visualization = agent_services.process_query(question, is_speech)
+        if agent_services.data_handler is None:
+            print("🔄 Initializing agents with data handler")
+            agent_services.initialize_agents(data_handler)
+        else:
+            print("✅ AgentServices already has data handler")
+        
+        # NEW: Switch to the specific chat context if provided
+        if chat_id:
+            print(f"🔄 Switching to chat context: {chat_id}")
+            agent_services.switch_chat_context(chat_id)
+        else:
+            print("⚠️ No chat_id provided, using default context")
+        
+        # NEW: Apply workspace-type-aware AI processing
+        ai_processor = create_ai_processor(workspace_type)
+        context = {
+            "workspace_type": workspace_type,
+            "chat_id": chat_id,
+            "is_speech": is_speech,
+            "mode": mode
+        }
+
+        # Pre-process query based on workspace type
+        processing_result = await ai_processor.process_query(question, context)
+
+        # Handle Learn Mode redirects and teaching responses
+        if workspace_type == "learn" and processing_result.get("response_type") in ["socratic_redirect", "prerequisite_redirect"]:
+            print(f"📚 === LEARN MODE REDIRECT ===")
+            print(f"🔄 Redirect type: {processing_result.get('response_type')}")
+            return {
+                "response": processing_result.get("response", ""),
+                "type": processing_result.get("response_type"),
+                "guiding_questions": processing_result.get("guiding_questions", []),
+                "suggested_concept": processing_result.get("suggested_concept"),
+                "requires_teaching": True,
+                "workspace_type": workspace_type
+            }
+
+        print("🚀 === CALLING AGENT SERVICES ===")
+        print(f"📤 Sending to agent_services.process_query:")
+        print(f"   - question: '{question}'")
+        print(f"   - is_speech: {is_speech}")
+        print(f"   - mode: {mode}")
+        print(f"   - workspace_type: {workspace_type}")
+
+        response, visualization = agent_services.process_query(question, is_speech, mode)
         
         print("🎉 === AGENT SERVICES COMPLETED ===")
         print(f"💬 Response: {response}")
@@ -289,8 +390,27 @@ async def process_query(query: Dict[str, Any]):
         print(f"📄 Response type: {type(response)}")
         print(f"🖼️ Visualization type: {type(visualization)}")
         
+        # Check if response is a JSON clarification
+        print("🔍 === CHECKING RESPONSE TYPE ===")
+        if isinstance(response, str) and response.strip().startswith('{'):
+            print("🤔 Response looks like JSON - might be a clarification request")
+            try:
+                import json
+                json_response = json.loads(response)
+                if json_response.get('type') == 'clarification':
+                    print("✅ CONFIRMED: This is a clarification response!")
+                    print(f"🔍 Clarification details: {json_response}")
+                else:
+                    print("ℹ️ JSON response but not clarification type")
+            except json.JSONDecodeError:
+                print("⚠️ Failed to parse response as JSON")
+        else:
+            print("📝 Response is regular text, not JSON")
+        
         response_data = {"response": response}
         print(f"📦 Base response data: {response_data}")
+
+        # NOTE: Luckysheet parsing removed - all spreadsheet operations now use Univer frontend
         
         # Check for data modifications, especially duplicate removal
         data_modified = False
@@ -310,6 +430,45 @@ async def process_query(query: Dict[str, Any]):
                 print("⚠️ No rows were removed or shape comparison failed")
                 
                 # Even if no rows were removed, check if the response indicates DATA_MODIFIED
+                if response and isinstance(response, str) and "DATA_MODIFIED:" in response:
+                    print("📋 Response indicates data was modified, forcing frontend update")
+                    data_modified = True
+        elif is_junk_detection:
+            print("🧹 === CHECKING JUNK DETECTION RESULTS ===")
+            print(f"🔍 Variable scope check: 'initial_columns' in locals() = {'initial_columns' in locals()}")
+            updated_df = data_handler.get_df()
+            print(f"📊 Updated DataFrame available: {updated_df is not None}")
+            
+            # Check if initial_columns was captured (variable exists in scope)
+            if 'initial_columns' in locals() and updated_df is not None and initial_columns:
+                print(f"✅ Initial columns variable exists with {len(initial_columns)} columns")
+                updated_columns = list(updated_df.columns)
+                new_columns = [col for col in updated_columns if col not in initial_columns]
+                print(f"📊 Updated columns count: {len(updated_columns)}")
+                print(f"📊 Updated columns: {updated_columns}")
+                print(f"🆕 New columns detected: {new_columns}")
+                
+                # Check if any new column contains 'junk_flag'
+                junk_flag_columns = [col for col in new_columns if 'junk_flag' in col.lower()]
+                if junk_flag_columns:
+                    print(f"✅ Junk flag column detected: {junk_flag_columns}")
+                    data_modified = True
+                else:
+                    print("⚠️ No junk flag column found in new columns")
+                    
+                    # Fallback: check if response indicates DATA_MODIFIED
+                    if response and isinstance(response, str) and "DATA_MODIFIED:" in response:
+                        print("📋 Response indicates data was modified, forcing frontend update")
+                        data_modified = True
+            else:
+                if 'initial_columns' not in locals():
+                    print("❌ initial_columns variable not found in scope")
+                elif updated_df is None:
+                    print("❌ Updated DataFrame is None")
+                elif not initial_columns:
+                    print("❌ initial_columns is empty")
+                print("⚠️ No initial columns captured or no updated data available")
+                # Fallback: check if response indicates DATA_MODIFIED
                 if response and isinstance(response, str) and "DATA_MODIFIED:" in response:
                     print("📋 Response indicates data was modified, forcing frontend update")
                     data_modified = True
@@ -354,7 +513,8 @@ async def process_query(query: Dict[str, Any]):
             
             response_data["visualization"] = {
                 "type": visualization["type"],
-                "path": viz_path
+                "path": viz_path,
+                "original_query": visualization.get("original_query", question)
             }
             print(f"✅ Visualization added to response: {response_data['visualization']}")
         else:
@@ -381,11 +541,68 @@ async def process_query(query: Dict[str, Any]):
         print(f"📚 Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/clarification-choice")
+async def process_clarification_choice(request: Dict[str, Any]):
+    """
+    Process user's clarification choice and execute the selected action.
+    """
+    try:
+        choice_id = request.get("choice_id")
+        original_query = request.get("original_query")
+        category = request.get("category")
+        
+        if not all([choice_id, original_query, category]):
+            raise HTTPException(status_code=400, detail="Missing required parameters")
+        
+        print(f"🎯 Processing clarification choice: {choice_id} for query: '{original_query}'")
+        
+        # Process the clarification choice
+        response, visualization = agent_services.process_clarification_choice(
+            choice_id, original_query, category
+        )
+        
+        # Prepare response data
+        response_data = {
+            "response": response,
+            "success": True,
+            "clarification_resolved": True
+        }
+        
+        # Check for data modifications
+        data_modified = any(keyword in original_query.lower() for keyword in [
+            'translate', 'clean', 'remove', 'add column', 'delete', 'modify', 'update', 'transform'
+        ])
+        
+        if data_modified:
+            updated_df = data_handler.get_df()
+            if updated_df is not None:
+                updated_df = updated_df.replace({np.nan: None})
+                response_data["data_updated"] = True
+                response_data["updated_data"] = {
+                    "data": updated_df.to_dict(orient="records"),
+                    "columns": updated_df.columns.tolist(),
+                    "rows": len(updated_df)
+                }
+        
+        if visualization:
+            viz_path = f"/static/visualizations/{visualization['filename']}"
+            response_data["visualization"] = {
+                "type": visualization["type"],
+                "path": viz_path,
+                "original_query": visualization.get("original_query", original_query)
+            }
+        
+        return response_data
+        
+    except Exception as e:
+        print(f"❌ Error processing clarification choice: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/generate-report")
 async def generate_report(report_request: ReportRequest, background_tasks: BackgroundTasks):
     try:
         if data_handler.get_df() is None:
-            raise HTTPException(status_code=400, detail="No data loaded. Please upload a file first.")
+            raise HTTPException(status_code=400, detail="I need some data to generate a report. Please upload a dataset first, then I can create an analysis report for you.")
         
         agent_services.clear_cancel_flag()
         
@@ -418,7 +635,7 @@ async def download_report(report_id: str, check: bool = False, request: Request 
     is_status_check = check or (request and request.headers.get("X-Check-Only") == "true")
     
     if not os.path.exists(report_filename):
-        raise HTTPException(status_code=404, detail="Report not found or still generating")
+        raise HTTPException(status_code=404, detail="I couldn't find that report. It might still be generating or there was an issue creating it. Please try generating a new report.")
     
     # If this is just a status check, return a simple confirmation response instead of the file
     if is_status_check:
@@ -454,28 +671,306 @@ async def reset_state():
 
 @app.post("/api/spreadsheet-command")
 async def process_spreadsheet_command(query: Dict[str, Any]):
+    """DEPRECATED: This endpoint is no longer used.
+
+    All spreadsheet operations now execute directly through the Univer FacadeAPI
+    on the frontend via UniverAdapter. This endpoint previously generated Luckysheet
+    API calls but has been disabled.
+    """
+    logger.info("Deprecated /api/spreadsheet-command endpoint called")
+    return {
+        "success": False,
+        "message": "This endpoint is deprecated. Spreadsheet operations are now handled directly by the Univer frontend.",
+        "deprecated": True
+    }
+    # NOTE: ~865 lines of unreachable Luckysheet generation code removed during Phase 3 cleanup
+@app.post("/api/range-filter")
+async def process_range_filter(filter_request: Dict[str, Any]):
+    """
+    Apply or remove range filters on spreadsheet data.
+    Supports filtering by column values (exact match or contains).
+    """
     try:
-        command = query.get("command")
-        if not command:
-            raise HTTPException(status_code=400, detail="No command provided")
+        logger.info("🔍 === RANGE FILTER DEBUG START ===")
+        logger.info(f"📥 Received request: {filter_request}")
+        
+        action = filter_request.get("action", "open")  # "open" or "close"
+        sheet_context = filter_request.get("sheet_context", {})
+        
+        if action == "close":
+            logger.info("🧹 Processing clear filter request")
+            logger.info("🎬 Returning setRangeFilter close command")
+            
+            # Clear all filters - return simple success response
+            # Use setRangeFilter with "close" type to remove filters
+            result = {
+                "success": True,
+                "message": "All filters cleared",
+                "action": {
+                    "type": "luckysheet_api", 
+                    "payload": {
+                        "method": "setRangeFilter",
+                        "params": ["close", {}]
+                    }
+                }
+            }
+            
+            logger.info(f"✅ Clear filter result: {result}")
+            return result
+            
+        # For opening/applying filters
+        logger.info("🎯 Processing apply filter request")
+        logger.info(f"📊 Sheet context available: {bool(sheet_context)}")
+        
+        if sheet_context:
+            logger.info(f"📐 Sheet dimensions: {sheet_context.get('total_rows')}x{sheet_context.get('total_cols')}")
+            logger.info(f"📋 Headers: {sheet_context.get('headers', [])}")
         
         if data_handler.get_df() is None:
             raise HTTPException(status_code=400, detail="No data loaded")
+            
+        column = filter_request.get("column")  # Column index or name
+        filter_value = filter_request.get("filter_value", "")
+        filter_type = filter_request.get("filter_type", "exact")  # "exact" or "contains"
+        range_spec = filter_request.get("range")  # Optional range specification
         
-        result = agent_services.process_spreadsheet_command(command)
+        logger.info(f"🎯 Filter parameters:")
+        logger.info(f"   Column: {column}")
+        logger.info(f"   Value: {filter_value}")
+        logger.info(f"   Type: {filter_type}")
+        logger.info(f"   Range: {range_spec}")
         
-        # Get the updated data
-        updated_df = data_handler.get_df()
-        return {
-            "response": result,
-            "updated_data": {
-                "data": updated_df.to_dict(orient="records"),
-                "columns": updated_df.columns.tolist(),
-                "rows": len(updated_df)
+        if column is None:
+            raise HTTPException(status_code=400, detail="Column parameter is required")
+            
+        df = data_handler.get_df()
+        
+        # Smart column resolution using sheet context if available
+        column_index = None
+        column_name = None
+        
+        if sheet_context and sheet_context.get('headers'):
+            headers = sheet_context['headers']
+            logger.info(f"🔍 Using sheet context for column resolution")
+            logger.info(f"📋 Available headers: {headers}")
+            
+            # First try exact match with headers
+            if isinstance(column, str):
+                for i, header_cell in enumerate(headers):
+                    # Extract header text from cell object or use as-is
+                    header_text = ""
+                    if isinstance(header_cell, dict):
+                        header_text = str(header_cell.get('m', '') or header_cell.get('v', ''))
+                    else:
+                        header_text = str(header_cell or '')
+                    
+                    logger.info(f"   Checking header[{i}]: '{header_text}' vs '{column}'")
+                    
+                    if header_text.lower() == column.lower():
+                        column_index = i
+                        column_name = header_text  # Use the clean extracted text
+                        logger.info(f"✅ Found exact header match: '{column}' -> column {column_index}")
+                        break
+                
+                # If not found by header name, try as column letter (A, B, C, etc.)
+                if column_index is None and len(column) == 1 and column.upper().isalpha():
+                    column_index = ord(column.upper()) - ord('A')
+                    if column_index < len(headers):
+                        # Extract clean text from header cell
+                        header_cell = headers[column_index]
+                        if isinstance(header_cell, dict):
+                            column_name = str(header_cell.get('m', '') or header_cell.get('v', ''))
+                        else:
+                            column_name = str(header_cell or '')
+                        
+                        if not column_name:  # Fallback if no text found
+                            column_name = f"Column {column.upper()}"
+                            
+                        logger.info(f"✅ Resolved column letter: '{column}' -> column {column_index}")
+                    else:
+                        column_index = None
+            else:
+                column_index = int(column)
+                if column_index < len(headers):
+                    # Extract clean text from header cell
+                    header_cell = headers[column_index]
+                    if isinstance(header_cell, dict):
+                        column_name = str(header_cell.get('m', '') or header_cell.get('v', ''))
+                    else:
+                        column_name = str(header_cell or '')
+                    
+                    if not column_name:  # Fallback if no text found
+                        column_name = f"Column {column_index + 1}"
+                        
+                    logger.info(f"✅ Using column index: {column} -> column {column_index}")
+        else:
+            # Fallback to DataFrame column resolution
+            logger.info(f"⚠️ No sheet context, using DataFrame for column resolution")
+            if isinstance(column, str):
+                # Try to find column by name (case insensitive)
+                column_lower = column.lower()
+                for i, col_name in enumerate(df.columns):
+                    if col_name.lower() == column_lower:
+                        column_index = i
+                        column_name = col_name
+                        break
+                
+                # If not found by name, try as column letter (A, B, C, etc.)
+                if column_index is None and len(column) == 1 and column.upper().isalpha():
+                    column_index = ord(column.upper()) - ord('A')
+                    if column_index < len(df.columns):
+                        column_name = df.columns[column_index]
+                    
+                if column_index is None:
+                    raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
+            else:
+                column_index = int(column)
+                if column_index < len(df.columns):
+                    column_name = df.columns[column_index]
+            
+        # Validate column index
+        if column_index is None or column_index < 0:
+            logger.error(f"❌ Could not resolve column: '{column}'")
+            raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
+            
+        if sheet_context and column_index >= sheet_context.get('total_cols', 0):
+            logger.error(f"❌ Column index {column_index} out of range (max: {sheet_context.get('total_cols', 0) - 1})")
+            raise HTTPException(status_code=400, detail=f"Column index {column_index} out of range")
+        elif not sheet_context and column_index >= len(df.columns):
+            logger.error(f"❌ Column index {column_index} out of range (max: {len(df.columns) - 1})")
+            raise HTTPException(status_code=400, detail=f"Column index {column_index} out of range")
+            
+        logger.info(f"✅ Column resolution successful:")
+        logger.info(f"   Input: '{column}' -> Index: {column_index}, Name: '{column_name}'")
+            
+        # Intelligent range calculation using sheet context
+        logger.info("📏 Calculating filter range...")
+        
+        if sheet_context:
+            # Use sheet context for accurate range calculation
+            total_rows = sheet_context.get('total_rows', len(df) + 1)  # +1 for header
+            total_cols = sheet_context.get('total_cols', len(df.columns))
+            
+            # Include header row (row 0) in the range for proper filter placement
+            start_row = 0  # Include header row (row 1 in Luckysheet 1-based indexing)
+            end_row = total_rows - 1  # Last data row (0-based to 1-based conversion handled below)
+            start_col = 0  # Start from first column
+            end_col = total_cols - 1  # Last column
+            
+            logger.info(f"📊 Using sheet context dimensions: {total_rows} rows x {total_cols} cols")
+        else:
+            # Fallback to DataFrame dimensions
+            start_row = 0  # Include header row
+            end_row = len(df)  # DataFrame rows (header not included in df)
+            start_col = 0
+            end_col = len(df.columns) - 1
+            
+            logger.info(f"📊 Using DataFrame dimensions: {len(df)} data rows + 1 header")
+            
+        # Build the range string for Luckysheet (1-based indexing)
+        start_col_letter = chr(ord('A') + start_col)
+        end_col_letter = chr(ord('A') + end_col)
+        luckysheet_range = f"{start_col_letter}{start_row + 1}:{end_col_letter}{end_row + 1}"
+        
+        logger.info(f"📏 Calculated range:")
+        logger.info(f"   Start: Row {start_row + 1}, Col {start_col_letter}")
+        logger.info(f"   End: Row {end_row + 1}, Col {end_col_letter}")
+        logger.info(f"   Final range: {luckysheet_range}")
+        
+        # Generate user-friendly message
+        display_column_name = column_name or df.columns[column_index] if column_index < len(df.columns) else f"Column {column_index + 1}"
+        message = f"Applied filter to {display_column_name} column. Use the dropdown in the header to select '{filter_value}' to filter the data."
+            
+        logger.info(f"💬 Generated message: {message}")
+            
+        # Return structured response for frontend execution
+        # Use setRangeFilter with "open" type and proper range setting
+        result = {
+            "success": True,
+            "message": message,
+            "action": {
+                "type": "luckysheet_api",
+                "payload": {
+                    "method": "setRangeFilter", 
+                    "params": ["open", {"range": luckysheet_range, "order": 0}]
+                }
+            },
+            # Keep minimal filter data for debugging
+            "filter_data": {
+                "column": column_index,
+                "filter_value": filter_value,
+                "filter_type": filter_type,
+                "range": luckysheet_range,
+                "column_name": display_column_name
             }
         }
+        
+        logger.info("🎬 === GENERATING LUCKYSHEET COMMAND ===")
+        logger.info(f"🔧 Method: setRangeFilter")
+        logger.info(f"📋 Params: ['open', {{'range': '{luckysheet_range}', 'order': 0}}]")
+        logger.info(f"💬 Message: {message}")
+        logger.info(f"📊 Filter data: {result['filter_data']}")
+        logger.info("✅ === RANGE FILTER DEBUG END ===")
+        
+        return result
+        
     except Exception as e:
+        logger.error(f"Error in range filter processing: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/initialize-data")
+async def initialize_backend_with_data(request: Dict[str, Any]):
+    """
+    Initialize the backend data_handler with data loaded from Supabase.
+    This ensures all backend features work when data is restored from a previous session.
+    """
+    try:
+        data = request.get("data", [])
+        filename = request.get("filename")
+        
+        if not data or len(data) == 0:
+            raise HTTPException(status_code=400, detail="No data provided for initialization")
+        
+        print(f"🔄 Initializing backend with {len(data)} rows from Supabase")
+        print(f"📄 Filename: {filename}")
+        
+        # Create DataFrame from the provided data
+        import pandas as pd
+        df = pd.DataFrame(data)
+        
+        # Set the DataFrame and filename in data_handler
+        data_handler.df = df
+        data_handler.filename = filename
+        data_handler._display_filename = filename
+        
+        # Create temporary SQLite database (using the same logic as load_data)
+        import re
+        from sqlalchemy import create_engine
+        from langchain_community.utilities import SQLDatabase
+        
+        temp_db_name = f"temp_db_{re.sub(r'[^a-zA-Z0-9]', '_', filename)}.db" if filename else "temp_db_restored_data.db"
+        data_handler.engine = create_engine(f'sqlite:///{temp_db_name}', connect_args={'check_same_thread': False})
+        df.to_sql('data', data_handler.engine, index=False, if_exists='replace')
+        data_handler.db_sqlalchemy = SQLDatabase(data_handler.engine)
+        
+        # Initialize agents with the restored data
+        agent_services.initialize_agents(data_handler)
+        
+        print(f"✅ Backend initialized successfully with {len(data)} rows")
+        print(f"📊 Data shape: {df.shape}")
+        print(f"🏷️ Columns: {df.columns.tolist()}")
+        
+        return {
+            "success": True,
+            "message": f"Backend initialized with {len(data)} rows",
+            "rows": len(data),
+            "columns": df.columns.tolist(),
+            "filename": filename
+        }
+        
+    except Exception as e:
+        print(f"❌ Error initializing backend with data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to initialize backend: {str(e)}")
 
 @app.get("/api/data")
 async def get_current_data():
@@ -560,7 +1055,7 @@ async def health_check():
         "llm": llm_status,
         "services": services_status,
         "api_keys": {
-            "google_api_key": "configured" if settings.GOOGLE_API_KEY else "missing",
+            "groq_api_key": "configured" if settings.GROQ_API_KEY else "missing",
             "azure_speech_key": "configured" if settings.AZURE_SPEECH_KEY else "missing"
         }
     }
@@ -717,7 +1212,9 @@ async def generate_synthetic_dataset(dataset_request: SyntheticDatasetRequest):
             raise HTTPException(status_code=400, detail="Dataset description is required")
         
         # Create the prompt for dataset generation
-        prompt = f"""Create a synthetic dataset with the following specifications:
+        prompt = f"""IMPORTANT: This is a completely new synthetic dataset generation request. Ignore any previous dataset structures, column names, or data patterns from earlier conversations.
+
+Create a brand new synthetic dataset with the following specifications:
 
 Description: {dataset_request.description}
 Number of rows: {dataset_request.rows}
@@ -729,13 +1226,15 @@ Number of rows: {dataset_request.rows}
             prompt += f"Number of columns: {dataset_request.columns}\n"
         
         prompt += """
-Generate realistic sample data that matches the description. 
+Generate completely fresh, realistic sample data that matches ONLY the description above. 
 
 CRITICAL INSTRUCTIONS:
-1. You MUST return ONLY valid JSON in the exact format below
-2. Do NOT include any explanatory text, markdown formatting, or additional comments
-3. Do NOT use ```json``` code blocks
-4. Return raw JSON only
+1. COMPLETELY IGNORE any previous dataset structures or column names
+2. CREATE ENTIRELY NEW column names that match the current description
+3. You MUST return ONLY valid JSON in the exact format below
+4. Do NOT include any explanatory text, markdown formatting, or additional comments
+5. Do NOT use ```json``` code blocks
+6. Return raw JSON only
 
 Required JSON structure:
 {
@@ -747,18 +1246,29 @@ Required JSON structure:
 }
 
 Data quality guidelines:
+- Create column names that specifically match the current dataset description
 - If it's sales data, include realistic product names, dates, amounts, customer names, etc.
 - If it's employee data, include realistic names, departments, salaries, hire dates, etc.
+- If it's student grades, include student names, subjects, grades, etc.
 - Use appropriate data types (strings, numbers, dates) for each column
 - Ensure data makes logical sense (e.g., dates are in reasonable order, amounts are realistic)
 - Make data varied and realistic
+- DO NOT reuse column structures from any previous requests
 
 RESPONSE FORMAT: Start your response with { and end with } - nothing else."""
 
         print(f"🧠 Sending prompt to LLM: {prompt}")
         
-        # Use the LLM to generate the dataset
-        response = agent_services.llm.invoke(prompt)
+        # Create a fresh LLM instance to avoid context contamination
+        from settings import initialize_llm
+        fresh_llm = initialize_llm()
+        
+        if not fresh_llm:
+            print("❌ Failed to create fresh LLM instance")
+            raise HTTPException(status_code=500, detail="LLM initialization failed")
+        
+        # Use the fresh LLM instance to generate the dataset
+        response = fresh_llm.invoke(prompt)
         response_text = response.content.strip()
         
         print(f"📄 LLM response: {response_text}")
@@ -886,6 +1396,866 @@ RESPONSE FORMAT: Start your response with { and end with } - nothing else."""
     except Exception as e:
         print(f"❌ Error generating synthetic dataset: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate dataset: {str(e)}")
+
+@app.post("/api/orchestrate")
+async def orchestrate_compound_query(request: CompoundQueryRequest):
+    """
+    Process compound queries using the query orchestrator
+    Handles complex multi-step operations with intelligent decomposition
+    """
+    print(f"🎭 === COMPOUND QUERY ORCHESTRATION ENDPOINT ===")
+    print(f"📥 Query: {request.query}")
+    print(f"🔷 Workspace ID: {request.workspace_id}")
+    print(f"👁️ Preview Only: {request.preview_only}")
+    
+    try:
+        orchestrator = get_orchestrator()
+        
+        if request.preview_only:
+            # Just decompose and plan, don't execute
+            print("👁️ Preview mode - generating execution plan only")
+            
+            # Create minimal workspace context for planning
+            from query_orchestrator import WorkspaceContext
+            workspace_context = WorkspaceContext(request.workspace_id)
+            
+            # TODO: Load actual workspace state from database
+            # For now, simulate some column info
+            workspace_context.columns = {
+                "A": {"index": 0, "type": "text", "name": "Column A"},
+                "B": {"index": 1, "type": "number", "name": "Column B"},
+                "C": {"index": 2, "type": "text", "name": "Column C"}
+            }
+            
+            # Decompose query
+            operations = orchestrator.decompose_query(request.query, workspace_context)
+            
+            if not operations:
+                return {
+                    "success": False,
+                    "error": "Could not decompose query into operations",
+                    "preview": True
+                }
+            
+            # Validate and create execution plan
+            valid, validation_message = orchestrator.validate_steps(operations)
+            if not valid:
+                return {
+                    "success": False,
+                    "error": f"Invalid operation plan: {validation_message}",
+                    "operations": [op.__dict__ for op in operations],
+                    "preview": True
+                }
+            
+            execution_plan = orchestrator.create_execution_plan(operations)
+            
+            return {
+                "success": True,
+                "message": f"Generated execution plan with {len(operations)} operations",
+                "operations": [op.__dict__ for op in operations],
+                "execution_plan": [[op.__dict__ for op in level] for level in execution_plan],
+                "preview": True,
+                "estimated_steps": len(operations)
+            }
+        
+        else:
+            # Full orchestration with execution
+            print("🎭 Full orchestration mode - executing compound query")
+            result = await orchestrator.orchestrate_query(request.query, request.workspace_id)
+            
+            return result
+            
+    except Exception as e:
+        print(f"❌ Compound query orchestration failed: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Orchestration failed: {str(e)}",
+            "query": request.query,
+            "workspace_id": request.workspace_id
+        }
+
+# ===========================================
+# LEARN MODE SPECIFIC ENDPOINTS
+# ===========================================
+
+class LearnModeQueryRequest(BaseModel):
+    question: str
+    workspace_id: str
+    chat_id: Optional[str] = None
+    user_progress: Optional[List[Dict[str, Any]]] = None
+    sheet_context: Optional[Dict[str, Any]] = None
+    is_first_message: Optional[bool] = False
+    conversation_history: Optional[List[Dict[str, Any]]] = None
+
+@app.post("/api/learn/query")
+async def process_learn_query(request: LearnModeQueryRequest):
+    """Process queries specifically for Learn Mode with teaching-focused responses"""
+    print("📚 === LEARN MODE QUERY ENDPOINT ===")
+    print(f"📚 Question: {request.question}")
+    print(f"📚 Chat ID: {request.chat_id}")
+    print(f"📚 Conversation History: {len(request.conversation_history or [])} messages")
+
+    # Validate conversation history format
+    conversation_valid = True
+    if request.conversation_history:
+        print("📚 Validating conversation history format...")
+        for i, msg in enumerate(request.conversation_history):
+            if not isinstance(msg, dict):
+                print(f"⚠️  Invalid message format at index {i}: not a dict")
+                conversation_valid = False
+                continue
+
+            role = msg.get('role')
+            content = msg.get('content')
+
+            if role not in ['user', 'assistant']:
+                print(f"⚠️  Invalid role at index {i}: {role}")
+                conversation_valid = False
+
+            if not content or not isinstance(content, str):
+                print(f"⚠️  Invalid content at index {i}: {content}")
+                conversation_valid = False
+
+            print(f"  {i+1}. {role}: {content[:100]}...")
+
+        if conversation_valid:
+            print("✅ Conversation history format is valid")
+        else:
+            print("❌ Conversation history has format issues - proceeding with caution")
+    else:
+        print("📚 No conversation history - treating as first message")
+
+    try:
+        ai_processor = create_ai_processor("learn")
+        context = {
+            "workspace_type": "learn",
+            "workspace_id": request.workspace_id,
+            "chat_id": request.chat_id,
+            "learning_progress": request.user_progress or [],
+            "sheet_context": request.sheet_context or {}
+        }
+
+        processing_result = await ai_processor.process_query(request.question, context)
+
+        # Build enhanced LLM prompt with user progress analysis and personalization
+        try:
+            from settings import initialize_llm
+            llm = initialize_llm()
+            if not llm:
+                raise RuntimeError("LLM initialization failed")
+
+            system_prompt = ai_processor.get_system_prompt()
+
+            sheet_ctx = context.get("sheet_context", {})
+            headers = sheet_ctx.get("headers") or []
+            column_map = sheet_ctx.get("columnMap") or {}
+            selection = sheet_ctx.get("currentSelection") or None
+            data_rows = sheet_ctx.get("data") or []
+            sample_rows = data_rows[:10] if isinstance(data_rows, list) else []
+
+            # Build conversation history context with validation
+            conversation_context = ""
+            if request.conversation_history and conversation_valid:
+                print("📚 Building conversation context for LLM...")
+                conversation_context = "\nPREVIOUS CONVERSATION:\n"
+                for msg in request.conversation_history[-10:]:  # Last 10 messages for context
+                    # Additional safety checks
+                    if not isinstance(msg, dict):
+                        continue
+                    role = msg.get('role', 'unknown')
+                    content = msg.get('content', '')
+                    if not content:
+                        continue
+                    conversation_context += f"{role.upper()}: {content}\n"
+                    print(f"📚   Added to context: {role}: {content[:50]}...")
+                conversation_context += "\n"
+                print(f"📚 Final conversation context length: {len(conversation_context)} chars")
+            elif request.conversation_history and not conversation_valid:
+                print("📚 Skipping malformed conversation history - treating as first message")
+            else:
+                print("📚 No conversation history provided - this appears to be first message")
+
+            # Build comprehensive teaching prompt
+            conversation_status = "FIRST TIME USER - NO PREVIOUS CONVERSATION" if not conversation_context.strip() else "RETURNING USER - CONVERSATION HISTORY BELOW"
+
+            prompt = (
+                f"{system_prompt}\n\n"
+                f"═══════════════════════════════════════════════════════════════\n"
+                f"CURRENT SESSION CONTEXT\n"
+                f"═══════════════════════════════════════════════════════════════\n\n"
+                f"📊 USER'S SPREADSHEET DATA:\n"
+                f"Available columns: {', '.join(headers) if headers else 'No data loaded yet'}\n"
+                f"Column mapping (A1 notation): {column_map}\n"
+                f"Current selection: {selection if selection else 'None'}\n"
+                f"Sample data (first 10 rows):\n{sample_rows}\n\n"
+                f"💬 CONVERSATION STATUS: {conversation_status}\n"
+                f"{conversation_context}"
+                f"{'─' * 63}\n\n"
+                f"🎯 CURRENT USER MESSAGE:\n\"{request.question}\"\n\n"
+                f"{'─' * 63}\n\n"
+                f"📋 YOUR RESPONSE INSTRUCTIONS:\n\n"
+                f"1. ANALYZE CONVERSATION CONTEXT:\n"
+                f"   • Read the conversation history carefully (if it exists)\n"
+                f"   • What skill level has the user demonstrated?\n"
+                f"   • What were they just talking about?\n"
+                f"   • What is their current goal or question?\n\n"
+                f"2. INTERPRET CURRENT MESSAGE:\n"
+                f"   • If they say \"not familiar\" - what are they responding to?\n"
+                f"   • Does their question suggest intermediate/advanced understanding?\n"
+                f"   • Are they asking to continue or starting something new?\n\n"
+                f"3. FORMULATE APPROPRIATE RESPONSE:\n"
+                f"   • Reference previous conversation points naturally\n"
+                f"   • Teach at their demonstrated skill level\n"
+                f"   • Use their actual data ({', '.join(headers[:3]) if headers else 'their data'}) in examples\n"
+                f"   • Guide them toward their goal\n"
+                f"   • Be conversational and encouraging\n\n"
+                f"4. QUALITY CHECKS:\n"
+                f"   ✓ Does this response build on previous messages?\n"
+                f"   ✓ Am I teaching at the right level for this user?\n"
+                f"   ✓ Am I using their actual spreadsheet data?\n"
+                f"   ✓ Am I helping them achieve their stated goal?\n"
+                f"   ✗ Am I repeating questions I already asked?\n"
+                f"   ✗ Am I resetting to basics unnecessarily?\n\n"
+                f"Now provide your teaching response:\n"
+            )
+
+            llm_response = llm.invoke(prompt)
+            response_text = getattr(llm_response, "content", None) or str(llm_response)
+
+            return {
+                "response": response_text.strip(),
+                "type": processing_result.get("response_type", "teaching"),
+                "guiding_questions": processing_result.get("guiding_questions", []),
+                "suggested_concept": processing_result.get("suggested_concept"),
+                "step_by_step_breakdown": processing_result.get("step_by_step_breakdown", []),
+                "requires_teaching": True,
+                "workspace_type": "learn"
+            }
+
+        except Exception as gen_err:
+            print(f"⚠️ Learn LLM generation failed, using processor fallback: {gen_err}")
+            # Fallback to processor-only result
+            return {
+                "response": processing_result.get("response", "Let's explore this concept together!"),
+                "type": processing_result.get("response_type", "teaching"),
+                "guiding_questions": processing_result.get("guiding_questions", []),
+                "suggested_concept": processing_result.get("suggested_concept"),
+                "step_by_step_breakdown": processing_result.get("step_by_step_breakdown", []),
+                "requires_teaching": True,
+                "workspace_type": "learn"
+            }
+
+    except Exception as e:
+        print(f"❌ Learn mode query failed: {str(e)}")
+        return {
+            "response": "I'm here to help you learn! Let's try that again.",
+            "type": "error",
+            "error": str(e),
+            "requires_teaching": True
+        }
+
+@app.get("/api/learn/progress/{workspace_id}")
+async def get_learning_progress(workspace_id: str):
+    """Get learning progress for a specific Learn Mode workspace"""
+    # This would integrate with a database in a real implementation
+    # For now, return mock data
+    return {
+        "workspace_id": workspace_id,
+        "progress": [
+            {
+                "concept_id": "basic_functions",
+                "skill_level": "mastered",
+                "attempts_count": 5,
+                "mastery_date": "2024-01-15T10:30:00Z"
+            },
+            {
+                "concept_id": "cell_references",
+                "skill_level": "proficient",
+                "attempts_count": 3,
+                "mastery_date": None
+            }
+        ]
+    }
+
+@app.post("/api/learn/practice-challenge")
+async def generate_practice_challenge(
+    concept_id: str = Query(..., description="The concept to practice"),
+    difficulty: str = Query("beginner", description="Difficulty level")
+):
+    """Generate practice challenges for Learn Mode (not available in Work Mode)"""
+
+    # Mock practice challenges - would be generated by AI in real implementation
+    challenges = {
+        "basic_functions": {
+            "beginner": {
+                "challenge": "Calculate the total sales for all products using the SUM function.",
+                "dataset": [
+                    {"Product": "A", "Sales": 100},
+                    {"Product": "B", "Sales": 150},
+                    {"Product": "C", "Sales": 200}
+                ],
+                "expected_formula": "=SUM(B2:B4)",
+                "hints": [
+                    "Use the SUM function to add numbers",
+                    "Select the range of cells containing sales data",
+                    "The formula should start with ="
+                ]
+            }
+        },
+        "vlookup": {
+            "beginner": {
+                "challenge": "Look up the price for Product B using VLOOKUP.",
+                "dataset": [
+                    {"Product": "A", "Price": 10.99},
+                    {"Product": "B", "Price": 15.50},
+                    {"Product": "C", "Price": 8.75}
+                ],
+                "expected_formula": "=VLOOKUP(\"B\",A2:B4,2,FALSE)",
+                "hints": [
+                    "VLOOKUP searches for a value in the first column",
+                    "Use FALSE for exact match",
+                    "Column index 2 returns the price"
+                ]
+            }
+        }
+    }
+
+    challenge_data = challenges.get(concept_id, {}).get(difficulty)
+    if not challenge_data:
+        return {
+            "error": f"No challenges available for {concept_id} at {difficulty} level"
+        }
+
+    return {
+        "concept_id": concept_id,
+        "difficulty": difficulty,
+        "challenge": challenge_data["challenge"],
+        "dataset": challenge_data["dataset"],
+        "hints": challenge_data["hints"],
+        "learning_objective": f"Master {concept_id} through hands-on practice"
+    }
+
+@app.get("/api/learn/datasets")
+async def get_learning_datasets():
+    """Get available curated learning datasets"""
+    # This would query the learning_datasets table in a real implementation
+    return {
+        "datasets": [
+            {
+                "id": "basic-functions-tutorial",
+                "name": "Basic Functions Tutorial",
+                "concept_category": "basic_functions",
+                "difficulty_level": "beginner",
+                "description": "Learn SUM, AVERAGE, COUNT with employee data",
+                "prerequisites": []
+            },
+            {
+                "id": "vlookup-fundamentals",
+                "name": "VLOOKUP Fundamentals",
+                "concept_category": "lookups",
+                "difficulty_level": "intermediate",
+                "description": "Master lookup functions with product data",
+                "prerequisites": ["basic_functions"]
+            }
+        ]
+    }
+
+@app.post("/api/workspace/{workspace_id}/analyze-insights")
+async def analyze_workspace_insights(
+    workspace_id: str,
+    analysis_type: str = Query('comprehensive', regex='^(quick|comprehensive|focused)$'),
+    focus_area: Optional[str] = Query(None, regex='^(anomalies|trends|correlations)$')
+):
+    """
+    Intelligent data analysis endpoint for proactive insights.
+
+    Parameters:
+    - workspace_id: ID of the workspace to analyze
+    - analysis_type:
+        * 'quick': Light analysis (outliers, basic stats) - runs on upload
+        * 'comprehensive': Deep analysis (seasonality, correlations, causation)
+        * 'focused': Targeted analysis on specific aspect
+    - focus_area: Optional focus ('anomalies' | 'trends' | 'correlations')
+    """
+    try:
+        print(f"🔍 === INTELLIGENT ANALYSIS REQUEST ===")
+        print(f"   - Workspace ID: {workspace_id}")
+        print(f"   - Analysis Type: {analysis_type}")
+        print(f"   - Focus Area: {focus_area}")
+
+        # Get current DataFrame from data handler
+        df = data_handler.get_df()
+
+        if df is None or df.empty:
+            raise HTTPException(
+                status_code=404,
+                detail="No data found in workspace. Please upload data first."
+            )
+
+        print(f"📊 Data shape: {df.shape}")
+        print(f"🏷️ Columns: {df.columns.tolist()}")
+
+        # Initialize IntelligentAnalyzer
+        analyzer = IntelligentAnalyzer(df, settings.LLM)
+
+        # Run analysis based on type
+        if analysis_type == 'quick':
+            profile = analyzer.analyze_quick_profile()
+            anomalies = analyzer.detect_anomalies(method='zscore', threshold=3.5)[:5]  # Top 5
+            correlations = []
+            seasonality = None
+            summary = "Quick data profile complete."
+            print("✅ Quick analysis complete")
+
+        elif analysis_type == 'comprehensive':
+            profile = analyzer.analyze_quick_profile()
+            anomalies = analyzer.detect_anomalies(method='zscore', threshold=3.0)
+            correlations = analyzer.identify_correlations(threshold=0.7)
+
+            # Detect seasonality if temporal data exists
+            seasonality = None
+            if analyzer.temporal_cols and analyzer.numeric_cols:
+                try:
+                    seasonality = analyzer.detect_seasonality(
+                        analyzer.temporal_cols[0],
+                        analyzer.numeric_cols[0]
+                    )
+                    print(f"📈 Seasonality: {seasonality.get('description') if seasonality else 'None detected'}")
+                except Exception as e:
+                    print(f"⚠️ Seasonality detection failed: {e}")
+
+            # Generate executive summary
+            try:
+                summary = analyzer.generate_executive_summary(anomalies, correlations, seasonality)
+                print(f"📝 Summary: {summary}")
+            except Exception as e:
+                print(f"⚠️ Summary generation failed: {e}")
+                summary = "Data analysis complete. Review detailed findings below."
+
+            print("✅ Comprehensive analysis complete")
+
+        else:  # focused
+            profile = analyzer.analyze_quick_profile()
+            anomalies = []
+            correlations = []
+            seasonality = None
+
+            if focus_area == 'anomalies':
+                anomalies = analyzer.detect_anomalies(method='zscore', threshold=3.0)
+                summary = f"Focused anomaly detection complete. Found {len(anomalies)} outliers."
+            elif focus_area == 'trends' and analyzer.temporal_cols:
+                if analyzer.numeric_cols:
+                    seasonality = analyzer.detect_seasonality(
+                        analyzer.temporal_cols[0],
+                        analyzer.numeric_cols[0]
+                    )
+                summary = f"Trend analysis complete."
+            elif focus_area == 'correlations':
+                correlations = analyzer.identify_correlations(threshold=0.6)
+                summary = f"Correlation analysis complete. Found {len(correlations)} significant relationships."
+            else:
+                summary = f"Focused analysis on {focus_area} complete."
+
+            print("✅ Focused analysis complete")
+
+        # Generate visualization suggestions
+        viz_suggestions = analyzer.suggest_visualizations()
+        print(f"💡 {len(viz_suggestions)} visualization suggestions generated")
+
+        # Return structured response
+        response = {
+            "analysis_type": analysis_type,
+            "summary": summary,
+            "profile": profile,
+            "anomalies": anomalies[:10],  # Limit to top 10
+            "seasonality": seasonality,
+            "correlations": correlations[:10],  # Limit to top 10
+            "visualizations": [],  # Future: integrate with chart generation
+            "recommendations": [
+                "Investigate anomalies flagged as 'high' or 'critical' severity",
+                "Explore correlations with p-value < 0.01 for potential causation",
+                "Consider time-based analysis if seasonal patterns detected"
+            ]
+        }
+
+        print("🎉 === INTELLIGENT ANALYSIS COMPLETE ===")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Analysis failed for workspace {workspace_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Analysis failed: {str(e)}"
+        )
+
+@app.post("/api/workspace/{workspace_id}/smart-format")
+async def smart_format_workspace(
+    workspace_id: str,
+    template: Optional[str] = Query('professional', regex='^(professional|financial|minimal)$')
+):
+    """
+    Smart auto-formatting endpoint for spreadsheet data.
+
+    Parameters:
+        - workspace_id: ID of the workspace to format
+        - template: Formatting template to apply
+            * 'professional': Blue header, comprehensive formatting (default)
+            * 'financial': Dark header, currency-optimized formatting
+            * 'minimal': Light header, clean minimal formatting
+
+    Returns:
+        Formatting instructions for frontend to apply via UniverAdapter
+    """
+    try:
+        print(f"📐 === SMART FORMATTING REQUEST ===")
+        print(f"   - Workspace ID: {workspace_id}")
+        print(f"   - Template: {template}")
+
+        # Get current DataFrame from data handler
+        df = data_handler.get_df()
+
+        if df is None or df.empty:
+            raise HTTPException(
+                status_code=404,
+                detail="No data found in workspace. Please upload data first."
+            )
+
+        print(f"📊 Data shape: {df.shape}")
+        print(f"🏷️ Columns: {df.columns.tolist()}")
+
+        # Initialize SmartFormatter
+        formatter = SmartFormatter(df, settings.LLM)
+
+        # Generate formatting instructions
+        formatting = formatter.generate_formatting_instructions(template)
+
+        print(f"✅ Generated formatting for {len(formatting['column_formats'])} columns")
+        print(f"📋 Detected types: {formatting['column_types']}")
+
+        return {
+            "success": True,
+            "formatting": formatting,
+            "message": formatting['summary']
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Smart formatting error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating formatting instructions: {str(e)}"
+        )
+
+# ============================================================================
+# QUICK DATA ENTRY ENDPOINT
+# ============================================================================
+
+def match_columns_to_headers(user_data: Dict[str, Any], headers: List[str]) -> Dict[int, Any]:
+    """
+    Fuzzy match user column names to actual spreadsheet headers.
+
+    Args:
+        user_data: Dict of {column_name: value} from user input
+        headers: List of actual column headers in spreadsheet
+
+    Returns:
+        Dict mapping column indices to values
+    """
+    result = {}
+
+    for user_col, value in user_data.items():
+        user_col_lower = user_col.lower().strip()
+        best_match_idx = -1
+        best_match_score = 0.0
+
+        for idx, header in enumerate(headers):
+            header_lower = str(header).lower().strip()
+
+            # 1. Exact match (case-insensitive)
+            if user_col_lower == header_lower:
+                best_match_idx = idx
+                best_match_score = 1.0
+                break
+
+            # 2. Partial match (user column is substring of header)
+            if user_col_lower in header_lower or header_lower in user_col_lower:
+                score = 0.8
+                if score > best_match_score:
+                    best_match_idx = idx
+                    best_match_score = score
+
+            # 3. Similarity score using SequenceMatcher
+            similarity = SequenceMatcher(None, user_col_lower, header_lower).ratio()
+            if similarity > best_match_score:
+                best_match_idx = idx
+                best_match_score = similarity
+
+        # Only accept matches above 60% threshold
+        if best_match_score >= 0.6 and best_match_idx >= 0:
+            result[best_match_idx] = value
+
+    return result
+
+def process_single_row_entry(df: pd.DataFrame, row_data: Dict[str, Any], position: str) -> Dict[str, Any]:
+    """
+    Process single row insertion with fuzzy column matching.
+
+    Args:
+        df: Current DataFrame
+        row_data: Dict of column-value pairs from user
+        position: 'top', 'bottom', or numeric row index
+
+    Returns:
+        Dict with row_values array and actual_position
+    """
+    headers = df.columns.tolist()
+
+    # Fuzzy match columns
+    matched_columns = match_columns_to_headers(row_data, headers)
+
+    # Create row array with None for unmatched columns
+    row_values = [None] * len(headers)
+    for col_idx, value in matched_columns.items():
+        row_values[col_idx] = value
+
+    # Determine insert position
+    # Note: DataFrame doesn't include header in row count
+    # Spreadsheet has header at row 0, data starts at row 1
+    if position == 'top':
+        actual_position = 1  # Insert after header, as first data row
+    elif position == 'bottom':
+        actual_position = len(df) + 1  # Append after all data, +1 for header offset
+    else:
+        try:
+            actual_position = int(position)
+            # Clamp to valid range (1 to len(df)+1)
+            actual_position = max(1, min(actual_position, len(df) + 1))
+        except:
+            actual_position = len(df) + 1  # Default to bottom
+
+    return {
+        'row_values': row_values,
+        'actual_position': actual_position,
+        'matched_count': len(matched_columns),
+        'total_columns': len(headers)
+    }
+
+def process_multiple_row_generation(df: pd.DataFrame, count: int, entity_type: str, fields_hint: str) -> Dict[str, Any]:
+    """
+    Generate multiple realistic data rows using LLM.
+
+    Args:
+        df: Current DataFrame
+        count: Number of rows to generate
+        entity_type: Type of entity (e.g., "customers", "products")
+        fields_hint: Optional hints about what fields to include
+
+    Returns:
+        Dict with generated rows (2D array)
+    """
+    headers = df.columns.tolist()
+
+    # Build prompt for LLM
+    prompt = f"""Generate {count} realistic sample rows of data for a spreadsheet.
+
+Entity type: {entity_type}
+Columns: {', '.join(headers)}
+{f'Additional requirements: {fields_hint}' if fields_hint else ''}
+
+Return ONLY a JSON array of arrays, where each inner array represents one row with values matching the column order.
+Example format: [["value1", "value2", ...], ["value3", "value4", ...]]
+
+Important:
+- Generate exactly {count} rows
+- Each row must have exactly {len(headers)} values
+- Values should be realistic and diverse
+- Use appropriate data types (numbers for numeric columns, dates for date columns, etc.)
+- Do NOT include column headers in the output
+"""
+
+    try:
+        # Use Google Gemini LLM
+        llm = settings.llm
+        response = llm.invoke(prompt)
+
+        # Parse JSON response
+        content = response.content if hasattr(response, 'content') else str(response)
+
+        # Extract JSON array
+        json_match = re.search(r'\[\s*\[.*?\]\s*\]', content, re.DOTALL)
+        if json_match:
+            rows_data = json.loads(json_match.group())
+        else:
+            # Fallback: try parsing entire content
+            rows_data = json.loads(content)
+
+        # Validate row count and column count
+        if len(rows_data) != count:
+            print(f"⚠️ LLM generated {len(rows_data)} rows instead of {count}")
+
+        for row in rows_data:
+            if len(row) != len(headers):
+                print(f"⚠️ Row has {len(row)} values instead of {len(headers)}")
+
+        return {
+            'rows': rows_data,
+            'count': len(rows_data)
+        }
+
+    except json.JSONDecodeError as e:
+        print(f"❌ Failed to parse LLM response as JSON: {str(e)}")
+        # Generate placeholder data as fallback
+        placeholder_rows = []
+        for i in range(count):
+            row = [f"Sample {i+1}" if j == 0 else None for j in range(len(headers))]
+            placeholder_rows.append(row)
+        return {
+            'rows': placeholder_rows,
+            'count': count,
+            'fallback': True
+        }
+
+    except Exception as e:
+        print(f"❌ Error generating rows: {str(e)}")
+        raise
+
+def process_header_creation(headers: List[str]) -> Dict[str, Any]:
+    """
+    Process header row creation with type detection.
+
+    Args:
+        headers: List of column header names
+
+    Returns:
+        Dict with headers and detected types
+    """
+    column_types = {}
+
+    for header in headers:
+        header_lower = header.lower()
+
+        # Detect column types from header names
+        if any(keyword in header_lower for keyword in ['price', 'cost', 'amount', 'revenue', 'salary', 'fee', 'payment', 'usd', 'dollar', 'total']):
+            column_types[header] = 'currency'
+        elif any(keyword in header_lower for keyword in ['date', 'time', 'created', 'updated']):
+            column_types[header] = 'date'
+        elif any(keyword in header_lower for keyword in ['quantity', 'count', 'number', 'qty', 'id']):
+            column_types[header] = 'integer'
+        elif any(keyword in header_lower for keyword in ['percent', 'rate', '%', 'ratio']):
+            column_types[header] = 'percentage'
+        else:
+            column_types[header] = 'text'
+
+    return {
+        'headers': headers,
+        'column_types': column_types
+    }
+
+class QuickDataEntryRequest(BaseModel):
+    action: str  # 'add_single_row', 'generate_multiple_rows', 'create_headers'
+    parameters: Dict[str, Any]
+    workspace_id: str
+
+@app.post("/api/workspace/{workspace_id}/quick-data-entry")
+async def quick_data_entry(
+    workspace_id: str,
+    request: QuickDataEntryRequest
+):
+    """
+    Quick data entry endpoint for natural language data insertion.
+
+    Supports three operations:
+    1. add_single_row: Insert one row with column-value pairs
+    2. generate_multiple_rows: Generate N realistic rows using LLM
+    3. create_headers: Create column headers (requires empty sheet)
+    """
+    try:
+        print(f"📝 === QUICK DATA ENTRY REQUEST ===")
+        print(f"   - Workspace ID: {workspace_id}")
+        print(f"   - Action: {request.action}")
+        print(f"   - Parameters: {request.parameters}")
+
+        action = request.action
+        params = request.parameters
+
+        # Get current DataFrame from data handler
+        df = data_handler.get_df()
+
+        if df is None or df.empty:
+            if action != 'create_headers':
+                raise HTTPException(
+                    status_code=400,
+                    detail="Sheet is empty. Create headers first before adding data rows."
+                )
+
+        # Process based on action
+        if action == 'add_single_row':
+            row_data_str = params.get('row_data_string', '')
+            position = params.get('position', 'bottom')
+
+            # Parse column-value pairs (this would be done on frontend, but included for completeness)
+            # For now, expect parameters to include parsed data
+            row_data = params.get('row_data', {})
+
+            result = process_single_row_entry(df, row_data, position)
+
+            return {
+                "success": True,
+                "action": "add_single_row",
+                "data": result,
+                "message": f"Ready to insert 1 row at position {result['actual_position']} with {result['matched_count']} filled cells"
+            }
+
+        elif action == 'generate_multiple_rows':
+            count = params.get('count', 5)
+            entity_type = params.get('entity_type', 'rows')
+            fields_hint = params.get('fields_hint', '')
+
+            result = process_multiple_row_generation(df, count, entity_type, fields_hint)
+
+            return {
+                "success": True,
+                "action": "generate_multiple_rows",
+                "data": result,
+                "message": f"Generated {result['count']} sample {entity_type} rows"
+            }
+
+        elif action == 'create_headers':
+            if df is not None and not df.empty:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot create headers on non-empty sheet"
+                )
+
+            headers = params.get('headers', [])
+            if not headers:
+                raise HTTPException(status_code=400, detail="No headers provided")
+
+            result = process_header_creation(headers)
+
+            return {
+                "success": True,
+                "action": "create_headers",
+                "data": result,
+                "message": f"Created {len(headers)} column headers"
+            }
+
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Quick data entry error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing data entry: {str(e)}"
+        )
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 

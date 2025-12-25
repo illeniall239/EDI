@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Download, Search, Filter, Database, Check, Square } from 'lucide-react';
 import { API_BASE_URL } from '@/config';
 
@@ -34,12 +34,82 @@ export default function ColumnExtractionDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
+  // Dragging state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dialogPos, setDialogPos] = useState<{left: number, top: number} | null>(null);
+  const [dragOffset, setDragOffset] = useState<{x: number, y: number}>({x: 0, y: 0});
+  const modalRef = useRef<HTMLDivElement>(null);
+
   // Fetch available columns when dialog opens
   useEffect(() => {
     if (isOpen) {
       fetchColumns();
     }
   }, [isOpen]);
+
+  // Drag handlers
+  const handleDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!modalRef.current) return;
+    
+    const rect = modalRef.current.getBoundingClientRect();
+    const offset = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+    
+    setDragOffset(offset);
+    setIsDragging(true);
+    
+    if (!dialogPos) {
+      setDialogPos({
+        left: rect.left,
+        top: rect.top
+      });
+    }
+  };
+
+  const handleDrag = useCallback((e: MouseEvent) => {
+    if (!isDragging) return;
+    
+    e.preventDefault();
+    
+    const newLeft = e.clientX - dragOffset.x;
+    const newTop = e.clientY - dragOffset.y;
+    
+    // Keep modal within viewport bounds
+    const maxLeft = window.innerWidth - 400;
+    const maxTop = window.innerHeight - 300;
+    
+    const boundedPos = {
+      left: Math.max(0, Math.min(newLeft, maxLeft)),
+      top: Math.max(0, Math.min(newTop, maxTop))
+    };
+    
+    setDialogPos(boundedPos);
+  }, [isDragging, dragOffset]);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  // Handle drag event listeners
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener('mousemove', handleDrag);
+      document.addEventListener('mouseup', handleDragEnd);
+    } else {
+      document.removeEventListener('mousemove', handleDrag);
+      document.removeEventListener('mouseup', handleDragEnd);
+    }
+    
+    return () => {
+      document.removeEventListener('mousemove', handleDrag);
+      document.removeEventListener('mouseup', handleDragEnd);
+    };
+  }, [isDragging, handleDrag, handleDragEnd]);
 
   const fetchColumns = async () => {
     setLoading(true);
@@ -102,26 +172,36 @@ export default function ColumnExtractionDialog({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div 
-        className="relative w-full max-w-4xl rounded-xl shadow-2xl border border-slate-700/50 overflow-hidden max-h-[90vh]"
-        style={{ backgroundColor: 'rgb(2, 6, 23)' }}
+        ref={modalRef}
+        className="fixed w-full max-w-4xl rounded-2xl shadow-2xl border border-border overflow-hidden max-h-[90vh] bg-card z-[9999]"
+        style={{
+          top: dialogPos?.top && dialogPos.top < window.innerHeight - 500 ? dialogPos.top : '50%',
+          left: dialogPos?.left && dialogPos.left < window.innerWidth - 500 ? dialogPos.left : '50%',
+          transform: dialogPos ? 'none' : 'translate(-50%, -50%)',
+          cursor: isDragging ? 'grabbing' : 'default',
+        }}
       >
         {/* Header */}
-        <div className="border-b border-slate-700/50 p-4">
+        <div 
+          className="border-b border-border p-4"
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+          onMouseDown={handleDragStart}
+        >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-600 rounded-lg">
-                <Database className="w-5 h-5 text-white" />
+              <div className="p-2 bg-primary/10 text-primary rounded-lg">
+                <Database className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-white">Extract Columns</h2>
-                <p className="text-sm text-slate-400">Select columns to extract into a new sheet</p>
+                <h2 className="text-lg font-semibold text-foreground">Extract Columns</h2>
+                <p className="text-sm text-muted-foreground">Select columns to extract into a new sheet</p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+              onMouseDown={(e) => e.stopPropagation()}
+              className="p-2 rounded-lg hover:bg-accent text-foreground hover:text-foreground transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -138,8 +218,8 @@ export default function ColumnExtractionDialog({
 
           {loading ? (
             <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-              <p className="mt-2 text-slate-400">Loading columns...</p>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <p className="mt-2 text-foreground">Loading columns...</p>
             </div>
           ) : (
             <>
@@ -148,24 +228,24 @@ export default function ColumnExtractionDialog({
                 {/* Search and Filter */}
                 <div className="flex gap-4">
                   <div className="flex-1 relative">
-                    <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                    <Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
                     <input
                       type="text"
                       placeholder="Search columns..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-slate-400"
+                      className="w-full pl-10 pr-4 py-2 bg-input border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-foreground placeholder-muted-foreground"
                     />
                   </div>
                   <div className="relative">
-                    <Filter className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                    <Filter className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
                     <select
                       value={filterCategory}
                       onChange={(e) => setFilterCategory(e.target.value)}
-                      className="pl-10 pr-8 py-2 bg-slate-800 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none text-white"
+                      className="pl-10 pr-8 py-2 bg-input border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary appearance-none text-foreground"
                     >
                       {categories.map(category => (
-                        <option key={category} value={category} className="bg-slate-800 text-white">{category}</option>
+                        <option key={category} value={category} className="bg-input text-foreground">{category}</option>
                       ))}
                     </select>
                   </div>
@@ -173,7 +253,7 @@ export default function ColumnExtractionDialog({
 
                 {/* Sheet Name */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     New Sheet Name (optional)
                   </label>
                   <input
@@ -181,7 +261,7 @@ export default function ColumnExtractionDialog({
                     placeholder="Enter custom sheet name..."
                     value={sheetName}
                     onChange={(e) => setSheetName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-slate-400"
+                    className="w-full px-3 py-2 bg-input border border-border rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-foreground placeholder-muted-foreground"
                   />
                 </div>
 
@@ -189,7 +269,7 @@ export default function ColumnExtractionDialog({
                 <div className="flex items-center justify-between">
                   <button
                     onClick={handleSelectAll}
-                    className="flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                    className="flex items-center gap-2 text-primary hover:text-primary/80 transition-colors font-medium"
                   >
                     {selectedColumns.size === filteredColumns.length ? (
                       <Check className="w-4 h-4" />
@@ -198,24 +278,24 @@ export default function ColumnExtractionDialog({
                     )}
                     {selectedColumns.size === filteredColumns.length ? 'Deselect All' : 'Select All'}
                   </button>
-                  <span className="text-sm text-slate-400 font-medium">
+                  <span className="text-sm text-muted-foreground font-medium">
                     {selectedColumns.size} of {filteredColumns.length} columns selected
                   </span>
                 </div>
               </div>
 
               {/* Columns List */}
-              <div className="max-h-96 overflow-y-auto border border-slate-600 rounded-lg bg-slate-800/50">
+              <div className="max-h-96 overflow-y-auto border border-border rounded-lg bg-muted/20">
                 {filteredColumns.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400">
+                  <div className="text-center py-8 text-muted-foreground">
                     No columns found matching your criteria
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-600/50">
+                  <div className="divide-y divide-border">
                     {filteredColumns.map((column) => (
                       <div
                         key={column.name}
-                        className="p-4 hover:bg-slate-700/50 transition-colors"
+                        className="p-4 hover:bg-accent/50 transition-colors"
                       >
                         <div className="flex items-start gap-3">
                           <button
@@ -223,30 +303,25 @@ export default function ColumnExtractionDialog({
                             className="flex-shrink-0 mt-1"
                           >
                             {selectedColumns.has(column.name) ? (
-                              <div className="w-5 h-5 bg-blue-600 border-2 border-blue-600 rounded flex items-center justify-center">
+                              <div className="w-5 h-5 bg-primary border-2 border-primary rounded flex items-center justify-center">
                                 <Check className="w-3 h-3 text-white" />
                               </div>
                             ) : (
-                              <div className="w-5 h-5 border-2 border-slate-500 rounded hover:border-blue-400 transition-colors"></div>
+                              <div className="w-5 h-5 border-2 border-border rounded hover:border-primary transition-colors"></div>
                             )}
                           </button>
                           
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-medium text-white truncate">
+                              <h3 className="font-medium text-foreground truncate">
                                 {column.name}
                               </h3>
-                              <span className={`px-2 py-1 text-xs rounded-full ${
-                                column.data_category === 'Text' ? 'bg-green-900/40 text-green-300 border border-green-700/50' :
-                                column.data_category === 'Numeric' ? 'bg-blue-900/40 text-blue-300 border border-blue-700/50' :
-                                column.data_category === 'Date/Time' ? 'bg-purple-900/40 text-purple-300 border border-purple-700/50' :
-                                'bg-slate-700/50 text-slate-300 border border-slate-600/50'
-                              }`}>
+                              <span className="px-2 py-1 text-xs rounded-full bg-muted/50 text-foreground border border-border">
                                 {column.data_category}
                               </span>
                             </div>
                             
-                            <div className="text-sm text-slate-400 space-y-1">
+                            <div className="text-sm text-muted-foreground space-y-1">
                               <div className="flex items-center gap-4">
                                 <span>Type: {column.type}</span>
                                 <span>Completeness: {column.completeness_percentage}%</span>
@@ -256,7 +331,7 @@ export default function ColumnExtractionDialog({
                               {column.sample_values.length > 0 && (
                                 <div>
                                   <span className="font-medium">Sample values: </span>
-                                  <span className="text-slate-500">
+                                  <span className="text-muted-foreground">
                                     {column.sample_values.join(', ')}
                                     {column.unique_count > 3 && '...'}
                                   </span>
@@ -275,8 +350,8 @@ export default function ColumnExtractionDialog({
         </div>
 
         {/* Footer */}
-        <div className="border-t border-slate-700/50 px-6 py-4 flex items-center justify-between bg-slate-900/50">
-          <div className="text-sm text-slate-400">
+        <div className="border-t border-border px-6 py-4 flex items-center justify-between bg-muted/10">
+          <div className="text-sm text-muted-foreground">
             {columns.length > 0 && (
               <>Total: {columns.length} columns, {selectedColumns.size} selected</>
             )}
@@ -284,14 +359,14 @@ export default function ColumnExtractionDialog({
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-slate-300 border border-slate-600 rounded-lg hover:bg-slate-700 transition-colors"
+              className="px-4 py-2 text-foreground border border-border rounded-lg hover:bg-accent transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleExtract}
               disabled={selectedColumns.size === 0 || loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
               <Download className="w-4 h-4" />
               Extract Selected
@@ -299,6 +374,5 @@ export default function ColumnExtractionDialog({
           </div>
         </div>
       </div>
-    </div>
   );
 } 

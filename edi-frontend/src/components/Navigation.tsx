@@ -5,16 +5,31 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useScrollTo } from '@/hooks/useScrollTo';
 import { supabase } from '@/utils/supabase';
+import { motion } from 'framer-motion';
 
 interface NavigationProps {
   showStartProject?: boolean;
   darkMode?: boolean;
 }
 
-export default function Navigation({ showStartProject = true, darkMode = true }: NavigationProps) {
+export default function Navigation({ showStartProject = true }: NavigationProps) {
   const router = useRouter();
   const pathname = usePathname();
   const scrollTo = useScrollTo();
+  const [isScrolled, setIsScrolled] = React.useState(false);
+
+  React.useEffect(() => {
+    const handleScroll = () => {
+      if (pathname !== '/') {
+        setIsScrolled(true);
+        return;
+      }
+      setIsScrolled(window.scrollY > 20);
+    };
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true } as any);
+    return () => window.removeEventListener('scroll', handleScroll as any);
+  }, [pathname]);
 
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, sectionId: string | null) => {
     e.preventDefault();
@@ -47,50 +62,59 @@ export default function Navigation({ showStartProject = true, darkMode = true }:
   };
 
   return (
-    <div className="fixed w-full top-0 z-50 flex justify-center pt-4">
-      <nav className="w-[95%] max-w-[1800px] bg-black/40 backdrop-blur-md rounded-xl border border-blue-900/10">
-        <div className="flex items-center justify-between h-14 pl-2 pr-6">
-          {/* Logo */}
-          <span className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-blue-200 to-white pl-2">EDI.ai</span>
+    <motion.div
+      className="fixed w-full top-0 z-[10001] pt-4 bg-transparent"
+      initial={{ y: -40, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.6, ease: 'easeOut' }}
+    >
+      <div className={`max-w-6xl mx-auto px-8 py-3 flex items-center justify-between rounded-xl transition-all duration-300 ${
+        isScrolled 
+          ? 'bg-black/80 backdrop-blur-md shadow-lg' 
+          : 'bg-transparent'
+      }`}>
+        {/* Logo */}
+        <Link href="/" className="flex items-center space-x-2">
+          <span className="text-2xl font-bold text-white font-pixelify">
+            EDI.ai
+          </span>
+        </Link>
 
-          {/* Center Navigation */}
-          <div className="hidden md:flex items-center space-x-8">
-              <Link 
-                href="/" 
-                onClick={(e) => handleNavClick(e, null)}
-              className="text-white/80 hover:text-blue-500 transition-colors duration-300 text-sm font-medium"
-              >
-                Home
-              </Link>
-              <Link 
-                href="/#features" 
-                onClick={(e) => handleNavClick(e, 'features')}
-              className="text-white/80 hover:text-blue-500 transition-colors duration-300 text-sm font-medium"
-              >
-                Features
-              </Link>
-              <Link 
-                href="/#how-it-works" 
-                onClick={(e) => handleNavClick(e, 'how-it-works')}
-              className="text-white/80 hover:text-blue-500 transition-colors duration-300 text-sm font-medium"
-              >
-                How it works
-              </Link>
-          </div>
+        {/* Navigation Links */}
+        <nav className="hidden md:flex items-center space-x-8">
+          <Link 
+            href="/" 
+            onClick={(e) => handleNavClick(e, null)}
+            className="text-white hover:text-white/80 transition-colors"
+          >
+            Home
+          </Link>
+          <Link 
+            href="/#features" 
+            onClick={(e) => handleNavClick(e, 'features')}
+            className="text-white hover:text-white/80 transition-colors"
+          >
+            Features
+          </Link>
+          <Link 
+            href="/#about" 
+            onClick={(e) => handleNavClick(e, 'intro')}
+            className="text-white hover:text-white/80 transition-colors"
+          >
+            About
+          </Link>
+        </nav>
 
-          {/* Right Button */}
-          <div className="flex items-center">
-            {showStartProject && (
-              <button
-                onClick={handleTryNow}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full transition-all duration-300 text-sm font-medium cursor-pointer"
-              >
-                Try Now
-              </button>
-            )}
-          </div>
-        </div>
-      </nav>
+        {/* CTA Button */}
+        {showStartProject && (
+          <button
+            onClick={handleTryNow}
+            className="bg-white text-black px-6 py-2 rounded-lg font-medium hover:shadow-lg transition-all duration-300 transform hover:scale-105 hover:bg-white/90"
+          >
+            Try Now
+          </button>
+        )}
       </div>
+    </motion.div>
   );
 } 

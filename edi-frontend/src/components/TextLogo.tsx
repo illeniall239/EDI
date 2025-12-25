@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 
 interface TextLogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -8,28 +9,21 @@ interface TextLogoProps {
   className?: string;
 }
 
-export default function TextLogo({ size = 'md', variant = 'gradient', className = '' }: TextLogoProps) {
+export default function TextLogo({ size = 'md', className = '' }: TextLogoProps) {
   const sizeClasses = {
-    sm: 'text-base',
-    md: 'text-xl',
-    lg: 'text-3xl',
-    xl: 'text-5xl'
-  };
-
-  const variantClasses = {
-    light: 'text-white',
-    dark: 'text-black',
-    gradient: 'bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 bg-clip-text text-transparent'
+    sm: 'h-12',
+    md: 'h-16',
+    lg: 'h-20',
+    xl: 'h-24'
   };
 
   return (
-    <div className={`font-bold tracking-tight ${sizeClasses[size]} ${className}`}>
-      <span className={variant === 'gradient' ? 'bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 bg-clip-text text-transparent' : variantClasses[variant]}>
-        EDI
-      </span>
-      <span className={variant === 'gradient' ? 'bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 bg-clip-text text-transparent' : variantClasses[variant]}>
-        .ai
-      </span>
-    </div>
+    <Image
+      src="/1.svg"
+      alt="EDI.ai"
+      width={80}
+      height={80}
+      className={`w-auto ${sizeClasses[size]} ${className}`}
+    />
   );
 } 

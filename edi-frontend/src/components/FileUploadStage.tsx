@@ -60,7 +60,7 @@ export default function FileUploadStage({ workspaceId, onComplete }: FileUploadS
         );
       }
     }
-  }, [workspaceId, onComplete]);
+  }, [workspaceId]);
 
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
@@ -223,7 +223,7 @@ export default function FileUploadStage({ workspaceId, onComplete }: FileUploadS
                   onClick={handleAnalyzeClick}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-lg text-base font-medium transition-colors duration-200 inline-flex items-center gap-2"
                 >
-                  Let's Analyze
+                  Let&apos;s Analyze
                   <svg 
                     className="w-5 h-5" 
                     fill="none" 

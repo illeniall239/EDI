@@ -53,7 +53,7 @@ class ErrorBoundary extends Component<Props, State> {
                 this.setState({ hasError: false, error: undefined });
                 window.location.reload();
               }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors"
+              className="bg-white hover:bg-white/90 text-black px-4 py-2 rounded-lg transition-colors"
             >
               Reload Spreadsheet
             </button>

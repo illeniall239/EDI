@@ -34,7 +34,7 @@ export default function DataPreview({ data }: DataPreviewProps) {
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search in data..."
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-black placeholder-gray-500"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-white/60 focus:border-white/60 text-black placeholder-gray-500"
                     />
                     {searchTerm && (
                         <button

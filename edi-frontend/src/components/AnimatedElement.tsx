@@ -13,14 +13,13 @@ interface AnimatedElementProps {
   staggerDelay?: number;
 }
 
-export default function AnimatedElement({ 
-  children, 
-  className = '', 
+export default function AnimatedElement({
+  children,
+  className = '',
   delay = 0,
   direction = 'up',
   duration = 0.8,
   once = true,
-  threshold = 0.1,
   staggerChildren = false,
   staggerDelay = 0.1
 }: AnimatedElementProps) {
@@ -28,7 +27,7 @@ export default function AnimatedElement({
   const isInView = useInView(ref, { once, margin: "-10px" });
 
   const getVariants = (): Variants => {
-    const baseTransition = {
+    const baseTransition: any = {
       duration,
       delay,
       ease: [0.21, 0.47, 0.32, 0.98]

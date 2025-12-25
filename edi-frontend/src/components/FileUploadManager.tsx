@@ -110,18 +110,6 @@ export default function FileUploadManager({ onFileUpload, isExpanded }: FileUplo
     event.preventDefault();
   };
 
-  const cycleToNextFile = () => {
-    if (fileStatuses.length > 1) {
-      setCurrentFileIndex((prev) => (prev + 1) % fileStatuses.length);
-    }
-  };
-
-  const cycleToPreviousFile = () => {
-    if (fileStatuses.length > 1) {
-      setCurrentFileIndex((prev) => (prev - 1 + fileStatuses.length) % fileStatuses.length);
-    }
-  };
-
   const removeFile = (index: number) => {
     setFileStatuses(prev => prev.filter((_, i) => i !== index));
     if (currentFileIndex >= index && currentFileIndex > 0) {
@@ -133,7 +121,7 @@ export default function FileUploadManager({ onFileUpload, isExpanded }: FileUplo
     switch (status) {
       case 'uploading':
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/20 text-primary">
             Uploading
             <svg className="ml-1.5 w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -161,7 +149,7 @@ export default function FileUploadManager({ onFileUpload, isExpanded }: FileUplo
         );
       default:
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/20 text-white">
             Pending
             <svg className="ml-1 w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -174,7 +162,7 @@ export default function FileUploadManager({ onFileUpload, isExpanded }: FileUplo
   return (
     <div className="flex flex-col gap-4 p-4">
       {isExpanded && currentWorkspace && (
-        <div className="text-sm font-medium text-gray-900">
+        <div className="text-sm font-medium text-white">
           Workspace: {currentWorkspace.name}
         </div>
       )}
@@ -185,7 +173,7 @@ export default function FileUploadManager({ onFileUpload, isExpanded }: FileUplo
         className={`
           border-2 border-dashed border-gray-300 rounded-lg
           ${isExpanded ? 'p-4' : 'p-2'}
-          hover:border-emerald-500 transition-colors duration-150
+          hover:border-white/60 transition-colors duration-150
           flex flex-col items-center justify-center gap-2
           cursor-pointer
         `}
@@ -200,7 +188,7 @@ export default function FileUploadManager({ onFileUpload, isExpanded }: FileUplo
         />
         
         <svg
-          className={`${isExpanded ? 'w-8 h-8' : 'w-6 h-6'} text-gray-400`}
+          className={`${isExpanded ? 'w-8 h-8' : 'w-6 h-6'} text-white`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -215,10 +203,10 @@ export default function FileUploadManager({ onFileUpload, isExpanded }: FileUplo
 
         {isExpanded && (
           <div className="text-center">
-            <p className="text-sm font-medium text-gray-900">
+            <p className="text-sm font-medium text-white">
               Drop files here or click to upload
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-white">
               Upload any file type
             </p>
           </div>
@@ -228,7 +216,7 @@ export default function FileUploadManager({ onFileUpload, isExpanded }: FileUplo
       {isExpanded && fileStatuses.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-900">
+            <span className="text-sm font-medium text-white">
               Uploaded Files ({fileStatuses.length})
             </span>
           </div>
@@ -241,16 +229,16 @@ export default function FileUploadManager({ onFileUpload, isExpanded }: FileUplo
                 className={`
                   flex items-center justify-between py-1.5 px-3 rounded transition-colors duration-150 cursor-pointer
                   ${index === currentFileIndex 
-                    ? 'bg-emerald-50 border border-emerald-200' 
-                    : 'hover:bg-gray-50'
+                    ? 'bg-white/10 border border-white/30' 
+                    : 'hover:bg-white/5'
                   }
                 `}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-900 truncate">
+                  <span className="text-sm text-white truncate">
                     {fileStatus.file.name}
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-white/60">
                     ({(fileStatus.file.size / 1024).toFixed(1)} KB)
                   </span>
                 </div>
@@ -261,10 +249,10 @@ export default function FileUploadManager({ onFileUpload, isExpanded }: FileUplo
                       e.stopPropagation();
                       removeFile(index);
                     }}
-                    className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
+                    className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
                     aria-label="Remove file"
                   >
-                    <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg className="w-3.5 h-3.5 text-white/50 hover:text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>

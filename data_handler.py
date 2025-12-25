@@ -234,6 +234,21 @@ class DataHandler:
 
     def get_df(self):
         return self.df.copy() if self.df is not None else None 
+    
+    def update_df(self, new_df):
+        """
+        Update the stored dataframe with new data and sync with database.
+        
+        Args:
+            new_df: pandas DataFrame with updated data
+        """
+        if new_df is not None:
+            self.df = new_df.copy()
+            # Update the SQLite database
+            if self.engine:
+                self.df.to_sql('data', self.engine, index=False, if_exists='replace')
+                # Refresh the SQLDatabase object
+                self.db_sqlalchemy = SQLDatabase(self.engine) 
 
     def get_db_sqlalchemy_object(self):
         return self.db_sqlalchemy

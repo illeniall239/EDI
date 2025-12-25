@@ -1,6 +1,0 @@
--Import errors pandas code
--Search functionality in data preview
--Voice functionality 
--Parsing errors
--chat history userwise
-
