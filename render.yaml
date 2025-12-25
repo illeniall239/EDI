@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: edi-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: AZURE_API_KEY
+        sync: false
+      - key: AZURE_REGION
+        sync: false
+      - key: AZURE_ENDPOINT
+        sync: false
+      - key: PANDASAI_API_KEY
+        sync: false
+      - key: CARTESIA_API_KEY
+        sync: false
+      - key: SAMBANOVA_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: NEXT_PUBLIC_GROQ_API_KEY
+        sync: false

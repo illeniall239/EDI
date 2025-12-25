@@ -1,7 +1,53 @@
-.venv/ 
-node_modules/ 
-__pycache__/ 
-*.pyc 
-.env 
-dist/ 
-build/ 
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Node.js
+node_modules/
+.next/
+out/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Database files
+*.db
+backend/temp_db_*.db
+
+# Generated files
+backend/static/visualizations/*.png
+backend/static/visualizations/*.html
+backend/generated_reports/*.pdf
+backend/visualization_debug.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+temp/
+.cache/ 

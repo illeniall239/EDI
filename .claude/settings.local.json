@@ -8,7 +8,9 @@
       "Bash(git config:*)",
       "Bash(curl:*)",
       "Bash(cmdkey /list:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(pip freeze:*)",
+      "Bash(ls:*)"
     ]
   }
 }

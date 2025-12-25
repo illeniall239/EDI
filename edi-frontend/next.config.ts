@@ -2,7 +2,6 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
-    domains: ['localhost', '127.0.0.1'],
     remotePatterns: [
       {
         protocol: 'http',
@@ -15,6 +14,11 @@ const nextConfig: NextConfig = {
         hostname: '127.0.0.1',
         port: '8000',
         pathname: '/static/visualizations/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'www.gravatar.com',
+        pathname: '/avatar/**',
       },
     ],
   },

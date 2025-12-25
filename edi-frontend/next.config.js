@@ -13,6 +13,11 @@ const nextConfig = {
                 hostname: '127.0.0.1',
                 port: '8000',
                 pathname: '/static/visualizations/**',
+            },
+            {
+                protocol: 'https',
+                hostname: 'www.gravatar.com',
+                pathname: '/avatar/**',
             }
         ],
     },
