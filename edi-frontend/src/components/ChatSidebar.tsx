@@ -7120,7 +7120,7 @@ export default function ChatSidebar({
                 isOpen={showPredictDialog}
                 onClose={() => setShowPredictDialog(false)}
                 onPredict={handlePrediction}
-                columns={data?.length > 0 ? Object.keys(data[0]) : []}
+                columns={data && data.length > 0 ? Object.keys(data[0]) : []}
                 workspaceId={currentWorkspace?.id || 'default'}
             />
 
