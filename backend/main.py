@@ -38,6 +38,7 @@ from query_orchestrator import get_orchestrator
 from workspace_ai_processor import create_ai_processor
 from intelligent_analysis import IntelligentAnalyzer
 from smart_formatter import SmartFormatter
+from predictive_analysis import PredictiveAnalyzer
 import settings
 
 app = FastAPI()
@@ -1892,6 +1893,287 @@ async def analyze_workspace_insights(
             detail=f"Analysis failed: {str(e)}"
         )
 
+@app.post("/api/workspace/{workspace_id}/predict")
+async def predict_workspace(
+    workspace_id: str,
+    target_column: str = Query(..., description="Column to predict"),
+    prediction_type: str = Query('auto', regex='^(auto|forecast|regression|classification|trend)$'),
+    periods: int = Query(10, ge=1, le=100, description="Number of periods to predict"),
+    feature_columns: Optional[str] = Query(None, description="Comma-separated feature columns"),
+    confidence_level: float = Query(0.95, ge=0.5, le=0.99)
+):
+    """
+    Intelligent prediction endpoint with automatic model selection.
+
+    Parameters:
+    - workspace_id: ID of workspace
+    - target_column: Column to predict (required)
+    - prediction_type: 'auto' (detect) | 'forecast' | 'regression' | 'classification' | 'trend'
+    - periods: Number of future periods to predict (default: 10)
+    - feature_columns: Comma-separated list of predictor columns (auto-detect if None)
+    - confidence_level: Confidence level for intervals (default: 0.95)
+
+    Returns:
+    {
+        "prediction_type": str,
+        "method": str,
+        "predictions": [...],
+        "model_performance": {...},
+        "visualization": {"type": "matplotlib_figure", "path": "/static/visualizations/..."},
+        "summary": str,
+        "recommendations": [...]
+    }
+    """
+    try:
+        print(f"🔮 === PREDICTION REQUEST ===")
+        print(f"   - Workspace ID: {workspace_id}")
+        print(f"   - Target Column: {target_column}")
+        print(f"   - Prediction Type: {prediction_type}")
+        print(f"   - Periods: {periods}")
+
+        # Get DataFrame
+        df = data_handler.get_df()
+        if df is None or df.empty:
+            raise HTTPException(status_code=404, detail="No data found in workspace. Please upload data first.")
+
+        # Validate target column
+        if target_column not in df.columns:
+            available = ', '.join(df.columns.tolist()[:10])
+            raise HTTPException(
+                status_code=400,
+                detail=f"Column '{target_column}' not found. Available: {available}..."
+            )
+
+        # Parse feature columns
+        features = None
+        if feature_columns:
+            features = [col.strip() for col in feature_columns.split(',')]
+            invalid = [col for col in features if col not in df.columns]
+            if invalid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid feature columns: {', '.join(invalid)}"
+                )
+
+        # Initialize PredictiveAnalyzer
+        predictor = PredictiveAnalyzer(df, settings.LLM)
+
+        # Execute prediction based on type
+        if prediction_type == 'auto':
+            result = predictor.auto_predict(
+                target_column=target_column,
+                periods=periods,
+                feature_cols=features
+            )
+        elif prediction_type == 'forecast':
+            # Need temporal column
+            if not predictor.temporal_cols:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No temporal column found for forecasting"
+                )
+            result = predictor.forecast_timeseries(
+                temporal_col=predictor.temporal_cols[0],
+                value_col=target_column,
+                periods=periods,
+                confidence_level=confidence_level
+            )
+        elif prediction_type == 'regression':
+            result = predictor.predict_regression(
+                target_col=target_column,
+                feature_cols=features
+            )
+        elif prediction_type == 'classification':
+            result = predictor.predict_classification(
+                target_col=target_column,
+                feature_cols=features
+            )
+        elif prediction_type == 'trend':
+            if not predictor.temporal_cols:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No temporal column found for trend analysis"
+                )
+            result = predictor.analyze_trend(
+                temporal_col=predictor.temporal_cols[0],
+                value_col=target_column,
+                extrapolate_periods=periods,
+                confidence_level=confidence_level
+            )
+
+        # Check for errors in result
+        if 'error' in result:
+            raise HTTPException(status_code=400, detail=result['error'])
+
+        # Generate visualization if visualization_data provided
+        visualization = None
+        if 'visualization_data' in result:
+            viz_path = _generate_prediction_visualization(
+                result['visualization_data'],
+                result.get('prediction_type', prediction_type),
+                target_column
+            )
+            visualization = {
+                "type": "matplotlib_figure",
+                "path": viz_path
+            }
+
+        # Generate summary using LLM if available
+        summary = _generate_prediction_summary(result, settings.LLM)
+
+        # Return response
+        response = {
+            "prediction_type": result.get('prediction_type', prediction_type),
+            "method": result.get('method', 'Unknown'),
+            "predictions": result.get('predictions', [])[:100],  # Limit size
+            "model_performance": result.get('model_performance', {}),
+            "visualization": visualization,
+            "summary": summary,
+            "recommendations": _generate_recommendations(result)
+        }
+
+        print("🎉 === PREDICTION COMPLETE ===")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Prediction failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+def _generate_prediction_visualization(viz_data: Dict, pred_type: str, target_col: str) -> str:
+    """Generate matplotlib visualization for predictions"""
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    if pred_type in ['forecast', 'trend']:
+        # Time series plot with confidence intervals
+        if 'historical_dates' in viz_data:
+            dates = pd.to_datetime(viz_data['historical_dates'])
+            ax.plot(dates, viz_data['historical_values'],
+                   label='Historical', marker='o', linewidth=2, markersize=4)
+
+        if 'forecast_dates' in viz_data:
+            forecast_dates = pd.to_datetime(viz_data['forecast_dates'])
+            ax.plot(forecast_dates, viz_data['forecast_values'],
+                   label='Forecast', marker='s', linewidth=2, linestyle='--', markersize=4)
+
+            # Confidence intervals
+            if 'lower_bound' in viz_data and 'upper_bound' in viz_data:
+                ax.fill_between(forecast_dates,
+                               viz_data['lower_bound'],
+                               viz_data['upper_bound'],
+                               alpha=0.3, label='95% Confidence Interval')
+
+        # Trend line if available
+        if 'trend_line' in viz_data and 'historical_dates' in viz_data:
+            ax.plot(dates, viz_data['trend_line'],
+                   label='Trend Line', linewidth=2, linestyle=':', alpha=0.7)
+
+        ax.set_xlabel('Date', fontsize=12)
+        ax.set_ylabel(target_col, fontsize=12)
+        ax.set_title(f'{pred_type.capitalize()}: {target_col}', fontsize=14, fontweight='bold')
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        plt.xticks(rotation=45)
+
+    elif pred_type == 'regression':
+        # Actual vs Predicted scatter
+        actual = np.array(viz_data['actual'])
+        predicted = np.array(viz_data['predicted'])
+
+        ax.scatter(actual, predicted, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+
+        # Perfect prediction line
+        min_val = min(actual.min(), predicted.min())
+        max_val = max(actual.max(), predicted.max())
+        ax.plot([min_val, max_val], [min_val, max_val],
+               'r--', label='Perfect Prediction', linewidth=2)
+
+        ax.set_xlabel('Actual', fontsize=12)
+        ax.set_ylabel('Predicted', fontsize=12)
+        ax.set_title(f'Regression: Actual vs Predicted ({target_col})', fontsize=14, fontweight='bold')
+
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3, linestyle='--')
+    plt.tight_layout()
+
+    # Save figure
+    filename = f"pred_{uuid.uuid4().hex[:8]}.png"
+    filepath = os.path.join(CHARTS_DIR, filename)
+    fig.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+
+    return f"/static/visualizations/{filename}"
+
+
+def _generate_prediction_summary(result: Dict, llm) -> str:
+    """Generate natural language summary of predictions"""
+    if llm:
+        try:
+            prompt = f"""
+            Summarize these prediction results in 2-3 sentences for a business user:
+
+            Prediction Type: {result.get('prediction_type')}
+            Method: {result.get('method')}
+            Performance: {result.get('model_performance', {}).get('metrics', {})}
+
+            Focus on accuracy, reliability, and actionable insights.
+            Be concise and avoid technical jargon.
+            """
+            summary = llm.generate_content(prompt).text
+            return summary.strip()
+        except:
+            pass
+
+    # Fallback summary
+    method = result.get('method', 'Unknown')
+    pred_type = result.get('prediction_type', 'prediction')
+    return f"{pred_type.capitalize()} completed using {method}. Review detailed results below."
+
+
+def _generate_recommendations(result: Dict) -> List[str]:
+    """Generate actionable recommendations based on prediction results"""
+    recommendations = []
+
+    performance = result.get('model_performance', {})
+    metrics = performance.get('metrics', {})
+
+    # Add recommendations based on performance
+    if 'r2' in metrics:
+        r2 = metrics['r2']
+        if r2 > 0.8:
+            recommendations.append("Model shows strong predictive power (R² > 0.8)")
+        elif r2 < 0.5:
+            recommendations.append("Low R² suggests limited predictive power - consider additional features")
+
+    if 'accuracy' in metrics:
+        acc = metrics['accuracy']
+        if acc > 0.85:
+            recommendations.append("High classification accuracy achieved")
+        elif acc < 0.7:
+            recommendations.append("Classification accuracy below 70% - review feature selection")
+
+    if 'mape' in metrics:
+        mape = metrics['mape']
+        if mape < 15:
+            recommendations.append(f"Model shows strong predictive power (MAPE: {mape:.1f}%)")
+        elif mape > 30:
+            recommendations.append(f"High forecast error (MAPE: {mape:.1f}%) - consider alternative models")
+
+    # Generic recommendations
+    recommendations.extend([
+        "Review confidence intervals for uncertainty assessment",
+        "Consider retraining model as new data becomes available",
+        "Validate predictions against domain knowledge"
+    ])
+
+    return recommendations
+
 @app.post("/api/workspace/{workspace_id}/smart-format")
 async def smart_format_workspace(
     workspace_id: str,
@@ -2257,6 +2539,701 @@ async def quick_data_entry(
             detail=f"Error processing data entry: {str(e)}"
         )
 
+# ============================================================================
+# KNOWLEDGE BASE ENDPOINTS
+# ============================================================================
+
+@app.post("/api/kb/create")
+async def create_knowledge_base(request: Dict[str, Any]):
+    """
+    Create a new knowledge base.
+
+    Body: {
+        "user_id": str,
+        "name": str,
+        "description": str (optional)
+    }
+    """
+    try:
+        from document_processor import get_supabase_client
+
+        # Use service key to bypass RLS for knowledge base creation
+        supabase = get_supabase_client(use_service_key=True)
+        user_id = request.get('user_id')
+        name = request.get('name')
+        description = request.get('description', '')
+
+        if not user_id or not name:
+            raise HTTPException(status_code=400, detail="user_id and name are required")
+
+        # Insert into knowledge_bases table
+        result = supabase.table('knowledge_bases').insert({
+            'user_id': user_id,
+            'name': name,
+            'description': description
+        }).execute()
+
+        if result.data and len(result.data) > 0:
+            kb_id = result.data[0]['id']
+            logger.info(f"✅ Created knowledge base: {kb_id} - {name}")
+            return {"success": True, "kb_id": kb_id, "kb": result.data[0]}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create knowledge base")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error creating knowledge base: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/kb/{kb_id}/upload")
+async def upload_to_kb(kb_id: str, file: UploadFile = File(...)):
+    """
+    Upload and process file to knowledge base.
+
+    Supports: PDF, DOCX, TXT, CSV, Excel
+
+    Flow:
+    1. Detect file type
+    2. Save temporarily
+    3. Process based on type:
+       - PDF/DOCX/TXT -> DocumentProcessor -> embeddings -> pgvector
+       - CSV/Excel -> DataHandler -> temp SQLite DB
+    4. Update database with metadata
+    5. Delete temp file
+    """
+    import os
+    import shutil
+    from document_processor import DocumentProcessor, TableExtractor, get_supabase_client
+    from data_handler import DataHandler
+
+    logger.info(f"📁 Uploading file to KB {kb_id}: {file.filename}")
+
+    try:
+        # Get file extension
+        file_ext = file.filename.split('.')[-1].lower() if '.' in file.filename else ''
+
+        # Save temporary file
+        temp_filename = f"temp_{kb_id}_{file.filename}"
+        temp_path = temp_filename  # We're already in the backend directory
+
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        file_size = os.path.getsize(temp_path)
+        logger.info(f"Saved temp file: {temp_path} ({file_size} bytes)")
+
+        # Use service key to bypass RLS for file upload operations
+        supabase = get_supabase_client(use_service_key=True)
+
+        # Route to appropriate processor
+        if file_ext == 'pdf':
+            await process_pdf_for_kb(kb_id, temp_path, file.filename, supabase)
+        elif file_ext == 'docx':
+            await process_docx_for_kb(kb_id, temp_path, file.filename, supabase)
+        elif file_ext == 'txt':
+            await process_txt_for_kb(kb_id, temp_path, file.filename, supabase)
+        elif file_ext in ['csv', 'xlsx']:
+            await process_structured_for_kb(kb_id, temp_path, file.filename, supabase)
+        else:
+            os.remove(temp_path)
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_ext}")
+
+        # Delete temp file
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            logger.info(f"Deleted temp file: {temp_path}")
+
+        return {
+            "success": True,
+            "message": f"File {file.filename} uploaded and processed successfully",
+            "file_type": file_ext
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error uploading file: {e}")
+        # Clean up temp file on error
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def process_pdf_for_kb(kb_id: str, file_path: str, filename: str, supabase):
+    """Process PDF: extract text, tables, generate embeddings."""
+    from document_processor import DocumentProcessor, TableExtractor
+
+    logger.info(f"📄 Processing PDF for KB: {filename}")
+
+    try:
+        # Create document record
+        doc_result = supabase.table('kb_documents').insert({
+            'kb_id': kb_id,
+            'filename': filename,
+            'file_type': 'pdf',
+            'file_size_bytes': os.path.getsize(file_path),
+            'processing_status': 'processing'
+        }).execute()
+
+        if not doc_result.data or len(doc_result.data) == 0:
+            raise Exception("Failed to create document record")
+
+        doc_id = doc_result.data[0]['id']
+        logger.info(f"Created document record: {doc_id}")
+
+        # Process PDF
+        processor = DocumentProcessor()
+        result = processor.process_pdf(file_path, kb_id, doc_id)
+
+        # Generate embeddings
+        if result['text_chunks']:
+            embeddings = processor.generate_embeddings(result['text_chunks'])
+
+            # Create metadata for chunks
+            metadata = [{'page': i // 10 + 1} for i in range(len(result['text_chunks']))]
+
+            # Save to vector database
+            processor.save_to_vector_db(kb_id, doc_id, result['text_chunks'],
+                                       embeddings, metadata, supabase)
+
+        # Process extracted tables
+        if result['tables']:
+            table_extractor = TableExtractor()
+
+            for table_data in result['tables']:
+                try:
+                    df = pd.DataFrame(table_data['data'])
+
+                    # Create temp SQLite DB for this table
+                    temp_db_path = table_extractor.create_temp_db_for_table(
+                        df, kb_id, f"{doc_id}_table_{table_data['table_index']}"
+                    )
+
+                    # Save to kb_extracted_tables
+                    supabase.table('kb_extracted_tables').insert({
+                        'document_id': doc_id,
+                        'kb_id': kb_id,
+                        'page_number': table_data['page'],
+                        'table_index': table_data['table_index'],
+                        'table_data': table_data['data'],
+                        'column_names': table_data['columns'],
+                        'row_count': table_data['row_count'],
+                        'temp_db_path': temp_db_path
+                    }).execute()
+
+                    logger.info(f"Saved table {table_data['table_index']} from page {table_data['page']}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to process table {table_data['table_index']}: {e}")
+
+        # Update document status to completed
+        supabase.table('kb_documents').update({
+            'processing_status': 'completed',
+            'page_count': result['page_count'],
+            'total_chunks': len(result['text_chunks']),
+            'has_tables': result['has_tables']
+        }).eq('id', doc_id).execute()
+
+        logger.info(f"✅ PDF processing complete: {filename}")
+
+    except Exception as e:
+        logger.error(f"❌ Error processing PDF: {e}")
+        # Mark as failed
+        try:
+            supabase.table('kb_documents').update({
+                'processing_status': 'failed',
+                'error_message': str(e)
+            }).eq('id', doc_id).execute()
+        except:
+            pass
+        raise
+
+
+async def process_docx_for_kb(kb_id: str, file_path: str, filename: str, supabase):
+    """Process DOCX: extract text, tables, generate embeddings."""
+    from document_processor import DocumentProcessor, TableExtractor
+
+    logger.info(f"📝 Processing DOCX for KB: {filename}")
+
+    try:
+        # Create document record
+        doc_result = supabase.table('kb_documents').insert({
+            'kb_id': kb_id,
+            'filename': filename,
+            'file_type': 'docx',
+            'file_size_bytes': os.path.getsize(file_path),
+            'processing_status': 'processing'
+        }).execute()
+
+        if not doc_result.data or len(doc_result.data) == 0:
+            raise Exception("Failed to create document record")
+
+        doc_id = doc_result.data[0]['id']
+        logger.info(f"Created document record: {doc_id}")
+
+        # Process DOCX
+        processor = DocumentProcessor()
+        result = processor.process_docx(file_path, kb_id, doc_id)
+
+        # Generate embeddings
+        if result['text_chunks']:
+            embeddings = processor.generate_embeddings(result['text_chunks'])
+
+            # Create metadata for chunks (DOCX doesn't have pages, use section/paragraph index)
+            metadata = [{'section': i // 10 + 1} for i in range(len(result['text_chunks']))]
+
+            # Save to vector database
+            processor.save_to_vector_db(kb_id, doc_id, result['text_chunks'],
+                                       embeddings, metadata, supabase)
+
+        # Process extracted tables if any
+        if result.get('tables'):
+            table_extractor = TableExtractor()
+
+            for table_data in result['tables']:
+                try:
+                    df = pd.DataFrame(table_data['data'])
+
+                    # Create temp SQLite DB for this table
+                    temp_db_path = table_extractor.create_temp_db_for_table(
+                        df, kb_id, f"{doc_id}_table_{table_data['table_index']}"
+                    )
+
+                    # Save to kb_extracted_tables
+                    supabase.table('kb_extracted_tables').insert({
+                        'document_id': doc_id,
+                        'kb_id': kb_id,
+                        'page_number': 1,  # DOCX doesn't have page numbers
+                        'table_index': table_data['table_index'],
+                        'table_data': table_data['data'],
+                        'column_names': table_data['columns'],
+                        'row_count': table_data['row_count'],
+                        'temp_db_path': temp_db_path
+                    }).execute()
+
+                    logger.info(f"Saved table {table_data['table_index']} from DOCX")
+
+                except Exception as e:
+                    logger.warning(f"Failed to process table {table_data['table_index']}: {e}")
+
+        # Update document status to completed
+        supabase.table('kb_documents').update({
+            'processing_status': 'completed',
+            'page_count': 1,  # DOCX doesn't have distinct pages
+            'total_chunks': len(result['text_chunks']),
+            'has_tables': result.get('has_tables', False)
+        }).eq('id', doc_id).execute()
+
+        logger.info(f"✅ DOCX processing complete: {filename}")
+
+    except Exception as e:
+        logger.error(f"❌ Error processing DOCX: {e}")
+        # Mark as failed
+        try:
+            supabase.table('kb_documents').update({
+                'processing_status': 'failed',
+                'error_message': str(e)
+            }).eq('id', doc_id).execute()
+        except:
+            pass
+        raise
+
+
+async def process_txt_for_kb(kb_id: str, file_path: str, filename: str, supabase):
+    """Process TXT: extract text, generate embeddings."""
+    from document_processor import DocumentProcessor
+
+    logger.info(f"📃 Processing TXT for KB: {filename}")
+
+    try:
+        # Create document record
+        doc_result = supabase.table('kb_documents').insert({
+            'kb_id': kb_id,
+            'filename': filename,
+            'file_type': 'txt',
+            'file_size_bytes': os.path.getsize(file_path),
+            'processing_status': 'processing'
+        }).execute()
+
+        if not doc_result.data or len(doc_result.data) == 0:
+            raise Exception("Failed to create document record")
+
+        doc_id = doc_result.data[0]['id']
+        logger.info(f"Created document record: {doc_id}")
+
+        # Process TXT
+        processor = DocumentProcessor()
+        result = processor.process_txt(file_path, kb_id, doc_id)
+
+        # Generate embeddings
+        if result['text_chunks']:
+            embeddings = processor.generate_embeddings(result['text_chunks'])
+
+            # Create metadata for chunks
+            metadata = [{'chunk_index': i} for i in range(len(result['text_chunks']))]
+
+            # Save to vector database
+            processor.save_to_vector_db(kb_id, doc_id, result['text_chunks'],
+                                       embeddings, metadata, supabase)
+
+        # Update document status to completed
+        supabase.table('kb_documents').update({
+            'processing_status': 'completed',
+            'page_count': 1,
+            'total_chunks': len(result['text_chunks']),
+            'has_tables': False
+        }).eq('id', doc_id).execute()
+
+        logger.info(f"✅ TXT processing complete: {filename}")
+
+    except Exception as e:
+        logger.error(f"❌ Error processing TXT: {e}")
+        # Mark as failed
+        try:
+            supabase.table('kb_documents').update({
+                'processing_status': 'failed',
+                'error_message': str(e)
+            }).eq('id', doc_id).execute()
+        except:
+            pass
+        raise
+
+
+async def process_structured_for_kb(kb_id: str, file_path: str, filename: str, supabase):
+    """Process CSV/Excel: load into temp SQLite DB."""
+    from data_handler import DataHandler
+
+    logger.info(f"📊 Processing structured data for KB: {filename}")
+
+    try:
+        doc_id = None
+        # Create document record so it appears in listings
+        doc_result = supabase.table('kb_documents').insert({
+            'kb_id': kb_id,
+            'filename': filename,
+            'file_type': filename.split('.')[-1].lower(),
+            'file_size_bytes': os.path.getsize(file_path),
+            'processing_status': 'processing'
+        }).execute()
+
+        if not doc_result.data or len(doc_result.data) == 0:
+            raise Exception("Failed to create document record for structured file")
+
+        doc_id = doc_result.data[0]['id']
+        logger.info(f"Created document record for structured file: {doc_id}")
+
+        # Define a simple progress callback for logging
+        def progress_callback(progress: float, message: str):
+            logger.debug(f"[{progress*100:.0f}%] {message}")
+
+        # Use existing DataHandler
+        handler = DataHandler()
+        response_msg, df = handler.load_data(file_path, progress_callback)
+
+        if df is None:
+            raise Exception(f"Failed to load file: {response_msg}")
+
+        # Create temp SQLite DB
+        db_name = f"temp_db_kb_{kb_id}_{filename.replace('.', '_')}.db"
+        temp_db_path = db_name  # We're already in the backend directory
+
+        from sqlalchemy import create_engine
+        engine = create_engine(f'sqlite:///{temp_db_path}')
+        df.to_sql('data_table', engine, if_exists='replace', index=False)
+
+        # Convert DataFrame preview to JSON-safe format
+        preview_df = df.head(5).copy()
+        # Use pandas to_json to handle datetimes and other types correctly
+        import json
+        data_preview = json.loads(preview_df.to_json(orient='records', date_format='iso'))
+
+        # Save metadata to kb_structured_data
+        supabase.table('kb_structured_data').insert({
+            'kb_id': kb_id,
+            'filename': filename,
+            'file_type': filename.split('.')[-1].lower(),
+            'row_count': len(df),
+            'column_count': len(df.columns),
+            'column_names': df.columns.tolist(),
+            'data_preview': data_preview,
+            'temp_db_path': temp_db_path
+        }).execute()
+
+        # Update document status to completed and include basic metadata
+        supabase.table('kb_documents').update({
+            'processing_status': 'completed',
+            'page_count': 1,
+            'total_chunks': len(df),
+            'has_tables': False
+        }).eq('id', doc_id).execute()
+
+        logger.info(f"✅ Structured data processing complete: {filename}")
+
+    except Exception as e:
+        logger.error(f"❌ Error processing structured data: {e}")
+        try:
+            if doc_id:
+                supabase.table('kb_documents').update({
+                    'processing_status': 'failed',
+                    'error_message': str(e)
+                }).eq('id', doc_id).execute()
+        except Exception:
+            pass
+        raise
+
+
+@app.post("/api/kb/{kb_id}/query")
+async def query_knowledge_base(kb_id: str, request: Dict[str, Any]):
+    """
+    Query knowledge base with RAG + SQL + Predictions.
+
+    Body: {
+        "question": str,
+        "chat_id": str
+    }
+    """
+    try:
+        from kb_rag_engine import get_kb_rag_engine
+        from document_processor import get_supabase_client
+        from kb_chart_helper import generate_chart_from_sql_results
+
+        question = request.get('question')
+        chat_id = request.get('chat_id')
+
+        if not question:
+            raise HTTPException(status_code=400, detail="question is required")
+
+        logger.info(f"🔍 KB Query - KB: {kb_id}, Chat: {chat_id}")
+        logger.info(f"Question: {question}")
+
+        # Initialize RAG engine
+        # For read operations, we can use default client which prefers service key
+        supabase = get_supabase_client()
+        rag_engine = get_kb_rag_engine(settings.LLM, supabase)
+
+        # Load conversation history from database
+        conversation_history = []
+        if chat_id:
+            try:
+                chat_result = supabase.table('chats').select('messages').eq('id', chat_id).single().execute()
+                if chat_result.data:
+                    # Get last 10 messages (5 exchanges)
+                    all_messages = chat_result.data.get('messages', [])
+                    conversation_history = all_messages[-10:] if len(all_messages) > 10 else all_messages
+                    logger.info(f"📜 Loaded {len(conversation_history)} messages from conversation history")
+            except Exception as e:
+                logger.warning(f"Failed to load conversation history: {e}")
+
+        # Query KB with conversation history
+        result = rag_engine.query_kb(kb_id, question, top_k=5, conversation_history=conversation_history)
+
+        # Generate visualization if needed
+        if result.get('visualization_needed', {}).get('should_visualize'):
+            viz_info = result['visualization_needed']
+            logger.info(f"📊 Generating visualization for KB query: {question}")
+            logger.info(f"   Type: {viz_info.get('visualization_type')}, Chart: {viz_info.get('suggested_chart')}")
+
+            try:
+                visualization = generate_chart_from_sql_results(
+                    query=viz_info['query'],
+                    sql_results=viz_info['sql_data'],
+                    kb_id=kb_id,
+                    llm=settings.LLM,
+                    suggested_chart=viz_info.get('suggested_chart', 'auto')
+                )
+
+                if visualization:
+                    logger.info(f"✅ Generated {visualization['type']}: {visualization['filename']}")
+                    # Add visualization to result with frontend-compatible path
+                    result['visualization'] = {
+                        "type": visualization["type"],
+                        "path": f"/static/visualizations/{visualization['filename']}"
+                    }
+                else:
+                    logger.warning("⚠️  Visualization generation returned None")
+
+            except Exception as viz_error:
+                logger.error(f"❌ Visualization generation failed: {viz_error}")
+                logger.exception("Full visualization error traceback:")
+                # Don't fail the whole request if visualization fails
+
+            # Remove visualization_needed from result (internal metadata)
+            result.pop('visualization_needed', None)
+
+        # Save to chat history if chat_id provided
+        if chat_id and 'response' in result:
+            try:
+                # Get current messages
+                chat_result = supabase.table('chats').select('messages').eq('id', chat_id).single().execute()
+                messages = chat_result.data.get('messages', []) if chat_result.data else []
+
+                # Add user message and AI response
+                messages.append({
+                    'role': 'user',
+                    'content': question,
+                    'timestamp': pd.Timestamp.now().isoformat()
+                })
+
+                assistant_message = {
+                    'role': 'assistant',
+                    'content': result['response'],
+                    'timestamp': pd.Timestamp.now().isoformat(),
+                    'sources': result.get('sources', [])
+                }
+
+                # Include visualization if generated
+                if 'visualization' in result:
+                    assistant_message['visualization'] = result['visualization']
+
+                messages.append(assistant_message)
+
+                # Update chat
+                supabase.table('chats').update({
+                    'messages': messages,
+                    'updated_at': pd.Timestamp.now().isoformat()
+                }).eq('id', chat_id).execute()
+
+            except Exception as e:
+                logger.warning(f"Failed to save to chat history: {e}")
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error querying KB: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/generate-title")
+async def generate_chat_title(request: Request):
+    """
+    Generate a concise, meaningful title (3-5 words) from user's first message.
+    """
+    try:
+        data = await request.json()
+        user_message = data.get('message', '')
+
+        if not user_message:
+            return JSONResponse({'title': 'New Chat'}, status_code=200)
+
+        # Use LLM to generate concise title
+        from settings import llm
+
+        prompt = f"""Generate a very concise, meaningful title (3-5 words maximum) for this chat conversation based on the user's first message.
+
+User's message: "{user_message}"
+
+Requirements:
+- 3-5 words only
+- Capitalize first letter of each word
+- Be descriptive and specific
+- No quotes or special formatting
+- Just return the title, nothing else
+
+Title:"""
+
+        response = llm.invoke(prompt)
+        title = response.content.strip()
+
+        # Ensure title is reasonable length
+        if len(title) > 60:
+            title = title[:57] + '...'
+
+        # Fallback if LLM fails
+        if not title or title.lower() == 'new chat':
+            title = user_message[:40].strip() + ('...' if len(user_message) > 40 else '')
+
+        logger.info(f"✅ Generated chat title: {title}")
+        return JSONResponse({'title': title}, status_code=200)
+
+    except Exception as e:
+        logger.error(f"❌ Error generating chat title: {str(e)}")
+        # Return fallback title on error
+        return JSONResponse({'title': 'New Chat'}, status_code=200)
+
+
+@app.post("/api/kb/{kb_id}/predict")
+async def predict_kb_data(kb_id: str, request: Dict[str, Any]):
+    """
+    Run predictive analytics on KB data (structured or extracted tables).
+
+    Body: {
+        "target_column": str,
+        "data_source_id": str,
+        "data_source_type": "structured" | "extracted_table",
+        "prediction_type": str (optional),
+        "periods": int (optional)
+    }
+    """
+    try:
+        from document_processor import get_supabase_client
+        from predictive_analysis import PredictiveAnalyzer
+        from sqlalchemy import create_engine
+
+        target_column = request.get('target_column')
+        data_source_id = request.get('data_source_id')
+        data_source_type = request.get('data_source_type')
+        prediction_type = request.get('prediction_type', 'auto')
+        periods = request.get('periods', 10)
+
+        if not all([target_column, data_source_id, data_source_type]):
+            raise HTTPException(status_code=400, detail="Missing required parameters")
+
+        logger.info(f"📈 KB Prediction - KB: {kb_id}, Source: {data_source_type}")
+
+        # For read operations, use default client which prefers service key
+        supabase = get_supabase_client()
+
+        # Load data based on source type
+        if data_source_type == 'structured':
+            result = supabase.table('kb_structured_data').select('id, temp_db_path').eq('id', data_source_id).single().execute()
+            if not result.data:
+                raise HTTPException(status_code=404, detail="Structured data not found")
+
+            temp_db_path = result.data['temp_db_path']
+
+        elif data_source_type == 'extracted_table':
+            result = supabase.table('kb_extracted_tables').select('id, temp_db_path').eq('id', data_source_id).single().execute()
+            if not result.data:
+                raise HTTPException(status_code=404, detail="Extracted table not found")
+
+            temp_db_path = result.data['temp_db_path']
+        else:
+            raise HTTPException(status_code=400, detail="Invalid data_source_type")
+
+        # Load data from SQLite
+        engine = create_engine(f'sqlite:///{temp_db_path}')
+        df = pd.read_sql_table('data_table', engine)
+
+        # Run prediction
+        analyzer = PredictiveAnalyzer(df, llm_client=settings.LLM)
+        prediction_result = analyzer.auto_predict(target_column, prediction_type, periods)
+
+        return prediction_result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in KB prediction: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# END KNOWLEDGE BASE ENDPOINTS
+# ============================================================================
+
 if __name__ == "__main__":
+    # Suppress watchfiles DEBUG logging to avoid console spam from log file changes
+    logging.getLogger("watchfiles").setLevel(logging.WARNING)
+
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True) 
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=True,
+        reload_excludes=["*.log"]
+    ) 

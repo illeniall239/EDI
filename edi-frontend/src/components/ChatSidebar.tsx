@@ -1,16 +1,17 @@
 'use client';
 
 import React from 'react';
-import { Plus, RefreshCw, Save, Check, Zap } from 'lucide-react';
+import { Plus, RefreshCw, Save, Check, Zap, Sparkles } from 'lucide-react';
 import { isUniverEnabled, toggleSpreadsheetEngine } from '@/config/spreadsheetConfig';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, sendLearnQuery, saveWorkspaceData, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace } from '@/utils/api';
+import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, sendLearnQuery, saveWorkspaceData, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, predictWorkspace } from '@/utils/api';
 import { commandService } from '@/services/commandService';
 import { llmCommandClassifier, CommandClassification } from '@/services/llmCommandClassifier';
 // NEW: Universal Query Router for intelligent routing
 import { universalQueryRouter, ProcessorType, UniversalQueryType } from '@/services/universalQueryRouter';
-import { ChatMessage, Chat, ClarificationResponse } from '@/types';
+import { ChatMessage, Chat, ClarificationResponse, PredictionConfig, PredictionResponse } from '@/types';
+import PredictDialog from '@/components/PredictDialog';
 import { TypeAnimation } from 'react-type-animation';
 import Image from 'next/image';
 import { API_BASE_URL } from '@/config';
@@ -75,6 +76,9 @@ export default function ChatSidebar({
     const [chats, setChats] = useState<Chat[]>([]);
     const [activeChat, setActiveChat] = useState<Chat | null>(null);
     const [isCreatingChat, setIsCreatingChat] = useState(false);
+
+    // Prediction dialog state
+    const [showPredictDialog, setShowPredictDialog] = useState(false);
 
     // Learning guidance state
     const [learningTips, setLearningTips] = useState<Array<{
@@ -280,6 +284,122 @@ export default function ChatSidebar({
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    // Handle prediction request
+    const handlePrediction = async (config: PredictionConfig) => {
+        try {
+            setIsProcessing(true);
+
+            const response: PredictionResponse = await predictWorkspace(
+                currentWorkspace?.id || 'default',
+                config.targetColumn,
+                config.predictionType,
+                config.periods,
+                config.featureColumns,
+                config.confidenceLevel
+            );
+
+            // Format response message
+            const predictionMessage: ChatMessage = {
+                id: Date.now().toString(),
+                type: 'assistant',
+                content: formatPredictionResponse(response),
+                visualization: response.visualization,
+                timestamp: new Date()
+            };
+
+            setMessages(prev => [...prev, predictionMessage]);
+
+            // Save to active chat if exists
+            if (activeChat) {
+                await saveChatMessages(activeChat.id, [...messages, predictionMessage]);
+            }
+
+        } catch (error) {
+            console.error('Prediction error:', error);
+            const errorMessage: ChatMessage = {
+                id: Date.now().toString(),
+                type: 'assistant',
+                content: `Prediction failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                timestamp: new Date()
+            };
+            setMessages(prev => [...prev, errorMessage]);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    // Format prediction response as markdown
+    const formatPredictionResponse = (response: PredictionResponse): string => {
+        let markdown = `## 🔮 Prediction Results\n\n`;
+        markdown += `**Method**: ${response.method} (${response.prediction_type})\n\n`;
+        markdown += `${response.summary}\n\n`;
+
+        // Model performance
+        if (response.model_performance?.metrics) {
+            markdown += `### 📊 Model Performance\n\n`;
+            Object.entries(response.model_performance.metrics).forEach(([key, value]) => {
+                if (value !== undefined) {
+                    const displayValue = key === 'mape' || key === 'accuracy'
+                        ? `${(value * 100).toFixed(2)}%`
+                        : value.toFixed(4);
+                    markdown += `- **${key.toUpperCase()}**: ${displayValue}\n`;
+                }
+            });
+            markdown += `\n`;
+        }
+
+        // Predictions preview (first 10)
+        if (response.predictions?.length > 0) {
+            markdown += `### 📈 Predictions (showing first 10)\n\n`;
+
+            if (response.prediction_type === 'forecast' || response.prediction_type === 'trend') {
+                markdown += `| Period | Timestamp | Predicted Value | Confidence Interval |\n`;
+                markdown += `|--------|-----------|-----------------|--------------------|\n`;
+                response.predictions.slice(0, 10).forEach((pred) => {
+                    const ci = pred.lower_bound !== undefined && pred.upper_bound !== undefined
+                        ? `[${pred.lower_bound.toFixed(2)}, ${pred.upper_bound.toFixed(2)}]`
+                        : 'N/A';
+                    markdown += `| ${pred.period} | ${pred.timestamp} | ${pred.predicted_value?.toFixed(2)} | ${ci} |\n`;
+                });
+            } else if (response.prediction_type === 'regression') {
+                markdown += `| Row | Actual | Predicted | Residual |\n`;
+                markdown += `|-----|--------|-----------|----------|\n`;
+                response.predictions.slice(0, 10).forEach((pred) => {
+                    markdown += `| ${pred.row_index} | ${pred.actual?.toFixed(2)} | ${pred.predicted?.toFixed(2)} | ${pred.residual?.toFixed(2)} |\n`;
+                });
+            } else if (response.prediction_type === 'classification') {
+                markdown += `| Row | Actual | Predicted |\n`;
+                markdown += `|-----|--------|----------|\n`;
+                response.predictions.slice(0, 10).forEach((pred) => {
+                    markdown += `| ${pred.row_index} | ${pred.actual} | ${pred.predicted} |\n`;
+                });
+            }
+            markdown += `\n`;
+        }
+
+        // Feature importance (if available)
+        if (response.feature_importance && Object.keys(response.feature_importance).length > 0) {
+            markdown += `### 🎯 Feature Importance\n\n`;
+            Object.entries(response.feature_importance)
+                .slice(0, 5)
+                .forEach(([feature, importance]) => {
+                    const percentage = (importance * 100).toFixed(1);
+                    markdown += `- **${feature}**: ${percentage}%\n`;
+                });
+            markdown += `\n`;
+        }
+
+        // Recommendations
+        if (response.recommendations?.length > 0) {
+            markdown += `### 💡 Recommendations\n\n`;
+            response.recommendations.forEach(rec => {
+                markdown += `- ${rec}\n`;
+            });
+        }
+
+        return markdown;
     };
 
     // Handle learning mode message sending
@@ -6570,6 +6690,19 @@ export default function ChatSidebar({
                                 <span className="text-sm">New Chat</span>
                             </button>
 
+                            {/* Predict Button (Work Mode Only) */}
+                            {mode === 'work' && isDataLoaded && (
+                                <button
+                                    onClick={() => setShowPredictDialog(true)}
+                                    disabled={isProcessing || !data || data.length === 0}
+                                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-md font-medium transition-all duration-200 border border-purple-500/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Generate Predictions"
+                                >
+                                    <Sparkles className="w-4 h-4" />
+                                    <span className="text-sm">Predict</span>
+                                </button>
+                            )}
+
                             {/* Save Button (Learn Mode Only) */}
                             {mode === 'learn' && (
                                 <button
@@ -6981,6 +7114,15 @@ export default function ChatSidebar({
             )}
 
             {/* Learning Tips Section moved above; removed bottom duplicate */}
+
+            {/* Prediction Dialog */}
+            <PredictDialog
+                isOpen={showPredictDialog}
+                onClose={() => setShowPredictDialog(false)}
+                onPredict={handlePrediction}
+                columns={data?.length > 0 ? Object.keys(data[0]) : []}
+                workspaceId={currentWorkspace?.id || 'default'}
+            />
 
             {/* Expanded Image Modal - Using React Portal */}
             {expandedImage && typeof document !== 'undefined' && createPortal(

@@ -128,3 +128,130 @@ export interface LearnQueryResponse extends QueryResponse {
 }
 
 // Note: TypeAnimation types are now handled by the package's own type definitions
+
+// Prediction-specific interfaces for Predictive Analytics
+export interface PredictionConfig {
+    targetColumn: string;
+    predictionType: 'auto' | 'forecast' | 'regression' | 'classification' | 'trend';
+    periods: number;
+    featureColumns?: string[];
+    confidenceLevel: number;
+}
+
+export interface PredictionResult {
+    timestamp?: string;
+    period?: number;
+    predicted_value?: number;
+    lower_bound?: number;
+    upper_bound?: number;
+    confidence?: number;
+    row_index?: number;
+    actual?: number;
+    predicted?: number;
+    residual?: number;
+    probabilities?: Record<string, number>;
+    [key: string]: any;
+}
+
+export interface ModelPerformance {
+    metrics: {
+        rmse?: number;
+        mae?: number;
+        r2?: number;
+        mape?: number;
+        accuracy?: number;
+        precision?: number;
+        recall?: number;
+        f1?: number;
+        [key: string]: number | undefined;
+    };
+    models_compared?: Array<{
+        name: string;
+        score: number;
+        metrics?: Record<string, number>;
+    }>;
+    selection_reason?: string;
+    trend_direction?: string;
+    trend_strength?: string;
+}
+
+export interface PredictionResponse {
+    prediction_type: string;
+    method: string;
+    predictions: PredictionResult[];
+    model_performance: ModelPerformance;
+    visualization?: {
+        type: 'matplotlib_figure' | 'plotly_html';
+        path: string;
+    };
+    summary: string;
+    recommendations: string[];
+    feature_importance?: Record<string, number>;
+    class_distribution?: Record<string, number>;
+    description?: string;
+}
+
+// Knowledge Base System interfaces
+export interface KnowledgeBase {
+    id: string;
+    user_id: string;
+    name: string;
+    description?: string;
+    created_at: string;
+    updated_at: string;
+    embedding_model?: string;
+    chunk_size?: number;
+    chunk_overlap?: number;
+}
+
+export interface KBDocument {
+    id: string;
+    kb_id: string;
+    filename: string;
+    file_type: 'pdf' | 'docx' | 'txt' | 'csv' | 'xlsx';
+    file_size_bytes?: number;
+    upload_date: string;
+    processing_status: 'pending' | 'processing' | 'completed' | 'failed';
+    error_message?: string;
+    page_count?: number;
+    total_chunks?: number;
+    has_tables?: boolean;
+    metadata?: Record<string, any>;
+}
+
+export interface KBChat {
+    id: string;
+    kb_id: string;
+    workspace_id?: never; // Ensure workspace_id is not set for KB chats
+    title: string;
+    messages: ChatMessage[];
+    created_at: string;
+    updated_at: string;
+}
+
+export interface KBSource {
+    number: number;
+    content: string;
+    similarity: number;
+    document_id: string;
+    metadata?: Record<string, any>;
+}
+
+export interface KBQueryResponse {
+    response: string;
+    sources?: KBSource[];
+    structured_data_used?: boolean;
+    visualization?: {
+        type: 'matplotlib_figure' | 'plotly_html';
+        path: string;
+    };
+    num_sources?: number;
+    error?: string;
+}
+
+export interface KBUploadProgress {
+    filename: string;
+    progress: number;
+    status: 'uploading' | 'processing' | 'completed' | 'failed';
+    error?: string;
+}

@@ -323,6 +323,241 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
                 self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, chat_memory=self.chat_history)
                 self.agent_executor.memory = self.memory
 
+    def switch_kb_context(self, kb_id: str, chat_id: str):
+        """
+        Switch to Knowledge Base context.
+
+        Similar to switch_chat_context but also initializes RAG engine
+        and loads KB-specific resources (structured data, extracted tables).
+
+        Args:
+            kb_id: Knowledge base ID
+            chat_id: Chat ID for conversation history
+        """
+        logger.info(f"🔄 Switching to KB context: {kb_id}")
+
+        # Initialize RAG engine for this KB if not already done
+        if not hasattr(self, 'kb_rag_engines'):
+            self.kb_rag_engines = {}
+
+        if kb_id not in self.kb_rag_engines:
+            logger.info(f"🆕 Initializing RAG engine for KB: {kb_id}")
+            try:
+                from kb_rag_engine import KnowledgeBaseRAG
+                self.kb_rag_engines[kb_id] = KnowledgeBaseRAG(
+                    llm=self.llm,
+                    embedding_model='sentence-transformers/all-MiniLM-L6-v2',
+                    supabase_client=self.supabase_client
+                )
+                logger.info(f"✅ RAG engine initialized for KB: {kb_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize RAG engine: {e}")
+                raise
+
+        # Load structured data context for this KB
+        self._load_kb_structured_data(kb_id)
+
+        # Switch to the chat context for conversation history
+        self.switch_chat_context(chat_id)
+
+        # Store current KB context
+        self.current_kb_id = kb_id
+        logger.info(f"✅ KB context switched successfully")
+
+    def _load_kb_structured_data(self, kb_id: str):
+        """
+        Load structured data and extracted tables for Knowledge Base.
+
+        Args:
+            kb_id: Knowledge base ID
+        """
+        logger.debug(f"📊 Loading structured data for KB: {kb_id}")
+
+        if not self.supabase_client:
+            logger.warning("⚠️ Supabase client not available")
+            return
+
+        try:
+            # Load structured data files (CSV, Excel)
+            struct_result = self.supabase_client.table('kb_structured_data') \
+                .select('*') \
+                .eq('kb_id', kb_id) \
+                .execute()
+
+            # Load extracted tables from documents
+            tables_result = self.supabase_client.table('kb_extracted_tables') \
+                .select('*') \
+                .eq('kb_id', kb_id) \
+                .execute()
+
+            structured_files = struct_result.data if struct_result.data else []
+            extracted_tables = tables_result.data if tables_result.data else []
+
+            # Store in instance for quick access
+            if not hasattr(self, 'kb_structured_data'):
+                self.kb_structured_data = {}
+
+            self.kb_structured_data[kb_id] = {
+                'structured_files': structured_files,
+                'extracted_tables': extracted_tables
+            }
+
+            logger.info(f"📊 Loaded {len(structured_files)} structured files, {len(extracted_tables)} extracted tables")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to load KB structured data: {e}")
+
+    def _dispatch_kb_query(self, kb_id: str, query: str, chat_id: str) -> Tuple[str, Optional[Dict]]:
+        """
+        Classify and route Knowledge Base queries.
+
+        Query types:
+        - 'rag': Pure document Q&A (vector similarity search)
+        - 'sql': Structured data queries
+        - 'prediction': Predictive analytics
+        - 'hybrid': Combination of RAG + SQL/Predictions
+
+        Args:
+            kb_id: Knowledge base ID
+            query: User's natural language query
+            chat_id: Chat ID for context
+
+        Returns:
+            Tuple of (response_text, visualization_dict)
+        """
+        logger.info(f"🔀 Dispatching KB query for KB: {kb_id}")
+        logger.debug(f"Query: {query}")
+
+        # Ensure KB context is loaded
+        if not hasattr(self, 'current_kb_id') or self.current_kb_id != kb_id:
+            self.switch_kb_context(kb_id, chat_id)
+
+        # Get RAG engine
+        rag_engine = self.kb_rag_engines.get(kb_id)
+        if not rag_engine:
+            return "Error: RAG engine not initialized for this knowledge base.", None
+
+        # Classify query type
+        query_type = rag_engine.classify_query_type(query)
+        logger.info(f"📋 Query classified as: {query_type}")
+
+        try:
+            # Route based on query type
+            if query_type == 'rag':
+                # Pure document Q&A
+                logger.info("📚 Executing RAG query...")
+                result = rag_engine.query_kb(kb_id, query, top_k=5)
+
+                # Format response with sources
+                response = result['response']
+                if result.get('sources'):
+                    response += "\n\n**Sources:**\n"
+                    for src in result['sources'][:3]:  # Show top 3 sources
+                        response += f"- [Source {src['number']}] {src['content'][:100]}...\n"
+
+                return response, None
+
+            elif query_type == 'sql':
+                # Structured data query
+                logger.info("🗄️ Executing SQL query on structured data...")
+
+                # Get structured data for this KB
+                kb_data = self.kb_structured_data.get(kb_id, {})
+                structured_files = kb_data.get('structured_files', [])
+
+                if not structured_files:
+                    # Fall back to RAG if no structured data
+                    logger.warning("⚠️ No structured data found, falling back to RAG")
+                    result = rag_engine.query_kb(kb_id, query, top_k=5)
+                    return result['response'], None
+
+                # Use first available structured dataset
+                dataset = structured_files[0]
+                temp_db_path = dataset.get('temp_db_path')
+
+                if temp_db_path and os.path.exists(temp_db_path):
+                    # Load data and use existing SQL agent logic
+                    from sqlalchemy import create_engine
+                    engine = create_engine(f'sqlite:///{temp_db_path}')
+                    df = pd.read_sql_table('data_table', engine)
+
+                    # Use existing dispatch logic (simplified for now)
+                    response = f"Found dataset: {dataset['filename']} with {dataset['row_count']} rows.\n\n"
+                    response += f"Query: {query}\n(SQL query execution would happen here)"
+                    return response, None
+                else:
+                    return "Error: Structured data file not found.", None
+
+            elif query_type == 'prediction':
+                # Predictive analytics query
+                logger.info("🔮 Executing predictive analytics query...")
+
+                # Get available datasets for prediction
+                kb_data = self.kb_structured_data.get(kb_id, {})
+                structured_files = kb_data.get('structured_files', [])
+                extracted_tables = kb_data.get('extracted_tables', [])
+
+                # Priority: extracted tables, then structured files
+                data_source = None
+                if extracted_tables:
+                    data_source = extracted_tables[0]
+                    source_type = 'extracted_table'
+                elif structured_files:
+                    data_source = structured_files[0]
+                    source_type = 'structured_file'
+
+                if not data_source:
+                    return "No data available for predictive analysis in this knowledge base.", None
+
+                # Load data from temp SQLite DB
+                temp_db_path = data_source.get('temp_db_path')
+                if not temp_db_path or not os.path.exists(temp_db_path):
+                    return "Error: Data file not found for predictive analysis.", None
+
+                from sqlalchemy import create_engine
+                engine = create_engine(f'sqlite:///{temp_db_path}')
+                df = pd.read_sql_table('data_table', engine)
+
+                # Use existing _dispatch_prediction_query method
+                # Parse prediction parameters from query (simplified)
+                params = {
+                    'target_column': None,  # Auto-detect in _dispatch_prediction_query
+                    'prediction_type': 'forecast',
+                    'periods': 12
+                }
+
+                return self._dispatch_prediction_query(params, df, query)
+
+            else:  # hybrid
+                # Combine RAG + SQL/Predictions
+                logger.info("🔀 Executing hybrid query...")
+
+                # Get document context from RAG
+                rag_result = rag_engine.query_kb(kb_id, query, top_k=3)
+
+                # Get structured data context
+                kb_data = self.kb_structured_data.get(kb_id, {})
+                structured_files = kb_data.get('structured_files', [])
+
+                # Combine contexts
+                response = rag_result['response']
+
+                if structured_files:
+                    response += f"\n\n**Available Datasets:**\n"
+                    for ds in structured_files:
+                        response += f"- {ds['filename']}: {ds['row_count']} rows\n"
+
+                if rag_result.get('sources'):
+                    response += "\n\n**Document Sources:**\n"
+                    for src in rag_result['sources'][:2]:
+                        response += f"- [Source {src['number']}] {src['content'][:100]}...\n"
+
+                return response, None
+
+        except Exception as e:
+            logger.error(f"❌ Error dispatching KB query: {e}")
+            return f"Error processing knowledge base query: {str(e)}", None
+
     def _get_conversation_context_string(self, max_messages: int = 6) -> str:
         """Get formatted conversation context for LLM prompts"""
         logger.debug(f"🔍 Getting conversation context...")
@@ -852,16 +1087,32 @@ except Exception as e:
             r'remove.*duplicate', r'delete.*duplicate', r'drop.*duplicate', r'eliminate.*duplicate'
         ]
         
-        if (any(keyword in question_lower for keyword in duplicate_keywords) or 
+        if (any(keyword in question_lower for keyword in duplicate_keywords) or
             any(re.search(pattern, question_lower) for pattern in duplicate_patterns)):
             logger.info(f"Pre-filtered as DUPLICATE_CHECK: {question}")
             return "DUPLICATE_CHECK"
 
+        # Force PREDICTION for prediction-related queries
+        prediction_keywords = ['predict', 'forecast', 'projection', 'future', 'will be', 'next year', 'next quarter', 'estimate']
+        prediction_patterns = [
+            r'predict.*\b(next|future|upcoming)\b',
+            r'forecast.*\b(sales|revenue|theme|popularity)\b',
+            r'what will.*\bbe\b.*\b(next|in \d+)\b',
+            r'estimate.*\bfuture\b',
+            r'\bwill\b.*\bbe\b.*\b(dominant|popular|highest)\b',
+            r'which.*will.*be.*\b(next|dominant|popular)\b'
+        ]
+
+        if (any(keyword in question_lower for keyword in prediction_keywords) or
+            any(re.search(pattern, question_lower) for pattern in prediction_patterns)):
+            logger.info(f"Pre-filtered as PREDICTION: {question}")
+            return "PREDICTION"
+
         # --- LLM-based categorization first ---
         logger.info(f"🤖 Running LLM-based categorization...")
         valid_categories = [
-            'SPECIFIC_DATA', 'GENERAL', 'VISUALIZATION', 
-            'TRANSLATION', 'ANALYSIS', 'MISSING_VALUES', 'DUPLICATE_CHECK', 'SPREADSHEET_COMMAND', 'JUNK_DETECTION'
+            'SPECIFIC_DATA', 'GENERAL', 'VISUALIZATION',
+            'TRANSLATION', 'ANALYSIS', 'MISSING_VALUES', 'DUPLICATE_CHECK', 'SPREADSHEET_COMMAND', 'JUNK_DETECTION', 'PREDICTION'
         ]
         
         try:
@@ -880,6 +1131,7 @@ Guidelines for categorization:
 - ANALYSIS: Requests for statistical analysis, correlations, patterns
 - MISSING_VALUES: Queries about null/empty values
 - JUNK_DETECTION: Requests to find, identify, flag, or clean junk/spam/meaningless responses in text columns (e.g., "find junk responses", "detect spam", "identify meaningless text", "flag gibberish", "clean bad responses", "add junk column")
+- PREDICTION: Requests to predict, forecast, or estimate future values or trends (e.g., "predict theme popularity for next year", "forecast sales", "what will be dominant in 2026", "which theme will be popular next quarter")
 
 IMPORTANT: Any query containing words like "duplicate", "duplicates", "deduplicate" should ALWAYS be categorized as DUPLICATE_CHECK, never SPREADSHEET_COMMAND.
 
@@ -1026,6 +1278,632 @@ Only output the category name, nothing else.
             
         # Default to general query
         return "GENERAL"
+
+    def _extract_prediction_parameters(self, question: str, df: pd.DataFrame) -> Dict:
+        """
+        Extract prediction parameters from natural language using LLM.
+
+        Returns: {
+            'target_column': str,
+            'prediction_type': 'auto' | 'forecast' | 'regression' | 'classification' | 'trend',
+            'periods': int,
+            'feature_columns': List[str] (optional)
+        }
+        """
+        logger.info(f"🧠 Extracting prediction parameters from: {question}")
+
+        # Get column context
+        columns = df.columns.tolist()
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        temporal_cols = [col for col in columns if pd.api.types.is_datetime64_any_dtype(df[col]) or
+                         any(word in col.lower() for word in ['date', 'time', 'year', 'month', 'quarter', 'day'])]
+
+        # LLM extraction prompt - Enhanced for 7 query types
+        extraction_prompt = f"""
+Extract prediction parameters from this query.
+
+Dataset columns: {', '.join(columns)}
+Numeric columns: {', '.join(numeric_cols)}
+Temporal columns: {', '.join(temporal_cols) if temporal_cols else 'None'}
+
+User query: "{question}"
+
+FIRST, identify the QUERY TYPE:
+1. "comparative_prediction" - Comparing entities (e.g., "compare Product A vs B")
+2. "whatif_scenario" - What-if analysis (e.g., "what if sales increase by 20%")
+3. "probability_query" - Probability questions (e.g., "how likely is X")
+4. "extremes_prediction" - Finding peaks/troughs (e.g., "when will sales peak")
+5. "multi_target_prediction" - Multiple targets (e.g., "predict sales and revenue")
+6. "conditional_prediction" - Filtered predictions (e.g., "predict if region = NA")
+7. "simple_prediction" - Standard single-target
+
+Return ONLY valid JSON matching the query type:
+
+## For comparative_prediction:
+{{"query_type": "comparative_prediction", "target_column": "column_name", "comparison_dimension": "column_to_split_by", "comparison_values": ["value1", "value2"], "prediction_type": "auto", "periods": 10}}
+
+## For whatif_scenario:
+{{"query_type": "whatif_scenario", "target_column": "column_name", "scenarios": [{{"name": "scenario_description", "modifications": [{{"column": "col", "operation": "multiply", "value": 1.2}}]}}], "prediction_type": "auto"}}
+
+## For probability_query:
+{{"query_type": "probability_query", "target_column": "column_name", "probability_type": "class_likelihood", "specific_class": "class_name", "periods": 10}}
+
+## For extremes_prediction:
+{{"query_type": "extremes_prediction", "target_column": "column_name", "extremes_type": "maximum", "periods": 12}}
+
+## For multi_target_prediction:
+{{"query_type": "multi_target_prediction", "target_columns": ["col1", "col2"], "prediction_type": "auto", "periods": 10, "analyze_relationships": true}}
+
+## For conditional_prediction:
+{{"query_type": "conditional_prediction", "target_column": "column_name", "conditions": [{{"column": "col", "operator": "equals", "value": "value"}}], "condition_logic": "AND", "prediction_type": "auto", "periods": 10}}
+
+## For simple_prediction:
+{{"query_type": "simple_prediction", "target_column": "column_name", "prediction_type": "auto", "periods": 10, "time_specification": {{"type": "relative", "value": "next year", "unit": "months"}}}}
+
+Time parsing:
+- "next week" = 7 periods (days)
+- "next month" = 1 period (months)
+- "next quarter" = 3 periods (months)
+- "next year" = 12 periods (months)
+- "July 2026" = specific_date with auto-calculated periods
+- "before holiday season" = event_based
+
+Return ONLY JSON, no other text.
+"""
+
+        try:
+            response = self.llm.invoke(extraction_prompt)
+            content = response.content.strip()
+
+            # Clean potential markdown formatting
+            if content.startswith('```'):
+                content = content.split('\n', 1)[1]
+                content = content.rsplit('```', 1)[0]
+
+            params = json.loads(content)
+
+            # Validate based on query type
+            query_type = params.get('query_type', 'simple_prediction')
+            from difflib import get_close_matches
+
+            # Handle multi-target predictions
+            if query_type == 'multi_target_prediction':
+                target_columns = params.get('target_columns', [])
+                validated_columns = []
+                for col in target_columns:
+                    if col not in columns:
+                        matches = get_close_matches(col, columns, n=1, cutoff=0.6)
+                        if matches:
+                            validated_columns.append(matches[0])
+                            logger.info(f"✅ Fuzzy matched column: {col} → {matches[0]}")
+                        else:
+                            return {'error': f"Could not find column '{col}'. Available: {', '.join(columns[:5])}"}
+                    else:
+                        validated_columns.append(col)
+                params['target_columns'] = validated_columns
+
+            # Handle single target column (all other query types)
+            elif params.get('target_column'):
+                if params['target_column'] not in columns:
+                    matches = get_close_matches(params.get('target_column', ''), columns, n=1, cutoff=0.6)
+                    if matches:
+                        params['target_column'] = matches[0]
+                        logger.info(f"✅ Fuzzy matched column: {matches[0]}")
+                    else:
+                        return {'error': f"Could not find column '{params.get('target_column')}'. Available columns: {', '.join(columns[:5])}{'...' if len(columns) > 5 else ''}"}
+
+            # Validate comparison dimension for comparative predictions
+            if query_type == 'comparative_prediction' and params.get('comparison_dimension'):
+                if params['comparison_dimension'] not in columns:
+                    matches = get_close_matches(params['comparison_dimension'], columns, n=1, cutoff=0.6)
+                    if matches:
+                        params['comparison_dimension'] = matches[0]
+                        logger.info(f"✅ Fuzzy matched comparison dimension: {matches[0]}")
+
+            logger.info(f"✅ Extracted parameters ({query_type}): {params}")
+            return params
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
+            return {'error': "I couldn't understand which column to predict. Could you be more specific about what you want to predict?"}
+        except Exception as e:
+            logger.error(f"Parameter extraction failed: {e}")
+            return {'error': f"I encountered an error extracting prediction parameters: {str(e)}"}
+
+    def _format_prediction_response(self, result: Dict, original_query: str) -> str:
+        """Format prediction results as markdown (mirrors ChatSidebar formatPredictionResponse)"""
+        markdown = f"## 🔮 Prediction Results\n\n"
+        markdown += f"**Query**: {original_query}\n\n"
+        markdown += f"**Method**: {result.get('method', 'Unknown')} ({result.get('prediction_type', 'auto')})\n\n"
+
+        if result.get('description'):
+            markdown += f"{result.get('description')}\n\n"
+
+        # Model performance metrics
+        if result.get('model_performance', {}).get('metrics'):
+            markdown += f"### 📊 Model Performance\n\n"
+            metrics = result['model_performance']['metrics']
+            for key, value in metrics.items():
+                if value is not None:
+                    # Format percentage metrics
+                    if key in ['mape', 'accuracy', 'precision', 'recall', 'f1']:
+                        display = f"{value * 100:.2f}%" if value <= 1 else f"{value:.2f}%"
+                    else:
+                        display = f"{value:.4f}"
+                    markdown += f"- **{key.upper()}**: {display}\n"
+            markdown += "\n"
+
+        # Top predictions (first 10)
+        predictions = result.get('predictions', [])
+        if predictions:
+            markdown += f"### 🎯 Predictions\n\n"
+
+            # Determine table format based on prediction type
+            pred_type = result.get('prediction_type', 'auto')
+
+            if pred_type in ['forecast', 'trend']:
+                # Time series predictions
+                markdown += "| Period | Predicted Value | Confidence Interval |\n"
+                markdown += "|--------|----------------|---------------------|\n"
+
+                for pred in predictions[:10]:
+                    period = pred.get('timestamp', pred.get('period', '?'))
+                    if isinstance(period, str) and 'T' in period:
+                        period = period.split('T')[0]
+                    value = pred.get('predicted_value', pred.get('trend_value', 0))
+                    lower = pred.get('lower_bound', value * 0.9)
+                    upper = pred.get('upper_bound', value * 1.1)
+                    markdown += f"| {period} | {value:.2f} | {lower:.2f} - {upper:.2f} |\n"
+
+            elif pred_type == 'classification':
+                # Classification predictions
+                markdown += "| Index | Predicted Class | Confidence |\n"
+                markdown += "|-------|----------------|------------|\n"
+
+                for pred in predictions[:10]:
+                    idx = pred.get('row_index', pred.get('period', '?'))
+                    predicted = pred.get('predicted', pred.get('predicted_value', 'Unknown'))
+                    confidence = pred.get('confidence', 0)
+                    markdown += f"| {idx} | {predicted} | {confidence * 100:.1f}% |\n"
+
+            else:
+                # Regression predictions
+                markdown += "| Index | Actual | Predicted | Residual |\n"
+                markdown += "|-------|--------|-----------|----------|\n"
+
+                for pred in predictions[:10]:
+                    idx = pred.get('row_index', pred.get('period', '?'))
+                    actual = pred.get('actual', 0)
+                    predicted = pred.get('predicted', pred.get('predicted_value', 0))
+                    residual = pred.get('residual', actual - predicted)
+                    markdown += f"| {idx} | {actual:.2f} | {predicted:.2f} | {residual:.2f} |\n"
+
+            markdown += "\n"
+
+        # Feature importance
+        if result.get('feature_importance'):
+            markdown += f"### 🎯 Feature Importance\n\n"
+            for feature, importance in sorted(result['feature_importance'].items(), key=lambda x: x[1], reverse=True)[:5]:
+                markdown += f"- **{feature}**: {importance:.4f}\n"
+            markdown += "\n"
+
+        # Model selection reason
+        if result.get('model_performance', {}).get('selection_reason'):
+            markdown += f"### 💡 Model Selection\n\n{result['model_performance']['selection_reason']}\n\n"
+
+        # Recommendations
+        if result.get('recommendations'):
+            markdown += f"### 📌 Recommendations\n\n"
+            for rec in result['recommendations']:
+                markdown += f"- {rec}\n"
+            markdown += "\n"
+
+        # Summary
+        if result.get('summary'):
+            markdown += f"### 📝 Summary\n\n{result['summary']}\n"
+
+        return markdown
+
+    def _format_prediction_response_enhanced(self, result: Dict, original_query: str, query_type: str) -> str:
+        """Enhanced dispatcher for formatting prediction responses based on query type."""
+
+        # Route to specialized formatters based on query type
+        if query_type == "comparative_prediction":
+            return self._format_comparative_response(result, original_query)
+        elif query_type == "whatif_scenario":
+            return self._format_whatif_response(result, original_query)
+        elif query_type == "probability_query":
+            return self._format_probability_response(result, original_query)
+        elif query_type == "extremes_prediction":
+            return self._format_extremes_response(result, original_query)
+        elif query_type == "multi_target_prediction":
+            return self._format_multitarget_response(result, original_query)
+        elif query_type == "conditional_prediction":
+            return self._format_conditional_response(result, original_query)
+        else:
+            # Fall back to original formatter for simple predictions
+            return self._format_prediction_response(result, original_query)
+
+    def _format_comparative_response(self, result: Dict, original_query: str) -> str:
+        """Format comparative prediction results."""
+        markdown = f"## 🔍 Comparative Prediction Analysis\n\n"
+        markdown += f"**Query**: {original_query}\n\n"
+
+        comparison_dimension = result.get('comparison_dimension', 'entities')
+        entities = result.get('entities', {})
+        comparison_metrics = result.get('comparison_metrics', {})
+        winner = result.get('winner', 'N/A')
+
+        markdown += f"### 📊 Comparison: {comparison_dimension}\n\n"
+        markdown += f"**Winner**: {winner} (highest average prediction)\n\n"
+
+        # Comparison table
+        markdown += "| Entity | Avg Prediction | Trend |\n"
+        markdown += "|--------|---------------|-------|\n"
+        for entity, metrics in comparison_metrics.items():
+            avg = metrics.get('avg_prediction', 0)
+            trend = metrics.get('trend', 'unknown')
+            emoji = "📈" if trend == "increasing" else "📉" if trend == "decreasing" else "➡️"
+            markdown += f"| {entity} | {avg:.2f} | {emoji} {trend} |\n"
+
+        markdown += "\n"
+        return markdown
+
+    def _format_whatif_response(self, result: Dict, original_query: str) -> str:
+        """Format what-if scenario analysis results."""
+        markdown = f"## 🔮 What-If Scenario Analysis\n\n"
+        markdown += f"**Query**: {original_query}\n\n"
+
+        target_column = result.get('target_column', 'target')
+        comparison_metrics = result.get('comparison_metrics', {})
+        insights = result.get('insights', '')
+
+        markdown += f"### 📊 Scenario Comparison for {target_column}\n\n"
+
+        if insights:
+            markdown += f"**Key Insight**: {insights}\n\n"
+
+        # Scenario comparison table
+        markdown += "| Scenario | Avg Prediction | Change from Baseline | Elasticity |\n"
+        markdown += "|----------|---------------|---------------------|------------|\n"
+        for scenario, metrics in comparison_metrics.items():
+            avg = metrics.get('scenario_avg', 0)
+            pct_change = metrics.get('percent_change', 0)
+            elasticity = metrics.get('elasticity', 0)
+            direction = metrics.get('direction', 'no change')
+            emoji = "🔺" if direction == "increase" else "🔻" if direction == "decrease" else "➡️"
+            markdown += f"| {scenario} | {avg:.2f} | {emoji} {pct_change:+.1f}% | {elasticity:.2f} |\n"
+
+        markdown += "\n"
+        return markdown
+
+    def _format_probability_response(self, result: Dict, original_query: str) -> str:
+        """Format probability analysis results."""
+        markdown = f"## 📊 Probability Analysis\n\n"
+        markdown += f"**Query**: {original_query}\n\n"
+
+        prob_type = result.get('type', 'unknown')
+        target_column = result.get('target_column', 'target')
+        confidence = result.get('confidence', 'unknown')
+
+        markdown += f"### 🎲 Probability Results for {target_column}\n\n"
+        markdown += f"**Confidence Level**: {confidence}\n\n"
+
+        if prob_type == "class_likelihood":
+            specific_class = result.get('specific_class')
+
+            if specific_class:
+                # Single class probability
+                probability = result.get('probability', 0)
+                markdown += f"**Probability of '{specific_class}'**: {probability * 100:.1f}%\n\n"
+
+                all_probs = result.get('all_probabilities', {})
+                if all_probs:
+                    markdown += "#### All Class Probabilities\n\n"
+                    markdown += "| Class | Probability |\n"
+                    markdown += "|-------|-------------|\n"
+                    for cls, prob in sorted(all_probs.items(), key=lambda x: x[1], reverse=True):
+                        marker = "✓" if cls == specific_class else ""
+                        markdown += f"| {cls} {marker} | {prob * 100:.1f}% |\n"
+            else:
+                # All class probabilities
+                probabilities = result.get('probabilities', {})
+                most_likely = result.get('most_likely_class', 'N/A')
+                confidence_val = result.get('confidence', 0)
+
+                markdown += f"**Most Likely Class**: {most_likely} ({confidence_val * 100:.1f}%)\n\n"
+                markdown += "| Class | Probability |\n"
+                markdown += "|-------|-------------|\n"
+                for cls, prob in probabilities.items():
+                    marker = "⭐" if cls == most_likely else ""
+                    markdown += f"| {cls} {marker} | {prob * 100:.1f}% |\n"
+
+        elif prob_type == "threshold_exceeding":
+            threshold = result.get('threshold', 0)
+            prob_exceeding = result.get('probability_exceeding_threshold', 0)
+            prob_below = result.get('probability_below_threshold', 0)
+            avg_prediction = result.get('avg_prediction', 0)
+
+            markdown += f"**Threshold**: {threshold:.2f}\n"
+            markdown += f"**Average Prediction**: {avg_prediction:.2f}\n\n"
+            markdown += f"- Probability **exceeding** threshold: {prob_exceeding * 100:.1f}%\n"
+            markdown += f"- Probability **below** threshold: {prob_below * 100:.1f}%\n\n"
+
+            sim_details = result.get('simulation_details', {})
+            if sim_details:
+                pred_range = sim_details.get('prediction_range', {})
+                markdown += f"#### Simulation Details ({sim_details.get('n_simulations', 0)} runs)\n\n"
+                markdown += f"- Range: {pred_range.get('min', 0):.2f} - {pred_range.get('max', 0):.2f}\n"
+                markdown += f"- Median: {pred_range.get('median', 0):.2f}\n"
+
+        markdown += "\n"
+        return markdown
+
+    def _format_extremes_response(self, result: Dict, original_query: str) -> str:
+        """Format extremes prediction results."""
+        markdown = f"## 📊 Prediction Extremes Analysis\n\n"
+        markdown += f"**Query**: {original_query}\n\n"
+
+        target_column = result.get('target_column', 'target')
+        extremes_type = result.get('extremes_type', 'both')
+        periods_analyzed = result.get('periods_analyzed', 0)
+
+        markdown += f"### 🎯 Extremes for {target_column}\n\n"
+        markdown += f"**Analyzed Periods**: {periods_analyzed}\n\n"
+
+        # Peak information
+        if 'peak' in result:
+            peak = result['peak']
+            markdown += f"#### 📈 Peak (Maximum)\n\n"
+            markdown += f"- **Value**: {peak.get('value', 0):.2f}\n"
+            markdown += f"- **Period**: {peak.get('period', 'N/A')}\n"
+            markdown += f"- **Timing**: {peak.get('timing_description', 'unknown')}\n"
+
+            ci = peak.get('confidence_interval', {})
+            if ci:
+                markdown += f"- **Confidence Interval**: {ci.get('lower', 0):.2f} - {ci.get('upper', 0):.2f}\n"
+            markdown += "\n"
+
+        # Trough information
+        if 'trough' in result:
+            trough = result['trough']
+            markdown += f"#### 📉 Trough (Minimum)\n\n"
+            markdown += f"- **Value**: {trough.get('value', 0):.2f}\n"
+            markdown += f"- **Period**: {trough.get('period', 'N/A')}\n"
+            markdown += f"- **Timing**: {trough.get('timing_description', 'unknown')}\n"
+
+            ci = trough.get('confidence_interval', {})
+            if ci:
+                markdown += f"- **Confidence Interval**: {ci.get('lower', 0):.2f} - {ci.get('upper', 0):.2f}\n"
+            markdown += "\n"
+
+        # Trend analysis
+        if 'trend_analysis' in result:
+            trend = result['trend_analysis']
+            markdown += f"#### 📊 Overall Trend Analysis\n\n"
+            markdown += f"- **Direction**: {trend.get('overall_direction', 'unknown')}\n"
+            markdown += f"- **Volatility**: {trend.get('volatility', 0):.2f}\n"
+
+            value_range = trend.get('value_range', {})
+            markdown += f"- **Range**: {value_range.get('min', 0):.2f} - {value_range.get('max', 0):.2f} (Δ {value_range.get('range', 0):.2f})\n"
+
+        markdown += "\n"
+        return markdown
+
+    def _format_multitarget_response(self, result: Dict, original_query: str) -> str:
+        """Format multi-target prediction results."""
+        markdown = f"## 🎯 Multi-Target Prediction Analysis\n\n"
+        markdown += f"**Query**: {original_query}\n\n"
+
+        targets = result.get('targets', {})
+        correlations = result.get('correlations', {})
+        combined_insights = result.get('combined_insights', '')
+
+        markdown += f"### 📊 Predictions for {len(targets)} Targets\n\n"
+
+        # Target summaries
+        for target, target_result in targets.items():
+            if 'error' in target_result:
+                markdown += f"#### ❌ {target}\n\n{target_result['error']}\n\n"
+            else:
+                predictions = target_result.get('predictions', [])
+                if predictions:
+                    avg_pred = sum(p.get('predicted_value', 0) for p in predictions) / len(predictions)
+                    markdown += f"#### ✓ {target}\n\n"
+                    markdown += f"- **Average Prediction**: {avg_pred:.2f}\n"
+                    markdown += f"- **Method**: {target_result.get('method', 'unknown')}\n\n"
+
+        # Correlations
+        if correlations:
+            markdown += f"### 🔗 Target Correlations\n\n"
+            markdown += "| Target Pair | Correlation |\n"
+            markdown += "|-------------|-------------|\n"
+            for (col1, col2), corr in sorted(correlations.items(), key=lambda x: abs(x[1]), reverse=True):
+                strength = "Strong" if abs(corr) > 0.7 else "Moderate" if abs(corr) > 0.4 else "Weak"
+                emoji = "🔴" if abs(corr) > 0.7 else "🟡" if abs(corr) > 0.4 else "⚪"
+                markdown += f"| {col1} ↔ {col2} | {emoji} {corr:.2f} ({strength}) |\n"
+            markdown += "\n"
+
+        if combined_insights:
+            markdown += f"### 💡 Combined Insights\n\n{combined_insights}\n\n"
+
+        return markdown
+
+    def _format_conditional_response(self, result: Dict, original_query: str) -> str:
+        """Format conditional prediction results."""
+        markdown = f"## 🔍 Conditional Prediction Analysis\n\n"
+        markdown += f"**Query**: {original_query}\n\n"
+
+        filter_desc = result.get('filter_description', 'unknown')
+        filtered_rows = result.get('filtered_rows', 0)
+        total_rows = result.get('total_rows', 0)
+        filter_pct = result.get('filter_percentage', 0)
+
+        markdown += f"### 📊 Filter Applied\n\n"
+        markdown += f"**Condition**: `{filter_desc}`\n\n"
+        markdown += f"**Filtered Data**: {filtered_rows:,} rows ({filter_pct:.1f}% of {total_rows:,} total)\n\n"
+
+        # Comparison to full dataset
+        comparison = result.get('comparison_to_full_dataset', {})
+        if comparison:
+            filtered_avg = comparison.get('filtered_avg', 0)
+            full_avg = comparison.get('full_dataset_avg', 0)
+            difference = comparison.get('difference', '0%')
+
+            markdown += f"### 📈 Comparison to Full Dataset\n\n"
+            markdown += f"- **Filtered Average**: {filtered_avg:.2f}\n"
+            markdown += f"- **Full Dataset Average**: {full_avg:.2f}\n"
+            markdown += f"- **Difference**: {difference}\n\n"
+
+        # Prediction details
+        prediction_result = result.get('prediction_result', {})
+        if prediction_result and 'predictions' in prediction_result:
+            predictions = prediction_result['predictions']
+            markdown += f"### 🎯 Predictions ({len(predictions)} periods)\n\n"
+            markdown += f"**Method**: {prediction_result.get('method', 'unknown')}\n\n"
+
+            # Show first 5 predictions
+            if predictions:
+                markdown += "| Period | Predicted Value |\n"
+                markdown += "|--------|----------------|\n"
+                for pred in predictions[:5]:
+                    period = pred.get('period', pred.get('timestamp', '?'))
+                    value = pred.get('predicted_value', 0)
+                    markdown += f"| {period} | {value:.2f} |\n"
+
+                if len(predictions) > 5:
+                    markdown += f"\n*...and {len(predictions) - 5} more periods*\n"
+
+        markdown += "\n"
+        return markdown
+
+    def _generate_prediction_visualization(self, result: Dict) -> Optional[Dict[str, str]]:
+        """Return visualization from prediction results (PredictiveAnalyzer already generates them)"""
+        try:
+            # Check if visualization already exists in result
+            if result.get('visualization'):
+                logger.info(f"✅ Using existing visualization from PredictiveAnalyzer")
+                return result['visualization']
+
+            # If no visualization exists, return None
+            # The PredictiveAnalyzer should always generate visualizations, so this shouldn't happen
+            logger.info("No visualization found in prediction results")
+            return None
+
+        except Exception as e:
+            logger.error(f"Visualization extraction failed: {e}")
+            return None
+
+    def _dispatch_prediction_query(self, params: Dict, df: pd.DataFrame, question: str) -> Tuple[str, Optional[Dict]]:
+        """
+        Route prediction queries to appropriate handlers based on query_type.
+
+        Returns: (markdown_response, visualization_dict)
+        """
+        from predictive_analysis import PredictiveAnalyzer
+
+        analyzer = PredictiveAnalyzer(df, llm_client=self.llm)
+        query_type = params.get('query_type', 'simple_prediction')
+
+        logger.info(f"🎯 Dispatching {query_type} prediction query")
+
+        try:
+            # Route to appropriate method based on query type
+            if query_type == 'comparative_prediction':
+                result = analyzer.compare_predictions(
+                    target_column=params['target_column'],
+                    comparison_dimension=params['comparison_dimension'],
+                    comparison_values=params['comparison_values'],
+                    prediction_type=params.get('prediction_type', 'auto'),
+                    periods=params.get('periods', 10)
+                )
+
+            elif query_type == 'whatif_scenario':
+                result = analyzer.whatif_analysis(
+                    target_column=params['target_column'],
+                    scenarios=params['scenarios'],
+                    prediction_type=params.get('prediction_type', 'auto')
+                )
+
+            elif query_type == 'probability_query':
+                result = analyzer.calculate_probability(
+                    target_column=params['target_column'],
+                    probability_type=params['probability_type'],
+                    specific_class=params.get('specific_class'),
+                    threshold=params.get('threshold'),
+                    operator=params.get('operator', 'exceeds'),
+                    periods=params.get('periods', 10)
+                )
+
+            elif query_type == 'extremes_prediction':
+                result = analyzer.find_prediction_extremes(
+                    target_column=params['target_column'],
+                    extremes_type=params.get('extremes_type', 'both'),
+                    periods=params.get('periods', 12),
+                    temporal_col=params.get('temporal_col')
+                )
+
+            elif query_type == 'multi_target_prediction':
+                result = analyzer.predict_multiple_targets(
+                    target_columns=params['target_columns'],
+                    prediction_type=params.get('prediction_type', 'auto'),
+                    periods=params.get('periods', 10),
+                    analyze_relationships=params.get('analyze_relationships', True)
+                )
+
+            elif query_type == 'conditional_prediction':
+                result = analyzer.conditional_predict(
+                    target_column=params['target_column'],
+                    conditions=params['conditions'],
+                    condition_logic=params.get('condition_logic', 'AND'),
+                    prediction_type=params.get('prediction_type', 'auto'),
+                    periods=params.get('periods', 10)
+                )
+
+            else:  # simple_prediction
+                # Handle advanced time horizons for simple predictions
+                time_spec = params.get('time_specification')
+                if time_spec and time_spec.get('type') != 'relative':
+                    # Parse time specification and adjust periods
+                    parsed_time = analyzer._parse_time_horizon(
+                        time_spec.get('value', ''),
+                        reference_date=pd.Timestamp.now()
+                    )
+                    params['periods'] = parsed_time.get('periods', params.get('periods', 10))
+
+                result = analyzer.auto_predict(
+                    target_column=params['target_column'],
+                    prediction_type=params.get('prediction_type', 'auto'),
+                    periods=params.get('periods', 10),
+                    feature_cols=params.get('feature_columns')
+                )
+
+            # Check for errors in result
+            if 'error' in result:
+                error_response = f"I couldn't complete the prediction: {result['error']}"
+                # Add error to memory
+                if hasattr(self, 'chat_history') and self.chat_history:
+                    self.chat_history.add_ai_message(error_response)
+                return error_response, None
+
+            # Format response based on query type
+            response = self._format_prediction_response_enhanced(result, question, query_type)
+            visualization = self._generate_prediction_visualization(result)
+
+            # Add response to memory
+            if hasattr(self, 'chat_history') and self.chat_history:
+                self.chat_history.add_ai_message(response)
+            logger.debug(f"💾 Added {query_type} prediction response to conversation memory")
+
+            return response, visualization
+
+        except Exception as e:
+            logger.error(f"Prediction dispatch error for {query_type}: {e}")
+            error_response = f"I encountered an error while processing your prediction query: {str(e)}"
+            # Add error to memory
+            if hasattr(self, 'chat_history') and self.chat_history:
+                self.chat_history.add_ai_message(error_response)
+            return error_response, None
 
     def process_spreadsheet_command(self, question: str) -> str:
         """DEPRECATED: Spreadsheet operations now handled by Univer frontend.
@@ -1387,7 +2265,29 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
                     no_data_response = "I need some data to analyze first. Please upload a dataset and I can help identify and handle missing values."
                     # Don't add "no data" responses to memory
                     return no_data_response, None
-            
+
+            # Handle prediction queries
+            if query_category == "PREDICTION":
+                logger.info("🔮 Processing as PREDICTION request")
+                df = self.data_handler.get_df()
+                if df is not None:
+                    # Extract prediction parameters using LLM
+                    prediction_params = self._extract_prediction_parameters(question, df)
+
+                    if 'error' in prediction_params:
+                        error_response = prediction_params['error']
+                        # Add error to memory
+                        if hasattr(self, 'chat_history') and self.chat_history:
+                            self.chat_history.add_ai_message(error_response)
+                        return error_response, None
+
+                    # Dispatch to appropriate prediction handler based on query type
+                    return self._dispatch_prediction_query(prediction_params, df, question)
+                else:
+                    no_data_response = "I need data to generate predictions. Please upload a dataset first."
+                    # Don't add "no data" responses to memory
+                    return no_data_response, None
+
             # Rest of the existing code for handling other categories
             question_lower = question.lower()
             
@@ -2690,7 +3590,11 @@ Keep the analysis concise but thorough, focusing on business value and practical
                     if val is None:
                         formatted_values.append("NULL")
                     elif isinstance(val, (int, float)):
-                        formatted_values.append(str(val))
+                        # Round float values to whole numbers
+                        if isinstance(val, float):
+                            formatted_values.append(str(round(val)))
+                        else:
+                            formatted_values.append(str(val))
                     else:
                         # Escape any pipe characters in strings
                         formatted_values.append(str(val).replace("|", "\\|"))
@@ -2717,6 +3621,7 @@ Keep the analysis concise but thorough, focusing on business value and practical
             Please provide a concise summary of these results in natural language that directly answers the user's question.
             - Start with a direct answer to the question
             - Include specific numbers and data points from the results
+            - Round all numbers to whole numbers (no decimals)
             - Limit to 3-4 sentences maximum
             - Do not say "Based on the query results" or similar phrases
             - Do not mention that you ran SQL or queried a database
@@ -2812,17 +3717,18 @@ Keep the analysis concise but thorough, focusing on business value and practical
             IMPORTANT GUIDELINES:
             - Interpret SQL results correctly (e.g., COUNT(*) = total records, AVG(User_Score) = average rating)
             - Use business-friendly language (not "first value is 100" but "100 total records")
+            - Round all numbers to whole numbers (no decimals)
             - Provide context about what the numbers mean for their business
             - Include actionable insights users can act on
             - Be comprehensive but not overwhelming
             - NO template text like "RESPONSE FORMAT:" should appear in the final response
             
             EXAMPLE for summary statistics (100 records, 7.93 avg, 5 min, 10 max):
-            "You have 100 product reviews in your dataset with an average user rating of 7.93 out of 10. This indicates generally positive customer feedback across your product lineup, with ratings spanning the full range from 5 to 10.
-            
+            "You have 100 product reviews in your dataset with an average user rating of 8 out of 10. This indicates generally positive customer feedback across your product lineup, with ratings spanning the full range from 5 to 10.
+
             Key highlights:
             • 100 total product reviews analyzed across all items
-            • Strong average rating of 7.93/10 shows good customer satisfaction
+            • Strong average rating of 8/10 shows good customer satisfaction
             • Rating distribution spans 5-10, indicating varied but generally positive feedback
             • Data covers products like Coffee Maker, Gaming Mouse, 4K Monitor, and others
             
@@ -2882,6 +3788,7 @@ Keep the analysis concise but thorough, focusing on business value and practical
         - Use markdown bullet points (-) for all structured information
         - Keep the brief answer to 1-2 sentences maximum
         - Each bullet point should be concise and focused
+        - Round all numbers to whole numbers (no decimals)
         - Always use the exact section headers: "Key Details:", "Why This Matters:", "Explore Further:"
         - Leave blank lines between sections
         

@@ -1,4 +1,10 @@
-import azure.cognitiveservices.speech as speechsdk
+try:
+    import azure.cognitiveservices.speech as speechsdk
+    SPEECH_SDK_AVAILABLE = True
+except ImportError:
+    speechsdk = None
+    SPEECH_SDK_AVAILABLE = False
+    print("[WARN] Azure Speech SDK not available. Speech features disabled.")
 
 class SpeechUtil:
     def __init__(self, api_key, region):
@@ -8,6 +14,8 @@ class SpeechUtil:
             print("Warning: Azure Speech API key or region not configured. Speech functionalities will not work.")
 
     def speech_to_text(self):
+        if not SPEECH_SDK_AVAILABLE:
+            return "Speech SDK not installed."
         if not self.api_key or not self.region:
             return "Speech services not configured."
 
@@ -31,6 +39,9 @@ class SpeechUtil:
         return "Speech recognition failed for an unknown reason."
 
     def text_to_speech(self, text):
+        if not SPEECH_SDK_AVAILABLE:
+            print("Speech SDK not installed. Cannot synthesize text.")
+            return False
         if not self.api_key or not self.region:
             print("Speech services not configured. Cannot synthesize text.")
             return False

@@ -41,7 +41,7 @@ export async function uploadFile(file: File, workspaceId: string = 'default'): P
 
 export async function sendClarificationChoice(choiceId: string, originalQuery: string, category: string): Promise<QueryResponse> {
     console.log('🎯 Sending clarification choice:', { choiceId, originalQuery, category });
-    
+
     const response = await fetch(`${API_BASE_URL}/api/clarification-choice`, {
         method: 'POST',
         headers: {
@@ -67,21 +67,21 @@ export async function sendClarificationChoice(choiceId: string, originalQuery: s
 
 export async function sendQuery(query: string, chatId: string, options?: { isVoice?: boolean, mode?: string }): Promise<QueryResponse> {
     console.log('Sending query:', { query, options });
-    
+
     // Check for duplicate removal keywords for debugging
     const duplicatePatterns = [
         'remove duplicate', 'drop duplicate', 'deduplicate', 'deduplication',
-        'delete duplicate', 'get rid of duplicate', 'eliminate duplicate', 
+        'delete duplicate', 'get rid of duplicate', 'eliminate duplicate',
         'unique rows', 'remove duplicates', 'drop duplicates'
     ];
-    
+
     const isDuplicateRemoval = duplicatePatterns.some(pattern => query.toLowerCase().includes(pattern));
     if (isDuplicateRemoval) {
         console.log('🧹 Duplicate removal detected in query:', query);
         console.log('🔍 Matched patterns:', duplicatePatterns.filter(p => query.toLowerCase().includes(p)));
         console.log('📤 Sending duplicate removal request to backend...');
     }
-    
+
     const response = await fetch(API_ENDPOINTS.query, {
         method: 'POST',
         headers: {
@@ -103,13 +103,13 @@ export async function sendQuery(query: string, chatId: string, options?: { isVoi
 
     const data = await response.json();
     console.log('Query response:', data);
-    
+
     if (isDuplicateRemoval) {
         console.log('🧹 === DUPLICATE REMOVAL RESPONSE ANALYSIS ===');
         console.log('🧹 Response object keys:', Object.keys(data));
         console.log('🔄 Data updated flag:', data.data_updated);
         console.log('📊 Updated data included:', !!data.updated_data);
-        
+
         if (data.updated_data) {
             console.log('📈 Updated data rows:', data.updated_data.rows);
             console.log('📈 Updated data columns:', data.updated_data.columns?.length);
@@ -117,18 +117,18 @@ export async function sendQuery(query: string, chatId: string, options?: { isVoi
         } else {
             console.warn('⚠️ No updated_data object in response for duplicate removal request');
         }
-        
+
         if (data.response) {
             console.log('💬 Response message:', data.response);
             // Check if response contains success indicators
             const successIndicators = ['success', 'removed', 'duplicate'];
-            const isSuccessMessage = successIndicators.some(indicator => 
+            const isSuccessMessage = successIndicators.some(indicator =>
                 data.response.toLowerCase().includes(indicator)
             );
             console.log('✅ Response appears to indicate success:', isSuccessMessage);
         }
     }
-    
+
     return data;
 }
 
@@ -192,7 +192,7 @@ export async function resetState(workspaceId?: string): Promise<void> {
 export async function saveWorkspaceData(workspaceId: string, data: unknown[], filename?: string, sheetState?: unknown): Promise<void> {
     try {
         const { supabase } = await import('@/utils/supabase');
-        
+
         // Extract a robust column order from data: union of keys across all rows,
         // preserving the order of first appearance
         const columnOrder: string[] = [];
@@ -207,15 +207,15 @@ export async function saveWorkspaceData(workspaceId: string, data: unknown[], fi
                 }
             }
         }
-        
+
         console.log('💾 Saving workspace data with column order:', columnOrder);
-        
+
         // Try to save with optional sheet_state first (if the column exists)
         let error: unknown = null;
         try {
             const result = await supabase
                 .from('workspaces')
-                .update({ 
+                .update({
                     data: data,
                     filename: filename || null,
                     column_order: columnOrder,
@@ -233,7 +233,7 @@ export async function saveWorkspaceData(workspaceId: string, data: unknown[], fi
             console.warn('⚠️ saveWorkspaceData: Saving with sheet_state failed, retrying without it...', (error as any)?.message || error);
             const retry1 = await supabase
                 .from('workspaces')
-                .update({ 
+                .update({
                     data: data,
                     filename: filename || null,
                     column_order: columnOrder,
@@ -246,7 +246,7 @@ export async function saveWorkspaceData(workspaceId: string, data: unknown[], fi
                 // Fallback #2: minimal payload (data + last_modified only)
                 const retry2 = await supabase
                     .from('workspaces')
-                    .update({ 
+                    .update({
                         data: data,
                         last_modified: new Date().toISOString()
                     })
@@ -318,12 +318,12 @@ export async function loadWorkspaceData(workspaceId: string): Promise<{ data: un
         }
 
         let loadedData = workspace.data;
-        
+
         // Restore column order if available
         if (workspace.column_order && workspace.column_order.length > 0 && loadedData.length > 0) {
             const columnOrder = workspace.column_order ?? [];
             console.log('🔄 Restoring column order:', columnOrder);
-            
+
             loadedData = loadedData.map((row: Record<string, unknown>) => {
                 const orderedRow: Record<string, unknown> = {};
                 // Place known columns in their saved order
@@ -340,7 +340,7 @@ export async function loadWorkspaceData(workspaceId: string): Promise<{ data: un
                 }
                 return orderedRow;
             });
-            
+
             console.log('✅ Column order restored successfully');
         } else {
             console.log('⚠️ No column order saved, using data as-is');
@@ -403,13 +403,13 @@ export async function checkReportStatus(reportId: string): Promise<{ status: 'ge
         // Use a regular GET request with a special query parameter to check if the file exists
         // without actually downloading the full file
         const downloadUrl = `${API_ENDPOINTS.generateReport.split('/api/')[0]}/api/download-report/${reportId}?check=true`;
-        const response = await fetch(downloadUrl, { 
+        const response = await fetch(downloadUrl, {
             method: 'GET',
             headers: {
                 'X-Check-Only': 'true' // Add a custom header to indicate this is just a check
             }
         });
-        
+
         if (response.ok) {
             return { status: 'ready' };
         } else if (response.status === 404) {
@@ -417,14 +417,14 @@ export async function checkReportStatus(reportId: string): Promise<{ status: 'ge
             return { status: 'generating' };
         } else {
             // Any other error
-            return { 
-                status: 'error', 
-                error: `Error checking report status: ${response.status} ${response.statusText}` 
+            return {
+                status: 'error',
+                error: `Error checking report status: ${response.status} ${response.statusText}`
             };
         }
     } catch (error) {
-        return { 
-            status: 'error', 
+        return {
+            status: 'error',
             error: error instanceof Error ? error.message : 'Unknown error checking report status'
         };
     }
@@ -460,13 +460,13 @@ export async function fetchPracticeChallenge(params: { conceptId: string; diffic
 }
 
 export async function sendLearnQuery(payload: {
-  question: string;
-  workspaceId: string;
-  chatId?: string;
-  userProgress?: LearningProgress[];
-  sheetContext?: unknown;
-  isFirstMessage?: boolean;
-  conversationHistory?: unknown[];
+    question: string;
+    workspaceId: string;
+    chatId?: string;
+    userProgress?: LearningProgress[];
+    sheetContext?: unknown;
+    isFirstMessage?: boolean;
+    conversationHistory?: unknown[];
 }): Promise<LearnQueryResponse> {
     console.log('📡 [API] Sending learn query to backend:', {
         question: payload.question,
@@ -511,12 +511,12 @@ export async function fetchReportsForWorkspace(workspaceId: string): Promise<Arr
 export async function saveChatHistory(workspaceId: string, messages: unknown[]): Promise<void> {
     try {
         const { supabase } = await import('@/utils/supabase');
-        
+
         console.log('💾 Saving chat history for workspace:', workspaceId, 'Messages:', messages.length);
-        
+
         const { error } = await supabase
             .from('workspaces')
-            .update({ 
+            .update({
                 chat_messages: messages,
                 last_modified: new Date().toISOString()
             })
@@ -526,7 +526,7 @@ export async function saveChatHistory(workspaceId: string, messages: unknown[]):
             console.error('Error saving chat history:', error);
             throw new Error('Failed to save chat history');
         }
-        
+
         console.log('✅ Chat history saved successfully');
     } catch (error) {
         console.error('Error in saveChatHistory:', error);
@@ -537,7 +537,7 @@ export async function saveChatHistory(workspaceId: string, messages: unknown[]):
 export async function loadChatHistory(workspaceId: string): Promise<unknown[]> {
     try {
         const { supabase } = await import('@/utils/supabase');
-        
+
         const { data: workspace, error } = await supabase
             .from('workspaces')
             .select('chat_messages')
@@ -557,7 +557,7 @@ export async function loadChatHistory(workspaceId: string): Promise<unknown[]> {
             const { isTyping, isAnalyzing, ...cleanMessage } = message;
             return cleanMessage;
         });
-        
+
         console.log('✅ Chat history loaded successfully', {
             workspaceId,
             messageCount: cleanedMessages.length
@@ -577,12 +577,12 @@ export async function loadChatHistory(workspaceId: string): Promise<unknown[]> {
 export async function createNewChat(workspaceId: string, title?: string): Promise<Chat> {
     try {
         const { supabase } = await import('@/utils/supabase');
-        
+
         console.log('🆕 Creating new chat for workspace:', workspaceId, 'Title:', title || 'New Chat');
-        
+
         const { data: chat, error } = await supabase
             .from('chats')
-            .insert({ 
+            .insert({
                 workspace_id: workspaceId,
                 title: title || 'New Chat',
                 messages: [],
@@ -595,7 +595,7 @@ export async function createNewChat(workspaceId: string, title?: string): Promis
             console.error('Error creating new chat:', error);
             throw new Error('Failed to create new chat');
         }
-        
+
         console.log('✅ New chat created successfully:', chat.id);
         return chat;
     } catch (error) {
@@ -607,9 +607,9 @@ export async function createNewChat(workspaceId: string, title?: string): Promis
 export async function loadChats(workspaceId: string): Promise<Chat[]> {
     try {
         const { supabase } = await import('@/utils/supabase');
-        
+
         console.log('📂 Loading chats for workspace:', workspaceId);
-        
+
         const { data: chats, error } = await supabase
             .from('chats')
             .select('*')
@@ -620,7 +620,7 @@ export async function loadChats(workspaceId: string): Promise<Chat[]> {
             console.error('Error loading chats:', error);
             return [];
         }
-        
+
         console.log('✅ Chats loaded successfully:', chats?.length || 0, 'chats');
         return chats || [];
     } catch (error) {
@@ -632,20 +632,20 @@ export async function loadChats(workspaceId: string): Promise<Chat[]> {
 export async function saveChatMessages(chatId: string, messages: ChatMessage[]): Promise<void> {
     try {
         const { supabase } = await import('@/utils/supabase');
-        
+
         console.log('💾 Saving messages for chat:', chatId, 'Messages:', messages.length);
-        
+
         // Clean messages before saving - remove typing/analyzing states since they're temporary UI states
         const cleanedMessages = messages.map((message) => {
             const { ...cleanMessage } = message;
             return cleanMessage;
         });
-        
+
         console.log('🧹 Cleaned messages for saving (removed isTyping/isAnalyzing from', messages.length, 'messages)');
-        
+
         const { error } = await supabase
             .from('chats')
-            .update({ 
+            .update({
                 messages: cleanedMessages,
                 updated_at: new Date().toISOString()
             })
@@ -655,7 +655,7 @@ export async function saveChatMessages(chatId: string, messages: ChatMessage[]):
             console.error('Error saving chat messages:', error);
             throw new Error('Failed to save chat messages');
         }
-        
+
         console.log('✅ Chat messages saved successfully');
     } catch (error) {
         console.error('Error in saveChatMessages:', error);
@@ -666,9 +666,9 @@ export async function saveChatMessages(chatId: string, messages: ChatMessage[]):
 export async function loadChatMessages(chatId: string): Promise<ChatMessage[]> {
     try {
         const { supabase } = await import('@/utils/supabase');
-        
+
         console.log('📥 Loading messages for chat:', chatId);
-        
+
         const { data: chat, error } = await supabase
             .from('chats')
             .select('messages')
@@ -688,7 +688,7 @@ export async function loadChatMessages(chatId: string): Promise<ChatMessage[]> {
             const { isTyping, isAnalyzing, ...cleanMessage } = message;
             return cleanMessage;
         });
-        
+
         console.log('✅ Chat messages loaded successfully:', cleanedMessages.length, 'messages');
         return cleanedMessages;
     } catch (error) {
@@ -700,9 +700,9 @@ export async function loadChatMessages(chatId: string): Promise<ChatMessage[]> {
 export async function deleteChat(chatId: string): Promise<void> {
     try {
         const { supabase } = await import('@/utils/supabase');
-        
+
         console.log('🗑️ Deleting chat:', chatId);
-        
+
         const { error } = await supabase
             .from('chats')
             .delete()
@@ -712,7 +712,7 @@ export async function deleteChat(chatId: string): Promise<void> {
             console.error('Error deleting chat:', error);
             throw new Error('Failed to delete chat');
         }
-        
+
         console.log('✅ Chat deleted successfully');
     } catch (error) {
         console.error('Error in deleteChat:', error);
@@ -723,12 +723,12 @@ export async function deleteChat(chatId: string): Promise<void> {
 export async function updateChatTitle(chatId: string, title: string): Promise<void> {
     try {
         const { supabase } = await import('@/utils/supabase');
-        
+
         console.log('✏️ Updating chat title:', chatId, 'New title:', title);
-        
+
         const { error } = await supabase
             .from('chats')
-            .update({ 
+            .update({
                 title: title,
                 updated_at: new Date().toISOString()
             })
@@ -738,7 +738,7 @@ export async function updateChatTitle(chatId: string, title: string): Promise<vo
             console.error('Error updating chat title:', error);
             throw new Error('Failed to update chat title');
         }
-        
+
         console.log('✅ Chat title updated successfully');
     } catch (error) {
         console.error('Error in updateChatTitle:', error);
@@ -782,6 +782,55 @@ export async function analyzeWorkspaceInsights(
         return data;
     } catch (error) {
         console.error('❌ Error analyzing workspace insights:', error);
+        throw error;
+    }
+}
+
+export async function predictWorkspace(
+    workspaceId: string,
+    targetColumn: string,
+    predictionType: 'auto' | 'forecast' | 'regression' | 'classification' | 'trend' = 'auto',
+    periods: number = 10,
+    featureColumns?: string[],
+    confidenceLevel: number = 0.95
+): Promise<any> {
+    try {
+        console.log('🔮 Requesting prediction:', {
+            workspaceId, targetColumn, predictionType, periods
+        });
+
+        const params = new URLSearchParams({
+            target_column: targetColumn,
+            prediction_type: predictionType,
+            periods: periods.toString(),
+            confidence_level: confidenceLevel.toString()
+        });
+
+        if (featureColumns && featureColumns.length > 0) {
+            params.append('feature_columns', featureColumns.join(','));
+        }
+
+        const response = await fetch(
+            `${API_BASE_URL}/api/workspace/${workspaceId}/predict?${params}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ detail: response.statusText }));
+            throw new Error(error.detail || 'Prediction failed');
+        }
+
+        const data = await response.json();
+        console.log('✅ Prediction successful:', data);
+
+        return data;
+    } catch (error) {
+        console.error('❌ Error in predictWorkspace:', error);
         throw error;
     }
 }
@@ -861,6 +910,300 @@ export async function quickDataEntryWorkspace(
 
     } catch (error) {
         console.error('Error in quickDataEntryWorkspace:', error);
+        throw error;
+    }
+}
+
+// ============================================================================
+// KNOWLEDGE BASE API FUNCTIONS
+// ============================================================================
+
+/**
+ * Create a new knowledge base
+ */
+export async function createKnowledgeBase(name: string, description?: string): Promise<{ success: boolean; kb_id: string }> {
+    try {
+        // Get current user from Supabase
+        const { supabase } = await import('@/utils/supabase');
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if (!user) {
+            throw new Error('User not authenticated');
+        }
+
+        console.log('📚 Creating knowledge base:', { name, description });
+
+        const response = await fetch(`${API_BASE_URL}/api/kb/create`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                user_id: user.id,
+                name,
+                description: description || ''
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || 'Failed to create knowledge base');
+        }
+
+        const data = await response.json();
+        console.log('✅ Knowledge base created:', data);
+        return data;
+    } catch (error) {
+        console.error('Error creating knowledge base:', error);
+        throw error;
+    }
+}
+
+/**
+ * Load all knowledge bases for the current user
+ */
+export async function loadKnowledgeBases(): Promise<any[]> {
+    try {
+        const { supabase } = await import('@/utils/supabase');
+
+        const { data, error } = await supabase
+            .from('knowledge_bases')
+            .select('*')
+            .order('updated_at', { ascending: false });
+
+        if (error) {
+            console.error('Error loading knowledge bases:', error);
+            throw error;
+        }
+
+        console.log('📚 Loaded knowledge bases:', data?.length || 0);
+        return data || [];
+    } catch (error) {
+        console.error('Error in loadKnowledgeBases:', error);
+        throw error;
+    }
+}
+
+/**
+ * Upload file to knowledge base with progress tracking
+ */
+export async function uploadToKB(
+    kbId: string,
+    file: File,
+    onProgress?: (percent: number) => void
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const xhr = new XMLHttpRequest();
+
+        // Progress tracking
+        if (onProgress) {
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percentComplete = (e.loaded / e.total) * 100;
+                    onProgress(percentComplete);
+                }
+            });
+        }
+
+        // Success handler
+        xhr.addEventListener('load', () => {
+            if (xhr.status === 200) {
+                console.log('✅ File uploaded successfully:', file.name);
+                resolve();
+            } else {
+                const error = new Error(`Upload failed with status ${xhr.status}`);
+                console.error('❌ Upload failed:', error);
+                reject(error);
+            }
+        });
+
+        // Error handler
+        xhr.addEventListener('error', () => {
+            const error = new Error('Upload failed due to network error');
+            console.error('❌ Upload error:', error);
+            reject(error);
+        });
+
+        // Send request
+        console.log('📤 Uploading file to KB:', { kbId, filename: file.name });
+        xhr.open('POST', `${API_BASE_URL}/api/kb/${kbId}/upload`);
+        xhr.send(formData);
+    });
+}
+
+/**
+ * Load chats for a specific knowledge base
+ */
+export async function loadKBChats(kbId: string): Promise<any[]> {
+    try {
+        const { supabase } = await import('@/utils/supabase');
+
+        const { data, error } = await supabase
+            .from('chats')
+            .select('*')
+            .eq('kb_id', kbId)
+            .order('updated_at', { ascending: false });
+
+        if (error) {
+            console.error('Error loading KB chats:', error);
+            throw error;
+        }
+
+        console.log('💬 Loaded KB chats:', data?.length || 0);
+        return data || [];
+    } catch (error) {
+        console.error('Error in loadKBChats:', error);
+        throw error;
+    }
+}
+
+/**
+ * Create a new chat in a knowledge base
+ */
+export async function createKBChat(kbId: string, title: string = 'New Chat'): Promise<any> {
+    try {
+        const { supabase } = await import('@/utils/supabase');
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if (!user) {
+            throw new Error('User not authenticated');
+        }
+
+        const { data, error } = await supabase
+            .from('chats')
+            .insert({
+                kb_id: kbId,
+                title,
+                messages: []
+            })
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error creating KB chat:', error);
+            throw error;
+        }
+
+        console.log('✅ KB chat created:', data);
+        return data;
+    } catch (error) {
+        console.error('Error in createKBChat:', error);
+        throw error;
+    }
+}
+
+/**
+ * Query a knowledge base (RAG + SQL + Predictions)
+ */
+export async function queryKB(
+    kbId: string,
+    question: string,
+    chatId: string
+): Promise<any> {
+    try {
+        console.log('🔍 Querying KB:', { kbId, question, chatId });
+
+        const response = await fetch(`${API_BASE_URL}/api/kb/${kbId}/query`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                question,
+                chat_id: chatId
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || 'Failed to query knowledge base');
+        }
+
+        const data = await response.json();
+        console.log('✅ KB query response:', data);
+        return data;
+    } catch (error) {
+        console.error('Error querying KB:', error);
+        throw error;
+    }
+}
+
+/**
+ * Load documents for a knowledge base
+ */
+export async function loadKBDocuments(kbId: string): Promise<any[]> {
+    try {
+        const { supabase } = await import('@/utils/supabase');
+
+        const { data, error } = await supabase
+            .from('kb_documents')
+            .select('*')
+            .eq('kb_id', kbId)
+            .order('upload_date', { ascending: false });
+
+        if (error) {
+            console.error('Error loading KB documents:', error);
+            throw error;
+        }
+
+        console.log('📄 Loaded KB documents:', data?.length || 0);
+        return data || [];
+    } catch (error) {
+        console.error('Error in loadKBDocuments:', error);
+        throw error;
+    }
+}
+
+/**
+ * Delete a knowledge base
+ */
+export async function deleteKnowledgeBase(kbId: string): Promise<void> {
+    try {
+        const { supabase } = await import('@/utils/supabase');
+
+        const { error } = await supabase
+            .from('knowledge_bases')
+            .delete()
+            .eq('id', kbId);
+
+        if (error) {
+            console.error('Error deleting knowledge base:', error);
+            throw error;
+        }
+
+        console.log('🗑️ Knowledge base deleted:', kbId);
+    } catch (error) {
+        console.error('Error in deleteKnowledgeBase:', error);
+        throw error;
+    }
+}
+
+/**
+ * Update knowledge base metadata
+ */
+export async function updateKnowledgeBase(
+    kbId: string,
+    updates: { name?: string; description?: string }
+): Promise<void> {
+    try {
+        const { supabase } = await import('@/utils/supabase');
+
+        const { error } = await supabase
+            .from('knowledge_bases')
+            .update(updates)
+            .eq('id', kbId);
+
+        if (error) {
+            console.error('Error updating knowledge base:', error);
+            throw error;
+        }
+
+        console.log('✅ Knowledge base updated:', kbId);
+    } catch (error) {
+        console.error('Error in updateKnowledgeBase:', error);
         throw error;
     }
 }

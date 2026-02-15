@@ -126,11 +126,30 @@ export default function WorkspacesPage() {
             <header className="relative z-10 pt-8 pb-6">
                 <div className="container mx-auto px-6">
                     <div className="flex justify-between items-center">
-                        <AnimatedElement direction="down" delay={0.2}>
-                            <h1 className="text-4xl font-bold text-white">
-                                Workspaces
-                            </h1>
-                        </AnimatedElement>
+                        <div className="flex items-center gap-6">
+                            <AnimatedElement direction="down" delay={0.2}>
+                                <h1 className="text-4xl font-bold text-white">
+                                    Workspaces
+                                </h1>
+                            </AnimatedElement>
+
+                            {/* Mode Toggle */}
+                            <AnimatedElement direction="down" delay={0.25}>
+                                <div className="flex items-center gap-2 bg-card/40 backdrop-blur-sm rounded-lg p-1 border border-border">
+                                    <button
+                                        className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md font-medium"
+                                    >
+                                        Workspaces
+                                    </button>
+                                    <button
+                                        onClick={() => router.push('/kb')}
+                                        className="px-3 py-1.5 text-sm text-white/70 hover:text-white hover:bg-white/10 rounded-md font-medium transition-colors"
+                                    >
+                                        Knowledge Bases
+                                    </button>
+                                </div>
+                            </AnimatedElement>
+                        </div>
                         <AnimatedElement direction="right" delay={0.3}>
                             <button
                                 onClick={() => setIsModalOpen(true)}
