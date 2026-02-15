@@ -3690,52 +3690,23 @@ Keep the analysis concise but thorough, focusing on business value and practical
             if not result or result.strip().lower() in ['i don\'t know', 'none', '']:
                 return f"I couldn't find any data to answer your question: '{question}'. Please make sure your data is properly loaded and try rephrasing your question."
             
-            # Use LLM to format the result with proper context and comprehensive insights
+            # Use LLM to format the result into a clear, grounded response
             format_prompt = f"""
-            CONTEXT:
-            - User asked: "{question}"
-            - SQL query executed: {sql_query}
-            - Raw result: {result}
-            - Data type: Product feedback/review data with columns like Product_Name, User_Score, Feedback
-            
-            TASK: Create a comprehensive but focused business response (not too long, not too short).
-            
-            RESPONSE STRUCTURE:
-            [2-3 sentences providing immediate context and key findings - explain what this data represents and the main takeaway]
-            
-            Key highlights:
-            • [Business-meaningful insight with specific numbers]
-            • [Performance or customer satisfaction implication]
-            • [Data scope and coverage details]
-            • [Product or business context when relevant]
-            
-            Insights:
-            • [What this means for their business]
-            • [Pattern or trend observation]
-            • [Actionable suggestion or next step]
-            
-            IMPORTANT GUIDELINES:
-            - Interpret SQL results correctly (e.g., COUNT(*) = total records, AVG(User_Score) = average rating)
-            - Use business-friendly language (not "first value is 100" but "100 total records")
-            - Round all numbers to whole numbers (no decimals)
-            - Provide context about what the numbers mean for their business
-            - Include actionable insights users can act on
-            - Be comprehensive but not overwhelming
-            - NO template text like "RESPONSE FORMAT:" should appear in the final response
-            
-            EXAMPLE for summary statistics (100 records, 7.93 avg, 5 min, 10 max):
-            "You have 100 product reviews in your dataset with an average user rating of 8 out of 10. This indicates generally positive customer feedback across your product lineup, with ratings spanning the full range from 5 to 10.
+            User asked: "{question}"
+            SQL query executed: {sql_query}
+            Raw result from database: {result}
 
-            Key highlights:
-            • 100 total product reviews analyzed across all items
-            • Strong average rating of 8/10 shows good customer satisfaction
-            • Rating distribution spans 5-10, indicating varied but generally positive feedback
-            • Data covers products like Coffee Maker, Gaming Mouse, 4K Monitor, and others
-            
-            Insights:
-            • Your products are performing well with above-average ratings
-            • The wide rating range (5-10) suggests different products have varying reception
-            • Consider analyzing which specific products drive the highest ratings for expansion opportunities"
+            TASK: Convert the raw SQL result into a clear, readable answer.
+
+            RULES:
+            - ONLY state facts that appear in the raw result above. Do NOT invent, assume, or fabricate any data.
+            - If the result is a count, state the count. If it's a list, present the list clearly.
+            - Use natural language to present the numbers/data from the result.
+            - Round numbers to whole numbers where appropriate.
+            - Keep the response concise (2-4 sentences for simple results, a short list for multiple rows).
+            - Do NOT add "insights", "recommendations", or "what this means for your business".
+            - Do NOT reference data that isn't in the raw result.
+            - If the result is empty or zero, say so clearly.
             """
             
             formatted_response = self.llm.invoke(format_prompt).content.strip()
@@ -3759,48 +3730,25 @@ Keep the analysis concise but thorough, focusing on business value and practical
         Returns:
             A properly formatted response with context, explanation, and follow-up questions
         """
-        # Always enhance responses to make them more conversational and comprehensive
+        # Format the raw response into a clear, grounded answer
         enhanced_prompt = f"""
         The user asked: "{question}"
-        
+
         The data result is: "{raw_response}"
-        
-        Please provide a professional but friendly response using this EXACT structure:
 
-        [Brief direct answer in 1-2 sentences]
+        TASK: Rewrite the data result as a clear, readable answer.
 
-        Key Details:
-        - [Developer/Publisher information]
-        - [Release date and rating numbers]
-        - [Any other relevant factual details]
+        RULES:
+        - ONLY state facts present in the data result above. Do NOT invent or fabricate any information.
+        - Give a direct answer in 1-2 sentences first.
+        - If there are multiple data points, list them under "Key Details:" using bullet points.
+        - Round numbers to whole numbers where appropriate.
+        - Do NOT add sections like "Why This Matters", "Insights", or "Recommendations".
+        - Do NOT invent statistics, trends, or context not in the result.
+        - If the result is empty, say no matching data was found.
+        - Keep it concise and factual.
 
-        Why This Matters:
-        - [Significance or context insight]
-        - [What makes this result interesting]
-        - [Additional analysis or implications]
-
-        Explore Further:
-        - [Generate a specific follow-up question based on the actual data and analysis results]
-        - [Suggest a complementary analysis that would provide additional insights]
-        - [Recommend a visualization or comparison that would enhance understanding]
-
-        CRITICAL FORMATTING RULES:
-        - Use markdown bullet points (-) for all structured information
-        - Keep the brief answer to 1-2 sentences maximum
-        - Each bullet point should be concise and focused
-        - Round all numbers to whole numbers (no decimals)
-        - Always use the exact section headers: "Key Details:", "Why This Matters:", "Explore Further:"
-        - Leave blank lines between sections
-        
-        For the "Explore Further" section, generate intelligent follow-up suggestions that:
-        - Reference specific columns, values, or patterns from the actual data
-        - Suggest logical next steps based on the analysis performed  
-        - Include different analysis types (comparative, temporal, correlational)
-        - Recommend relevant visualizations when appropriate
-        - Use actual data context rather than generic suggestions
-        
-        Do not mention that you're processing data results or SQL queries.
-        Write as a knowledgeable data analyst providing clear, helpful insights.
+        Optionally, suggest 1-2 follow-up questions the user could ask about their data under "Explore Further:".
         """
         
         try:
