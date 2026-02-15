@@ -3218,7 +3218,7 @@ export default function ChatSidebar({
         
         try {
             // Use the orchestrator in preview mode to intelligently detect compound queries
-            const orchestrateResponse = await fetch('http://localhost:8000/api/orchestrate', {
+            const orchestrateResponse = await fetch(`${API_BASE_URL}/api/orchestrate`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -3264,7 +3264,7 @@ export default function ChatSidebar({
         
         try {
             // Get execution steps from orchestrator
-            const orchestrateResponse = await fetch('http://localhost:8000/api/orchestrate', {
+            const orchestrateResponse = await fetch(`${API_BASE_URL}/api/orchestrate`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

@@ -8,6 +8,7 @@ import LearnModeWorkspace from '@/components/LearnModeWorkspace';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { uploadFile, saveWorkspaceData, loadWorkspaceData, initializeBackendWithData, generateReport, downloadReport, checkReportStatus } from '@/utils/api';
 import { Workspace } from '@/types';
+import { API_BASE_URL } from '@/config';
 import { generateDataQualityReport as generateQualityReportData } from '@/utils/dataQualityUtils';
 import { commandService } from '@/services/commandService';
 import DataQualityReportModal from '@/components/DataQualityReportModal';
@@ -279,7 +280,7 @@ export default function WorkspacePage() {
         // Reset backend state to ensure clean slate for new data generation
         try {
             console.log('🧹 Clearing backend state...');
-            const response = await fetch('http://localhost:8000/api/reset-state', {
+            const response = await fetch(`${API_BASE_URL}/api/reset-state`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})

@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     console.log('Analyzing formula error:', { formula, errorType, cellRef });
 
     // Call our backend API - Use port 8000 for Python backend
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
     const response = await fetch(`${apiUrl}/analyze-formula`, {
       method: 'POST',
       headers: {
