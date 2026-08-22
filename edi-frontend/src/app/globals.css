@@ -166,6 +166,19 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
+
+  /* Monochrome gradient system.
+     Tailwind v4 reads its theme from here, not tailwind.config.js, so these
+     must stay in sync with the mirror in that file. Names are kept for
+     compatibility with existing usages; the values are a black-to-white ramp
+     ordered by luminance so text and icons stay legible on the black page. */
+  --color-neon-cyan: #ffffff;
+  --color-neon-magenta: #d4d4d4;
+  --color-sky-blue: #a3a3a3;
+  --color-electric-purple: #8a8a8a;
+  --color-deep-purple: #4d4d4d;
+  --color-deep-space: #0a0a0a;
+  --color-glass-white: rgba(255, 255, 255, 0.1);
 }
 
 body {

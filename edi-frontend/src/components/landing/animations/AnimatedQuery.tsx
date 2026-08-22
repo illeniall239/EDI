@@ -60,7 +60,7 @@ export default function AnimatedQuery({ isActive = true }: AnimatedQueryProps) {
     <div className="relative w-full h-full flex flex-col items-center justify-center p-6 gap-4">
       {/* Search Bar */}
       <div className="w-full max-w-sm relative z-10">
-        <div className={`glass-card-strong rounded-xl p-3 flex items-center gap-3 transition-shadow duration-300 ${step === 'typing' || step === 'processing' ? 'shadow-[0_0_15px_rgba(0,242,254,0.3)] border-neon-cyan/30' : ''}`}>
+        <div className={`glass-card-strong rounded-xl p-3 flex items-center gap-3 transition-shadow duration-300 ${step === 'typing' || step === 'processing' ? 'shadow-[0_0_15px_rgba(255,255,255,0.3)] border-neon-cyan/30' : ''}`}>
           <Search className={`w-4 h-4 ${step === 'processing' ? 'text-neon-cyan animate-pulse' : 'text-gray-400'}`} />
           <div className="flex-1 text-sm font-medium text-white/90 h-5 relative overflow-hidden">
             {step === 'ide' && <span className="text-gray-500">Search data...</span>}

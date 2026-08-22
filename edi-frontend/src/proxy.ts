@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const res = NextResponse.next()
   
   const supabase = createServerClient(
@@ -81,7 +81,7 @@ export async function middleware(request: NextRequest) {
   return res
 }
 
-// Specify which routes this middleware should run on
+// Specify which routes this proxy should run on
 export const config = {
   // Exclude API routes, Next.js internals, favicon, and any file with an extension (public assets)
   matcher: ['/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)'],

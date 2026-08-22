@@ -84,7 +84,7 @@ export default function AnimatedReport({ isActive = true }: AnimatedReportProps)
               exit={{ scale: 1, opacity: 0 }}
               className="absolute z-10"
             >
-              <div className="w-12 h-16 bg-white/10 rounded border border-white/20 animate-pulse shadow-[0_0_20px_rgba(102,126,234,0.5)]" />
+              <div className="w-12 h-16 bg-white/10 rounded border border-white/20 animate-pulse shadow-[0_0_20px_rgba(255,255,255,0.25)]" />
             </motion.div>
           )}
         </AnimatePresence>

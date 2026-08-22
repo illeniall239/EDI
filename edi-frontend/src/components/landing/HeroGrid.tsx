@@ -57,7 +57,7 @@ export default function HeroGrid() {
                     >
                         <GridPattern opacity={0.5} active />
                         {/* Connecting Lines */}
-                        <div className="absolute top-10 left-10 right-10 bottom-10 border border-neon-cyan/20 rounded shadow-[0_0_15px_rgba(0,242,254,0.2)]" />
+                        <div className="absolute top-10 left-10 right-10 bottom-10 border border-neon-cyan/20 rounded shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
                     </SheetLayer>
 
                     {/* Layer 3: Top (Insights) */}
