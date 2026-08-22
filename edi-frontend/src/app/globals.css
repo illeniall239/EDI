@@ -58,6 +58,7 @@
   0% {
     transform: translateX(0%);
   }
+
   100% {
     transform: translateX(-50%);
   }
@@ -256,14 +257,12 @@ body {
 }
 
 .gradient-text {
-  background: linear-gradient(
-    300deg,
-    #00ff87 0%,
-    #60efff 30%,
-    #0061ff 50%,
-    #60efff 70%,
-    #00ff87 100%
-  );
+  background: linear-gradient(300deg,
+      #ffffff 0%,
+      #b3b3b3 30%,
+      #4d4d4d 50%,
+      #b3b3b3 70%,
+      #ffffff 100%);
   background-size: 200% 200%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -275,21 +274,21 @@ body {
   0% {
     background-position: 0% 50%;
   }
+
   50% {
     background-position: 100% 50%;
   }
+
   100% {
     background-position: 0% 50%;
   }
 }
 
 .gradient-text-subtle {
-  background: linear-gradient(
-    300deg,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(255, 255, 255, 0.8) 50%,
-    rgba(255, 255, 255, 0.95) 100%
-  );
+  background: linear-gradient(300deg,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(255, 255, 255, 0.8) 50%,
+      rgba(255, 255, 255, 0.95) 100%);
   background-size: 200% 200%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -304,7 +303,8 @@ body {
 
 /* Ensure Luckysheet toolbar is visible */
 .luckysheet-wa-editor {
-  z-index: 1000 !important; /* Main editor should be on top */
+  z-index: 1000 !important;
+  /* Main editor should be on top */
   color: #000000 !important;
   background-color: #ffffff !important;
   border: none !important;
@@ -326,10 +326,11 @@ body {
 }
 
 /* Fix overlapping input boxes in edit mode */
-.luckysheet-wa-editor ~ .luckysheet-wa-editor,
-.luckysheet-wa-editor + input,
-.luckysheet-wa-editor + textarea {
-  display: none !important; /* Hide duplicate editors */
+.luckysheet-wa-editor~.luckysheet-wa-editor,
+.luckysheet-wa-editor+input,
+.luckysheet-wa-editor+textarea {
+  display: none !important;
+  /* Hide duplicate editors */
 }
 
 /* Ensure the formula bar input is properly styled and positioned */
@@ -499,4 +500,160 @@ body.modal-open * {
 body.modal-open .visualization-modal-overlay,
 body.modal-open .visualization-modal-overlay * {
   pointer-events: auto !important;
+}
+
+/* ============================================ */
+/* HOLOGRAPHIC DESIGN SYSTEM                    */
+/* ============================================ */
+
+/* Mesh Gradient Background */
+.mesh-gradient {
+  background: linear-gradient(135deg,
+      #000000 0%,
+      #0d0d0d 25%,
+      #262626 50%,
+      #111111 75%,
+      #000000 100%);
+  background-size: 400% 400%;
+  animation: mesh-animation 20s ease infinite;
+}
+
+/* Glassmorphism Card */
+.glass-card {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px) saturate(180%);
+  -webkit-backdrop-filter: blur(10px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.37),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Stronger Glassmorphism */
+.glass-card-strong {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(200%);
+  -webkit-backdrop-filter: blur(20px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Holographic Gradient Text */
+.gradient-text-holographic {
+  background: linear-gradient(135deg, #ffffff, #808080, #ffffff);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-size: 200% 200%;
+  animation: gradient-shift 3s ease infinite;
+}
+
+/* Glow Effect */
+.glow {
+  box-shadow:
+    0 0 20px rgba(255, 255, 255, 0.25),
+    0 0 40px rgba(255, 255, 255, 0.12),
+    0 0 60px rgba(255, 255, 255, 0.06);
+}
+
+.glow-cyan {
+  box-shadow:
+    0 0 20px rgba(255, 255, 255, 0.3),
+    0 0 40px rgba(255, 255, 255, 0.15),
+    0 0 60px rgba(255, 255, 255, 0.08);
+}
+
+.glow-magenta {
+  box-shadow:
+    0 0 20px rgba(180, 180, 180, 0.3),
+    0 0 40px rgba(180, 180, 180, 0.15),
+    0 0 60px rgba(180, 180, 180, 0.08);
+}
+
+/* Noise Texture Overlay */
+.noise-texture::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.02'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Gradient Border */
+.gradient-border {
+  position: relative;
+  background: linear-gradient(135deg, #333333, #0d0d0d, #4d4d4d, #1a1a1a, #666666);
+  background-size: 400% 400%;
+  animation: mesh-animation 20s ease infinite;
+  padding: 2px;
+  border-radius: inherit;
+}
+
+.gradient-border>* {
+  background: var(--background);
+  border-radius: inherit;
+}
+
+/* Animated Gradient Accent Bar */
+.gradient-accent {
+  position: relative;
+  overflow: hidden;
+}
+
+.gradient-accent::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #666666, #ffffff, transparent);
+  animation: gradient-flow 3s linear infinite;
+}
+
+@keyframes gradient-flow {
+  0% {
+    left: -100%;
+  }
+
+  100% {
+    left: 100%;
+  }
+}
+
+/* Magnetic Cursor Effect - Applied via JS */
+.magnetic {
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Will-change optimization for animations */
+.will-change-transform {
+  will-change: transform;
+}
+
+.will-change-opacity {
+  will-change: opacity;
+}
+
+/* Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .mesh-gradient,
+  .gradient-text-holographic,
+  .gradient-border,
+  .gradient-accent::before {
+    animation: none !important;
+  }
 }

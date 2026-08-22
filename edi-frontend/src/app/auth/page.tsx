@@ -83,7 +83,7 @@ export default function Auth() {
   return (
     <div className="h-screen bg-background flex items-center justify-center p-4 relative">
       {/* Gradient background (same as home hero) */}
-      <div className="absolute inset-0 z-0 bg-[linear-gradient(135deg,rgba(34,211,238,0.28),transparent_40%),linear-gradient(225deg,rgba(236,72,153,0.28),transparent_45%),linear-gradient(180deg,#000,#000)]"></div>
+      <div className="absolute inset-0 z-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_40%),linear-gradient(225deg,rgba(255,255,255,0.07),transparent_45%),linear-gradient(180deg,#000,#000)]"></div>
 
       <motion.div 
         initial={{ opacity: 0, y: 20 }}

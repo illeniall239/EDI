@@ -119,7 +119,7 @@ export default function WorkspacesPage() {
                 <div className="absolute inset-0 bg-gradient-to-tl from-primary/25 via-primary/5 to-transparent"></div>
                 
                 {/* Subtle radial glow in center */}
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(59,130,246,0.2),transparent_70%)]"></div>
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(255,255,255,0.08),transparent_70%)]"></div>
             </div>
 
             {/* Header Section */}
@@ -171,7 +171,7 @@ export default function WorkspacesPage() {
                                 <motion.div
                                     whileHover={{ scale: 1.03, transition: { duration: 0.2 } }}
                                     onClick={() => handleWorkspaceClick(workspace.id)}
-                                    className="backdrop-blur-sm rounded-lg border-0 transition-all duration-300 relative overflow-hidden group cursor-pointer bg-[linear-gradient(135deg,rgba(34,211,238,0.28),transparent_40%),linear-gradient(225deg,rgba(236,72,153,0.28),transparent_45%),linear-gradient(180deg,#000,#000)] bg-clip-padding"
+                                    className="backdrop-blur-sm rounded-lg border-0 transition-all duration-300 relative overflow-hidden group cursor-pointer bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_40%),linear-gradient(225deg,rgba(255,255,255,0.07),transparent_45%),linear-gradient(180deg,#000,#000)] bg-clip-padding"
                                 >
                                     {/* Mode Label removed from overlay; placed next to menu dots below */}
                                     {/* Blue glow effect on hover */}

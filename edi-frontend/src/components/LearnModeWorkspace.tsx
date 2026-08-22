@@ -210,7 +210,7 @@ export default function LearnModeWorkspace({ workspace }: LearnModeWorkspaceProp
       {/* Main Learning Area */}
       <div className="flex h-full bg-background relative">
         {(activeView === 'onboarding' || activeView === 'cards') && (
-          <div className="absolute inset-0 z-0 pointer-events-none bg-[linear-gradient(135deg,rgba(34,211,238,0.18),transparent_40%),linear-gradient(225deg,rgba(236,72,153,0.18),transparent_45%),linear-gradient(180deg,#000,#000)]" />
+          <div className="absolute inset-0 z-0 pointer-events-none bg-[linear-gradient(135deg,rgba(255,255,255,0.08),transparent_40%),linear-gradient(225deg,rgba(255,255,255,0.05),transparent_45%),linear-gradient(180deg,#000,#000)]" />
         )}
         {activeView === 'onboarding' ? (
           <div className="flex-1 px-6 md:px-10 lg:px-14 overflow-y-auto flex items-center justify-center relative z-10">

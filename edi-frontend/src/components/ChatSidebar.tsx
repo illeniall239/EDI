@@ -6527,8 +6527,8 @@ export default function ChatSidebar({
                 top: 0,
                 left: 0,
                 height: '100%',
-                background: `linear-gradient(135deg, rgba(34, 211, 238, 0.28), transparent 40%),
-                           linear-gradient(225deg, rgba(236, 72, 153, 0.28), transparent 45%),
+                background: `linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 40%),
+                           linear-gradient(225deg, rgba(255, 255, 255, 0.07), transparent 45%),
                            linear-gradient(180deg, #000, #000)`,
                 overflow: 'hidden',
                 zIndex: 10

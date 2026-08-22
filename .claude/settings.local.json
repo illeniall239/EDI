@@ -10,7 +10,13 @@
       "Bash(cmdkey /list:*)",
       "Bash(findstr:*)",
       "Bash(pip freeze:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git checkout:*)",
+      "Bash(find:*)",
+      "Skill(frontend-design)",
+      "Bash(npm run dev:*)",
+      "Bash(npm install:*)",
+      "Bash(grep -iE \"\\\\.db$|\\\\.mp4$|\\\\.env\")"
     ]
   }
 }

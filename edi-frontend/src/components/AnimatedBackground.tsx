@@ -20,7 +20,7 @@ export default function AnimatedBackground({ className = '' }: AnimatedBackgroun
       {/* Floating grid effect */}
       <div className="absolute inset-0 overflow-hidden">
         <motion.div 
-          className="absolute inset-0 bg-[linear-gradient(to_right,rgba(37,99,235,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(37,99,235,0.03)_1px,transparent_1px)] bg-[size:4rem_4rem]"
+          className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:4rem_4rem]"
           animate={{
             y: [0, -100],
           }}
@@ -36,7 +36,7 @@ export default function AnimatedBackground({ className = '' }: AnimatedBackgroun
       {/* Horizontal grid lines with animation */}
       <div className="absolute inset-0 overflow-hidden">
         <motion.div 
-          className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(37,99,235,0.03)_1px,transparent_1px)] bg-[size:100%_2rem]"
+          className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:100%_2rem]"
           animate={{
             y: [0, -50],
           }}
@@ -52,7 +52,7 @@ export default function AnimatedBackground({ className = '' }: AnimatedBackgroun
       {/* Diagonal grid lines with animation */}
       <div className="absolute inset-0 overflow-hidden opacity-30">
         <motion.div 
-          className="absolute inset-0 bg-[linear-gradient(45deg,rgba(37,99,235,0.02)_1px,transparent_1px)] bg-[size:3rem_3rem]"
+          className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:3rem_3rem]"
           animate={{
             backgroundPosition: ["0px 0px", "100px 100px"]
           }}
@@ -93,8 +93,8 @@ export default function AnimatedBackground({ className = '' }: AnimatedBackgroun
       {/* Add subtle glow effects */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/5 rounded-full filter blur-[100px]"></div>
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/5 rounded-full filter blur-[100px]"></div>
-      <div className="absolute top-3/4 right-1/4 w-64 h-64 bg-indigo-500/5 rounded-full filter blur-[80px]"></div>
-      <div className="absolute bottom-1/3 left-1/3 w-64 h-64 bg-indigo-500/5 rounded-full filter blur-[80px]"></div>
+      <div className="absolute top-3/4 right-1/4 w-64 h-64 bg-white/5 rounded-full filter blur-[80px]"></div>
+      <div className="absolute bottom-1/3 left-1/3 w-64 h-64 bg-white/5 rounded-full filter blur-[80px]"></div>
       
       {/* Add a subtle gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-black via-transparent to-black opacity-60"></div>
