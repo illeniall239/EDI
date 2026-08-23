@@ -92,12 +92,19 @@ def hydrate(workspace_id):
     workspace_store caches the parsed handler per instance, so a warm instance
     only pays the rebuild cost when the data has actually changed.
 
-    Falls back to the existing handler when no workspace_id is supplied, which
-    keeps `uvicorn main:app` working the way it always did locally.
+    Falls back to the existing handler only when no workspace_id is supplied,
+    which keeps `uvicorn main:app` working the way it always did locally.
+
+    When a workspace_id IS supplied it is authoritative: if that workspace has
+    no data, the handler is emptied rather than left pointing at whatever was
+    loaded before. Otherwise a warm instance answers a new visitor's question
+    from the previous visitor's dataset -- the global outlives the request, and
+    two visitors are not two processes.
 
     Note: this rebinds a module global, so it assumes an instance serves one
-    request at a time. That holds for a single-user app; it would need the
-    handler threaded through the call chain to be safe under real concurrency.
+    request at a time. That holds while requests are serialised per instance;
+    it would need the handler threaded through the call chain to be safe under
+    real in-process concurrency.
     """
     global data_handler
     if not workspace_id:
@@ -106,9 +113,18 @@ def hydrate(workspace_id):
         handler = workspace_store.get_handler(workspace_id)
     except workspace_store.WorkspaceStoreError as exc:
         logger.warning("Could not hydrate workspace %s: %s", workspace_id, exc)
-        return data_handler
+        handler = None
     if handler is None:
-        return data_handler
+        # Empty workspace: serve nothing, never the last visitor's data.
+        # This has to go through initialize_agents rather than just swapping
+        # data_handler: the SQL agent holds its own handle on the previous
+        # workspace's SQLite database, and conversation memory holds the
+        # previous questions and answers. Both outlive the request otherwise,
+        # and which of them a question reaches depends on how it is phrased.
+        data_handler = DataHandler()
+        if agent_services is not None:
+            agent_services.initialize_agents(data_handler)
+        return None
     data_handler = handler
     if agent_services is not None:
         agent_services.initialize_agents(handler)
