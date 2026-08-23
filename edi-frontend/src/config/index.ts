@@ -1,7 +1,14 @@
-// Frontend and backend are two services behind one domain, so API calls are
-// same-origin and vercel.json routes /api/* to the Python service. Left
-// overridable for running the backend separately during local development.
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+// Always same-origin. In production the frontend and backend are two services
+// of one Vercel project behind a single domain; in development next.config.ts
+// proxies /api/* to BACKEND_ORIGIN. Either way the browser calls /api/... on
+// the host it was served from.
+//
+// This deliberately reads no NEXT_PUBLIC_ variable. Those are inlined into the
+// bundle at build time, so one left over in a project's settings keeps
+// redirecting the deployed site to a host nobody remembers configuring, long
+// after the config that set it is gone. Point BACKEND_ORIGIN at a remote
+// backend instead -- it is read server-side, at request time.
+export const API_BASE_URL = '';
 
 export const API_ENDPOINTS = {
     upload: `${API_BASE_URL}/api/upload`,
