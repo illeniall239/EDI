@@ -32,6 +32,9 @@ backend/temp_db_*.db
 backend/static/visualizations/*.png
 backend/static/visualizations/*.html
 backend/generated_reports/*.pdf
+# Runtime chart output. These were committed once and put 16 MB of embedded
+# plotly.js into the deploy bundle; nothing reads them back.
+backend/generated_charts/
 backend/visualization_debug.log
 
 # IDE

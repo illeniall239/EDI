@@ -34,23 +34,6 @@ export default function WorkspacesPage() {
     });
     const router = useRouter();
 
-    useEffect(() => {
-        checkUser();
-        fetchWorkspaces();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    useEffect(() => {
-        const handleClickOutside = () => {
-            setOpenDropdown(null);
-        };
-
-        if (openDropdown) {
-            document.addEventListener('click', handleClickOutside);
-            return () => document.removeEventListener('click', handleClickOutside);
-        }
-    }, [openDropdown]);
-
     const checkUser = async (): Promise<void> => {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
@@ -75,6 +58,23 @@ export default function WorkspacesPage() {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        checkUser();
+        fetchWorkspaces();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        const handleClickOutside = () => {
+            setOpenDropdown(null);
+        };
+
+        if (openDropdown) {
+            document.addEventListener('click', handleClickOutside);
+            return () => document.removeEventListener('click', handleClickOutside);
+        }
+    }, [openDropdown]);
 
     const handleWorkspaceClick = (workspaceId: string) => {
         router.push(`/workspace/${workspaceId}`);

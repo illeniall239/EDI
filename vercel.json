@@ -7,8 +7,7 @@
     },
     "backend": {
       "root": "backend/",
-      "entrypoint": "main:app",
-      "excludeFiles": "{**/__pycache__/**,**/*.pyc,static/**,generated_reports/**,generated_charts/**,**/*.db,**/*.log}"
+      "entrypoint": "main:app"
     }
   },
   "rewrites": [

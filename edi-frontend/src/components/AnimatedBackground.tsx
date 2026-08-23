@@ -1,18 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 import { seededValue } from '@/utils/seededRandom';
+import { useMounted } from '@/hooks/useMounted';
 
 interface AnimatedBackgroundProps {
   className?: string;
 }
 
 export default function AnimatedBackground({ className = '' }: AnimatedBackgroundProps) {
-  const [mounted, setMounted] = useState(false);
-  
-  useEffect(() => {
-    setMounted(true);
-    return () => setMounted(false);
-  }, []);
+  const mounted = useMounted();
 
   if (!mounted) return null;
 
