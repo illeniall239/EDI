@@ -24,6 +24,8 @@ import hashlib
 import json
 import logging
 import os
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -165,6 +167,190 @@ def save_handler(workspace_id: str, handler: DataHandler) -> None:
         handler,
     )
     logger.info("Saved %d rows back to workspace %s", len(rows), workspace_id)
+
+
+def create_workspace(name: str = "Untitled") -> str:
+    """
+    Create an empty workspace row and return its id.
+
+    There is no sign-in, so the row has no owner. Everything reaches this table
+    through the service-role key on the server; the browser never talks to
+    Supabase directly, which is what keeps row-level security able to stay shut
+    against the public anon key.
+    """
+    workspace_id = str(uuid.uuid4())
+    try:
+        _supabase().table(TABLE).insert(
+            {
+                "id": workspace_id,
+                "name": name,
+                "data": [],
+                "workspace_type": "work",
+            }
+        ).execute()
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not create a workspace: {exc}") from exc
+
+    logger.info("Created workspace %s", workspace_id)
+    return workspace_id
+
+
+def fetch_workspace(workspace_id: str) -> Optional[dict]:
+    """Return everything the sheet needs to restore itself, or None if absent."""
+    if not workspace_id:
+        return None
+    try:
+        result = (
+            _supabase()
+            .table(TABLE)
+            .select("id, name, data, filename, column_order, sheet_state, chat_messages")
+            .eq("id", workspace_id)
+            .maybe_single()
+            .execute()
+        )
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not read workspace {workspace_id}: {exc}") from exc
+
+    return getattr(result, "data", None)
+
+
+def save_workspace(
+    workspace_id: str,
+    data: Optional[List[dict]] = None,
+    filename: Optional[str] = None,
+    sheet_state: Any = None,
+    column_order: Optional[List[str]] = None,
+    chat_messages: Any = None,
+) -> None:
+    """
+    Write the sheet's current state back to its row.
+
+    Only the fields actually supplied are written, so a chat-only save does not
+    blank the dataset and a data-only save does not blank the chat.
+    """
+    if not workspace_id:
+        return
+
+    payload: Dict[str, Any] = {"last_modified": datetime.now(timezone.utc).isoformat()}
+    if data is not None:
+        payload["data"] = data
+        payload["column_order"] = column_order if column_order is not None else _column_order(data)
+        payload["filename"] = filename
+    if sheet_state is not None:
+        payload["sheet_state"] = sheet_state
+    if chat_messages is not None:
+        payload["chat_messages"] = chat_messages
+
+    try:
+        _supabase().table(TABLE).update(payload).eq("id", workspace_id).execute()
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not save workspace {workspace_id}: {exc}") from exc
+
+    # The stored rows just changed underneath any hydrated handler.
+    if data is not None:
+        _cache.pop(workspace_id, None)
+
+
+def _column_order(rows: List[dict]) -> List[str]:
+    """Union of keys across rows, in order of first appearance."""
+    order: List[str] = []
+    for row in rows or []:
+        if isinstance(row, dict):
+            for key in row:
+                if key not in order:
+                    order.append(key)
+    return order
+
+
+CHATS_TABLE = "chats"
+
+
+def list_chats(workspace_id: str) -> List[dict]:
+    """Return a workspace's chat threads, newest first."""
+    if not workspace_id:
+        return []
+    try:
+        result = (
+            _supabase()
+            .table(CHATS_TABLE)
+            .select("id, workspace_id, title, messages, context_state, updated_at")
+            .eq("workspace_id", workspace_id)
+            .order("updated_at", desc=True)
+            .execute()
+        )
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not read chats for {workspace_id}: {exc}") from exc
+    return getattr(result, "data", None) or []
+
+
+def fetch_chat(chat_id: str) -> Optional[dict]:
+    """Return a single chat thread, or None when it does not exist."""
+    if not chat_id:
+        return None
+    try:
+        result = (
+            _supabase()
+            .table(CHATS_TABLE)
+            .select("id, workspace_id, title, messages, context_state")
+            .eq("id", chat_id)
+            .maybe_single()
+            .execute()
+        )
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not read chat {chat_id}: {exc}") from exc
+    return getattr(result, "data", None)
+
+
+def create_chat(workspace_id: str, title: str = "New Chat") -> dict:
+    """Start a new chat thread in a workspace."""
+    try:
+        result = (
+            _supabase()
+            .table(CHATS_TABLE)
+            .insert(
+                {
+                    "workspace_id": workspace_id,
+                    "title": title,
+                    "messages": [],
+                    "context_state": {},
+                }
+            )
+            .execute()
+        )
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not create a chat: {exc}") from exc
+
+    rows = getattr(result, "data", None) or []
+    if not rows:
+        raise WorkspaceStoreError("Chat was created but Supabase returned no row.")
+    return rows[0]
+
+
+def save_chat(chat_id: str, messages: Any = None, title: Optional[str] = None) -> None:
+    """Persist a chat thread's messages and/or title."""
+    if not chat_id:
+        return
+
+    payload: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if messages is not None:
+        payload["messages"] = messages
+    if title is not None:
+        payload["title"] = title
+
+    try:
+        _supabase().table(CHATS_TABLE).update(payload).eq("id", chat_id).execute()
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not save chat {chat_id}: {exc}") from exc
+
+
+def delete_chat(chat_id: str) -> None:
+    """Remove a chat thread."""
+    if not chat_id:
+        return
+    try:
+        _supabase().table(CHATS_TABLE).delete().eq("id", chat_id).execute()
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not delete chat {chat_id}: {exc}") from exc
 
 
 def forget(workspace_id: str) -> None:

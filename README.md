@@ -1,177 +1,106 @@
-# EDI.ai
+# EDI
 
-AI-powered data analysis platform with intelligent spreadsheet capabilities, natural language processing, and automated insights generation.
+A spreadsheet you can ask questions. Upload a CSV or Excel file, then use plain
+English to filter it, clean it, chart it, or have it explained back to you.
 
-## Features
+There is no sign-up. Opening the app drops you straight into a sheet with the
+AI sidebar next to it.
 
-- **Intelligent Spreadsheet**: UniverseJS-powered spreadsheet with natural language commands
-- **AI-Powered Analysis**: Google Gemini integration for data insights and visualizations
-- **Learn Mode**: Interactive tutorials and guided learning for spreadsheet mastery
-- **Work Mode**: Professional data analysis with automated reporting
-- **Natural Language Queries**: Ask questions about your data in plain English
-- **Automated Visualizations**: AI-generated charts and graphs
-- **PDF Report Generation**: Professional reports with insights and recommendations
-- **Multi-workspace Support**: Organize different datasets and projects
-
-## Tech Stack
-
-### Frontend
-- **Framework**: Next.js 15.3
-- **UI**: React 19, Tailwind CSS 4
-- **Spreadsheet**: UniverseJS 0.10.8
-- **Auth**: Supabase Auth
-- **Deployment**: Vercel
-
-### Backend
-- **Framework**: FastAPI (Python)
-- **AI/ML**: Google Gemini, LangChain, PandasAI
-- **Data Processing**: Pandas, NumPy, DuckDB
-- **Database**: SQLite (development), PostgreSQL (production)
-- **Deployment**: Render
-
-## Project Structure
+## How it works
 
 ```
-EDI.ai/
-├── backend/                 # FastAPI backend
-│   ├── main.py             # Main application
-│   ├── agent_services.py   # LangChain agents
-│   ├── data_handler.py     # Data processing
-│   ├── report_generator.py # PDF reports
-│   └── settings.py         # Configuration
-├── edi-frontend/           # Next.js frontend
-│   ├── src/
-│   │   ├── app/           # Next.js 15 app router
-│   │   ├── components/    # React components
-│   │   ├── services/      # API services
-│   │   ├── utils/         # Utilities
-│   │   └── contexts/      # React contexts
-│   └── public/            # Static assets
-├── docs/                   # Documentation
-│   ├── api.md
-│   ├── complete-documentation.md
-│   └── database/          # Schema files
-└── .archive/              # Historical docs
-
+browser ──── /api/* ────► FastAPI ────► Gemini
+   │                         │
+   │                         └────────► Supabase (the sheet's rows)
+   │
+   └── remembers an anonymous workspace id in localStorage
 ```
 
-## Getting Started
+A workspace is a row in Postgres keyed by a UUID. The browser keeps that UUID
+in `localStorage` and sends it with every request; that is the whole identity
+model. Clearing site data or opening a different browser gets you a fresh,
+empty sheet.
 
-### Prerequisites
+The browser never talks to Supabase. Every read and write goes through the
+backend using the service-role key, which lets row-level security stay closed
+against the public anon key.
 
-- Python 3.11+
-- Node.js 18+
-- Google Gemini API key
-- Supabase account
+Charts are returned as data, not images. The backend asks Gemini for read-only
+SQL, runs it, and sends back a spec — chart type, axis key, series, rows — that
+the client renders with Recharts. Nothing is written to disk, which is what
+lets the whole thing run on serverless functions.
 
-### Local Development
+## Running it
 
-#### 1. Clone Repository
+You need a Google AI Studio key and a Supabase project.
+
 ```bash
-git clone https://github.com/illeniall239/EDI.git
-cd EDI
+cp sample.env .env      # then fill in the three values
 ```
 
-#### 2. Backend Setup
+Apply the schema change that makes workspaces ownerless. Paste
+[`supabase/migrations/20260823000000_remove_auth_requirement.sql`](supabase/migrations/20260823000000_remove_auth_requirement.sql)
+into the Supabase SQL editor, or run it with the CLI:
+
 ```bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Create .env file
-cp .env.example .env
-# Add your API keys to .env
-
-# Run backend
-cd backend
-python main.py
-# Server runs on http://localhost:8000
+supabase db push
 ```
 
-#### 3. Frontend Setup
+Then start the two halves:
+
 ```bash
+# backend
+pip install -r backend/requirements.txt
+uvicorn main:app --reload --port 8000 --app-dir backend
+
+# frontend
 cd edi-frontend
-
-# Install dependencies
 npm install
-
-# Create .env.local
-cp .env.example .env.local
-# Add your environment variables
-
-# Run development server
+echo "NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000" > .env.local
 npm run dev
-# App runs on http://localhost:3000
 ```
 
-### Environment Variables
+Open http://localhost:3000.
 
-#### Backend (.env)
-```env
-GOOGLE_API_KEY=your-google-gemini-key
-AZURE_API_KEY=your-azure-key (optional)
-AZURE_REGION=eastus (optional)
+In production the two are one Vercel project and same-origin, so
+`NEXT_PUBLIC_API_BASE_URL` is left unset there.
+
+## Deploying
+
+`vercel.json` declares both halves as services of a single project: Next.js at
+the root and the FastAPI app under `backend/`, with `/api/*` routed to Python
+and everything else to Next.
+
+Set `GOOGLE_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, and
+`SUPABASE_SERVICE_ROLE_KEY` in the project's environment variables.
+
+## Limits worth knowing
+
+- Vercel caps a request or response body at **4.5 MB**, so uploads are limited
+  to 4 MB. Larger files need the backend hosted somewhere without that cap.
+- The backend is stateless. Every request that touches the data re-reads it
+  from Supabase and rebuilds an in-memory SQLite database, with a per-instance
+  cache keyed on a hash of the rows so a warm instance skips the rebuild.
+- Anyone who knows a workspace UUID can open it. They are unguessable, but
+  this is not a substitute for access control — don't put anything sensitive
+  in a deployment you have shared.
+
+## Layout
+
+```
+backend/
+  main.py               FastAPI routes
+  agent_services.py     LangChain agents, SQL generation, chart specs
+  data_handler.py       file parsing, in-memory SQLite
+  workspace_store.py    all Supabase access
+  report_generator.py   PDF reports
+edi-frontend/
+  src/app/page.tsx      the entire app, one route
+  src/components/       spreadsheet, chat sidebar, chart renderer
+  src/utils/api.ts      every backend call
 ```
 
-#### Frontend (.env.local)
-```env
-NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
+## Stack
 
-## Deployment
-
-### Deploy Backend to Render
-
-See [DEPLOY_RENDER.md](./DEPLOY_RENDER.md) for detailed instructions.
-
-**Quick Steps:**
-1. Push code to GitHub
-2. Create new Web Service on Render
-3. Set Root Directory to repository root
-4. Configure environment variables
-5. Deploy with:
-   - Build: `pip install -r requirements.txt`
-   - Start: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
-
-### Deploy Frontend to Vercel
-
-See [DEPLOY_VERCEL.md](./DEPLOY_VERCEL.md) for detailed instructions.
-
-**Quick Steps:**
-1. Import project from GitHub on Vercel
-2. Set Root Directory to `edi-frontend`
-3. Add environment variables (Supabase, API URL)
-4. Deploy
-
-## Documentation
-
-- **[API Documentation](./docs/api.md)** - Backend API reference
-- **[Complete Documentation](./docs/complete-documentation.md)** - Full system guide
-- **[Database Schema](./docs/database/)** - Supabase schema files
-- **[Deployment Guides](./DEPLOY_RENDER.md)** - Production deployment
-
-## Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
-
-## License
-
-This project is private and proprietary.
-
-## Support
-
-For issues and questions:
-- GitHub Issues: https://github.com/illeniall239/EDI/issues
-- Documentation: See `/docs` folder
-
-## Acknowledgments
-
-- Built with Google Gemini AI
-- Powered by UniverseJS spreadsheet engine
-- Authentication by Supabase
-- Deployed on Render + Vercel
+Next.js 16 · React 19 · Tailwind 4 · Univer (spreadsheet) · Recharts ·
+FastAPI · LangChain · Gemini 2.5 Flash · pandas · Supabase Postgres

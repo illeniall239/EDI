@@ -19,7 +19,14 @@ export const API_ENDPOINTS = {
     learnQuery: `${API_BASE_URL}/api/learn/query`,
     learnProgress: (workspaceId: string) => `${API_BASE_URL}/api/learn/progress/${workspaceId}`,
     learnDatasets: `${API_BASE_URL}/api/learn/datasets`,
-    learnPracticeChallenge: `${API_BASE_URL}/api/learn/practice-challenge`
+    learnPracticeChallenge: `${API_BASE_URL}/api/learn/practice-challenge`,
+    // Workspace + chat persistence. These go through the backend rather than
+    // straight to Supabase so the table can stay closed to the public anon key.
+    initializeData: `${API_BASE_URL}/api/initialize-data`,
+    createWorkspace: `${API_BASE_URL}/api/workspace`,
+    workspace: (id: string) => `${API_BASE_URL}/api/workspace/${id}`,
+    chats: (workspaceId: string) => `${API_BASE_URL}/api/workspace/${workspaceId}/chats`,
+    chat: (chatId: string) => `${API_BASE_URL}/api/chats/${chatId}`
 };
 
 // Static files base URL for visualizations

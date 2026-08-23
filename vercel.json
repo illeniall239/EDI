@@ -32,7 +32,9 @@
     { "source": "/api/orchestrate", "destination": { "service": "backend" } },
     { "source": "/api/spreadsheet-command", "destination": { "service": "backend" } },
     { "source": "/api/learn/(.*)", "destination": { "service": "backend" } },
+    { "source": "/api/workspace", "destination": { "service": "backend" } },
     { "source": "/api/workspace/(.*)", "destination": { "service": "backend" } },
+    { "source": "/api/chats/(.*)", "destination": { "service": "backend" } },
     { "source": "/static/(.*)", "destination": { "service": "backend" } },
     { "source": "/(.*)", "destination": { "service": "frontend" } }
   ],

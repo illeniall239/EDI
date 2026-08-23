@@ -191,171 +191,64 @@ export async function resetState(workspaceId?: string): Promise<void> {
     }
 }
 
-export async function saveWorkspaceData(workspaceId: string, data: unknown[], filename?: string, sheetState?: unknown): Promise<void> {
-    try {
-        const { supabase } = await import('@/utils/supabase');
-        
-        // Extract a robust column order from data: union of keys across all rows,
-        // preserving the order of first appearance
-        const columnOrder: string[] = [];
-        if (Array.isArray(data)) {
-            for (const row of data) {
-                if (row && typeof row === 'object') {
-                    for (const key of Object.keys(row)) {
-                        if (!columnOrder.includes(key)) {
-                            columnOrder.push(key);
-                        }
-                    }
-                }
-            }
-        }
-        
-        console.log('💾 Saving workspace data with column order:', columnOrder);
-        
-        // Try to save with optional sheet_state first (if the column exists)
-        let error: unknown = null;
-        try {
-            const result = await supabase
-                .from('workspaces')
-                .update({ 
-                    data: data,
-                    filename: filename || null,
-                    column_order: columnOrder,
-                    sheet_state: sheetState || null,
-                    last_modified: new Date().toISOString()
-                })
-                .eq('id', workspaceId);
-            error = result.error || null;
-        } catch (e: unknown) {
-            error = e;
-        }
-
-        if (error) {
-            // Fallback #1: retry without sheet_state
-            console.warn('⚠️ saveWorkspaceData: Saving with sheet_state failed, retrying without it...', (error as any)?.message || error);
-            const retry1 = await supabase
-                .from('workspaces')
-                .update({ 
-                    data: data,
-                    filename: filename || null,
-                    column_order: columnOrder,
-                    last_modified: new Date().toISOString()
-                })
-                .eq('id', workspaceId);
-
-            if (retry1.error) {
-                console.warn('⚠️ saveWorkspaceData: Fallback #1 failed, retrying with minimal payload...', retry1.error?.message || retry1.error);
-                // Fallback #2: minimal payload (data + last_modified only)
-                const retry2 = await supabase
-                    .from('workspaces')
-                    .update({ 
-                        data: data,
-                        last_modified: new Date().toISOString()
-                    })
-                    .eq('id', workspaceId);
-
-                if (retry2.error) {
-                    console.error('Error saving workspace data (all fallbacks):', retry2.error);
-                    throw new Error('Failed to save workspace data');
-                } else {
-                    console.log('✅ Workspace data saved successfully (fallback #2: minimal payload)');
-                }
-            } else {
-                console.log('✅ Workspace data saved successfully (fallback #1: without sheet_state)');
-            }
-        } else {
-            console.log('✅ Workspace data saved successfully with column order and sheet_state');
-        }
-    } catch (error) {
-        console.error('Error in saveWorkspaceData:', error);
-        throw error;
+async function workspaceRequest(url: string, init?: RequestInit) {
+    const response = await fetch(url, init);
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || response.statusText);
     }
+    return response.json();
+}
+
+export async function saveWorkspaceData(workspaceId: string, data: unknown[], filename?: string, sheetState?: unknown): Promise<void> {
+    // Column order is the union of keys across all rows, in order of first
+    // appearance -- rows are not guaranteed to carry the same keys, so taking
+    // it from row 0 alone drops columns that appear later.
+    const columnOrder: string[] = [];
+    for (const row of Array.isArray(data) ? data : []) {
+        if (row && typeof row === 'object') {
+            for (const key of Object.keys(row)) {
+                if (!columnOrder.includes(key)) columnOrder.push(key);
+            }
+        }
+    }
+
+    await workspaceRequest(API_ENDPOINTS.workspace(workspaceId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            data,
+            filename: filename ?? null,
+            column_order: columnOrder,
+            sheet_state: sheetState ?? null
+        })
+    });
 }
 
 export async function loadWorkspaceData(workspaceId: string): Promise<{ data: unknown[], filename?: string, sheetState?: unknown } | null> {
     try {
-        const { supabase } = await import('@/utils/supabase');
+        const workspace = await workspaceRequest(API_ENDPOINTS.workspace(workspaceId));
+        const rows: unknown[] = workspace.data || [];
+        const columnOrder: string[] = workspace.column_order || [];
 
-        // Attempt to fetch including sheet_state
-        type WorkspaceData = {
-            data: unknown[];
-            filename?: string;
-            column_order?: string[];
-            sheet_state?: unknown;
-        };
-        let workspace: WorkspaceData | null = null;
-        let error: unknown = null;
-        try {
-            const res = await supabase
-                .from('workspaces')
-                .select('data, filename, column_order, sheet_state')
-                .eq('id', workspaceId)
-                .single();
-            workspace = res.data as WorkspaceData | null;
-            error = res.error;
-        } catch (e: unknown) {
-            error = e;
-        }
-
-        // If selecting sheet_state failed (column might not exist), retry without it
-        if (error) {
-            console.warn('⚠️ loadWorkspaceData: Selecting sheet_state failed, retrying without it...', (error as Error)?.message || error);
-            const res2 = await supabase
-                .from('workspaces')
-                .select('data, filename, column_order')
-                .eq('id', workspaceId)
-                .single();
-            workspace = res2.data as WorkspaceData | null;
-            error = res2.error;
-        }
-
-        if (error) {
-            console.error('Error loading workspace data:', error);
-            return null;
-        }
-
-        if (!workspace?.data) {
-            console.log('No data found in workspace');
-            return null;
-        }
-
-        let loadedData = workspace.data;
-        
-        // Restore column order if available
-        if (workspace.column_order && workspace.column_order.length > 0 && loadedData.length > 0) {
-            const columnOrder = workspace.column_order ?? [];
-            console.log('🔄 Restoring column order:', columnOrder);
-            
-            loadedData = loadedData.map((row: Record<string, unknown>) => {
-                const orderedRow: Record<string, unknown> = {};
-                // Place known columns in their saved order
-                columnOrder.forEach((column: string) => {
-                    if (Object.prototype.hasOwnProperty.call(row, column)) {
-                        orderedRow[column] = row[column];
-                    }
-                });
-                // Append any new/extra columns that were not part of the saved order
-                for (const key of Object.keys(row)) {
-                    if (!columnOrder.includes(key)) {
-                        orderedRow[key] = row[key];
-                    }
-                }
-                return orderedRow;
-            });
-            
-            console.log('✅ Column order restored successfully');
-        } else {
-            console.log('⚠️ No column order saved, using data as-is');
-        }
-
-        console.log('✅ Workspace data loaded successfully', {
-            rows: loadedData.length,
-            filename: workspace.filename,
-            columnOrder: workspace.column_order
-        });
+        // Re-key each row so the saved column order survives the round trip;
+        // object key order is what the spreadsheet renders from.
+        const ordered = columnOrder.length
+            ? rows.map((row) => {
+                  const source = (row || {}) as Record<string, unknown>;
+                  const result: Record<string, unknown> = {};
+                  for (const key of columnOrder) {
+                      if (key in source) result[key] = source[key];
+                  }
+                  for (const key of Object.keys(source)) {
+                      if (!(key in result)) result[key] = source[key];
+                  }
+                  return result;
+              })
+            : rows;
 
         return {
-            data: loadedData,
+            data: ordered,
             filename: workspace.filename || undefined,
             sheetState: workspace.sheet_state || undefined
         };
@@ -511,119 +404,34 @@ export async function fetchReportsForWorkspace(workspaceId: string): Promise<Arr
 }
 
 export async function saveChatHistory(workspaceId: string, messages: unknown[]): Promise<void> {
-    try {
-        const { supabase } = await import('@/utils/supabase');
-        
-        console.log('💾 Saving chat history for workspace:', workspaceId, 'Messages:', messages.length);
-        
-        const { error } = await supabase
-            .from('workspaces')
-            .update({ 
-                chat_messages: messages,
-                last_modified: new Date().toISOString()
-            })
-            .eq('id', workspaceId);
-
-        if (error) {
-            console.error('Error saving chat history:', error);
-            throw new Error('Failed to save chat history');
-        }
-        
-        console.log('✅ Chat history saved successfully');
-    } catch (error) {
-        console.error('Error in saveChatHistory:', error);
-        throw error;
-    }
+    await workspaceRequest(API_ENDPOINTS.workspace(workspaceId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_messages: messages })
+    });
 }
 
 export async function loadChatHistory(workspaceId: string): Promise<unknown[]> {
     try {
-        const { supabase } = await import('@/utils/supabase');
-        
-        const { data: workspace, error } = await supabase
-            .from('workspaces')
-            .select('chat_messages')
-            .eq('id', workspaceId)
-            .single();
-
-        if (error) {
-            console.error('Error loading chat history:', error);
-            return [];
-        }
-
-        const messages = workspace?.chat_messages || [];
-
-        // Clean up loaded messages - remove typing/analyzing states since these are historical
-        const cleanedMessages = messages.map((message: Record<string, unknown>) => {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { isTyping, isAnalyzing, ...cleanMessage } = message;
-            return cleanMessage;
-        });
-        
-        console.log('✅ Chat history loaded successfully', {
-            workspaceId,
-            messageCount: cleanedMessages.length
-        });
-
-        return cleanedMessages;
+        const workspace = await workspaceRequest(API_ENDPOINTS.workspace(workspaceId));
+        return workspace.chat_messages || [];
     } catch (error) {
         console.error('Error in loadChatHistory:', error);
         return [];
     }
 }
 
-// ============================================
-// NEW: Multiple Chat Management Functions
-// ============================================
-
 export async function createNewChat(workspaceId: string, title?: string): Promise<Chat> {
-    try {
-        const { supabase } = await import('@/utils/supabase');
-        
-        console.log('🆕 Creating new chat for workspace:', workspaceId, 'Title:', title || 'New Chat');
-        
-        const { data: chat, error } = await supabase
-            .from('chats')
-            .insert({ 
-                workspace_id: workspaceId,
-                title: title || 'New Chat',
-                messages: [],
-                context_state: {}
-            })
-            .select()
-            .single();
-
-        if (error) {
-            console.error('Error creating new chat:', error);
-            throw new Error('Failed to create new chat');
-        }
-        
-        console.log('✅ New chat created successfully:', chat.id);
-        return chat;
-    } catch (error) {
-        console.error('Error in createNewChat:', error);
-        throw error;
-    }
+    return workspaceRequest(API_ENDPOINTS.chats(workspaceId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title || 'New Chat' })
+    });
 }
 
 export async function loadChats(workspaceId: string): Promise<Chat[]> {
     try {
-        const { supabase } = await import('@/utils/supabase');
-        
-        console.log('📂 Loading chats for workspace:', workspaceId);
-        
-        const { data: chats, error } = await supabase
-            .from('chats')
-            .select('*')
-            .eq('workspace_id', workspaceId)
-            .order('updated_at', { ascending: false });
-
-        if (error) {
-            console.error('Error loading chats:', error);
-            return [];
-        }
-        
-        console.log('✅ Chats loaded successfully:', chats?.length || 0, 'chats');
+        const { chats } = await workspaceRequest(API_ENDPOINTS.chats(workspaceId));
         return chats || [];
     } catch (error) {
         console.error('Error in loadChats:', error);
@@ -631,68 +439,28 @@ export async function loadChats(workspaceId: string): Promise<Chat[]> {
     }
 }
 
-export async function saveChatMessages(chatId: string, messages: ChatMessage[]): Promise<void> {
-    try {
-        const { supabase } = await import('@/utils/supabase');
-        
-        console.log('💾 Saving messages for chat:', chatId, 'Messages:', messages.length);
-        
-        // Clean messages before saving - remove typing/analyzing states since they're temporary UI states
-        const cleanedMessages = messages.map((message) => {
-            const { ...cleanMessage } = message;
-            return cleanMessage;
-        });
-        
-        console.log('🧹 Cleaned messages for saving (removed isTyping/isAnalyzing from', messages.length, 'messages)');
-        
-        const { error } = await supabase
-            .from('chats')
-            .update({ 
-                messages: cleanedMessages,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', chatId);
+/** Transient UI flags are not worth persisting and are misleading on reload. */
+function stripTransientState(message: Record<string, unknown>): Record<string, unknown> {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { isTyping, isAnalyzing, ...rest } = message;
+    return rest;
+}
 
-        if (error) {
-            console.error('Error saving chat messages:', error);
-            throw new Error('Failed to save chat messages');
-        }
-        
-        console.log('✅ Chat messages saved successfully');
-    } catch (error) {
-        console.error('Error in saveChatMessages:', error);
-        throw error;
-    }
+export async function saveChatMessages(chatId: string, messages: ChatMessage[]): Promise<void> {
+    await workspaceRequest(API_ENDPOINTS.chat(chatId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            messages: messages.map((m) => stripTransientState(m as unknown as Record<string, unknown>))
+        })
+    });
 }
 
 export async function loadChatMessages(chatId: string): Promise<ChatMessage[]> {
     try {
-        const { supabase } = await import('@/utils/supabase');
-        
-        console.log('📥 Loading messages for chat:', chatId);
-        
-        const { data: chat, error } = await supabase
-            .from('chats')
-            .select('messages')
-            .eq('id', chatId)
-            .single();
-
-        if (error) {
-            console.error('Error loading chat messages:', error);
-            return [];
-        }
-
-        const messages = chat?.messages || [];
-
-        // Clean up loaded messages - remove typing/analyzing states since these are historical
-        const cleanedMessages = messages.map((message: Record<string, unknown>) => {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { isTyping, isAnalyzing, ...cleanMessage } = message;
-            return cleanMessage;
-        });
-        
-        console.log('✅ Chat messages loaded successfully:', cleanedMessages.length, 'messages');
-        return cleanedMessages;
+        const chat = await workspaceRequest(API_ENDPOINTS.chat(chatId));
+        const messages: Record<string, unknown>[] = chat.messages || [];
+        return messages.map(stripTransientState) as unknown as ChatMessage[];
     } catch (error) {
         console.error('Error in loadChatMessages:', error);
         return [];
@@ -700,52 +468,15 @@ export async function loadChatMessages(chatId: string): Promise<ChatMessage[]> {
 }
 
 export async function deleteChat(chatId: string): Promise<void> {
-    try {
-        const { supabase } = await import('@/utils/supabase');
-        
-        console.log('🗑️ Deleting chat:', chatId);
-        
-        const { error } = await supabase
-            .from('chats')
-            .delete()
-            .eq('id', chatId);
-
-        if (error) {
-            console.error('Error deleting chat:', error);
-            throw new Error('Failed to delete chat');
-        }
-        
-        console.log('✅ Chat deleted successfully');
-    } catch (error) {
-        console.error('Error in deleteChat:', error);
-        throw error;
-    }
+    await workspaceRequest(API_ENDPOINTS.chat(chatId), { method: 'DELETE' });
 }
 
 export async function updateChatTitle(chatId: string, title: string): Promise<void> {
-    try {
-        const { supabase } = await import('@/utils/supabase');
-        
-        console.log('✏️ Updating chat title:', chatId, 'New title:', title);
-        
-        const { error } = await supabase
-            .from('chats')
-            .update({ 
-                title: title,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', chatId);
-
-        if (error) {
-            console.error('Error updating chat title:', error);
-            throw new Error('Failed to update chat title');
-        }
-        
-        console.log('✅ Chat title updated successfully');
-    } catch (error) {
-        console.error('Error in updateChatTitle:', error);
-        throw error;
-    }
+    await workspaceRequest(API_ENDPOINTS.chat(chatId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title })
+    });
 }
 
 export async function analyzeWorkspaceInsights(

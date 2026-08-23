@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { BarChart3, FileText, File, ChevronDown, Upload, Database, Download, ChevronRight, Trash2, Settings, Columns3, Calculator, Menu, Edit, Table, FileSpreadsheet, Zap } from 'lucide-react';
-import UserProfile from './UserProfile';
 import ConfirmationDialog from './ConfirmationDialog';
 import { isUniverEnabled, toggleSpreadsheetEngine } from '@/config/spreadsheetConfig';
 
@@ -444,9 +443,6 @@ export default function SpreadsheetNavbar({
               )}
             </div>
 
-
-            {/* User Profile */}
-            <UserProfile variant="floating" dropdownDirection="down" />
           </div>
         </div>
 

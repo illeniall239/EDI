@@ -1,207 +1,326 @@
 'use client';
 
-import Navigation from '@/components/Navigation';
-import { HeroSection } from '@/components/landing/HeroSection';
-import { FeatureCards } from '@/components/landing/FeatureCards';
-import { WaveFooter } from '@/components/landing/WaveFooter';
-import { GlassmorphicCard } from '@/components/effects/GlassmorphicCard';
-import { ScrollReveal } from '@/components/animations/ScrollReveal';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import WorkModeWorkspace from '@/components/WorkModeWorkspace';
+import DataQualityReportModal from '@/components/DataQualityReportModal';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
+import {
+    uploadFile,
+    saveWorkspaceData,
+    loadWorkspaceData,
+    initializeBackendWithData,
+    generateReport,
+    downloadReport,
+    checkReportStatus,
+    resetState
+} from '@/utils/api';
+import { getOrCreateWorkspaceId } from '@/utils/workspace';
+import { Workspace } from '@/types';
+import { generateDataQualityReport as generateQualityReportData } from '@/utils/dataQualityUtils';
+import { commandService } from '@/services/commandService';
 
-import { Check, X } from 'lucide-react';
-import Image from 'next/image';
+/**
+ * The whole app.
+ *
+ * There is no sign-in and no workspace picker: opening the page resolves an
+ * anonymous workspace id from localStorage (creating one on first visit) and
+ * drops you straight into the sheet with the AI sidebar.
+ */
+export default function HomePage() {
+    const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+    const [workspace, setWorkspace] = useState<Workspace | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [data, setData] = useState<unknown[]>([]);
+    const [isCreatingSheet, setIsCreatingSheet] = useState(false);
+    const [currentFilename, setCurrentFilename] = useState<string | undefined>();
+    const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+    const [initialSheets, setInitialSheets] = useState<unknown[] | undefined>(undefined);
+    const [showDataQualityReport, setShowDataQualityReport] = useState(false);
+    const [dataQualityReport, setDataQualityReport] = useState<unknown>(null);
+    const { setCurrentWorkspace } = useWorkspace();
 
-export default function Home() {
-  return (
-    <div className="min-h-screen bg-black text-white relative overflow-x-hidden">
-      <Navigation />
+    // Univer adapter, used to snapshot the sheet exactly as the user left it.
+    const univerAdapterRef = useRef<any>(null);
 
-      {/* Hero Section with 3D Effects */}
-      <HeroSection />
+    const saveDataToWorkspace = useCallback(async (newData: unknown[], filename?: string) => {
+        if (!workspaceId) return;
 
-      {/* Product Screenshot Section */}
-      <section className="relative py-24 bg-gradient-to-b from-black via-deep-space to-black">
-        <div className="container mx-auto px-6">
-          <ScrollReveal direction="fade">
-            <div className="max-w-6xl mx-auto">
-              {/* Browser Frame Mockup */}
-              <div className="relative group">
-                {/* Multiple shadow layers for depth */}
-                <div className="absolute inset-0 bg-electric-purple/20 rounded-2xl blur-3xl translate-y-8 scale-105 opacity-60" />
-                <div className="absolute inset-0 bg-neon-magenta/20 rounded-2xl blur-xl translate-y-4 scale-102 opacity-80" />
+        let sheetState: unknown = undefined;
+        try {
+            if (univerAdapterRef.current?.getWorkbookSnapshot) {
+                sheetState = await univerAdapterRef.current.getWorkbookSnapshot();
+            }
+        } catch (err) {
+            // A snapshot failure should not cost the user their data; fall back
+            // to saving the rows alone.
+            console.warn('Could not capture sheet snapshot, saving data only:', err);
+        }
 
-                {/* Browser Window */}
-                <GlassmorphicCard className="overflow-hidden" variant="strong">
-                  {/* Browser Chrome */}
-                  <div className="bg-black/90 backdrop-blur-sm border-b border-white/10 px-4 py-3 flex items-center gap-3">
-                    {/* Window controls */}
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 bg-red-500 rounded-full" />
-                      <div className="w-3 h-3 bg-yellow-500 rounded-full" />
-                      <div className="w-3 h-3 bg-green-500 rounded-full" />
+        try {
+            await saveWorkspaceData(workspaceId, newData, filename, sheetState);
+        } catch (err) {
+            console.error('Failed to save workspace:', err);
+        }
+    }, [workspaceId]);
+
+    // Resolve the workspace, then restore whatever was in it.
+    useEffect(() => {
+        let cancelled = false;
+
+        (async () => {
+            try {
+                const id = await getOrCreateWorkspaceId();
+                if (cancelled) return;
+
+                setWorkspaceId(id);
+
+                const restored = await loadWorkspaceData(id);
+                if (cancelled) return;
+
+                const resolved: Workspace = {
+                    id,
+                    name: 'My Sheet',
+                    workspace_type: 'work'
+                } as Workspace;
+                setWorkspace(resolved);
+                setCurrentWorkspace(resolved);
+
+                if (restored && restored.data.length > 0) {
+                    // Push the rows back into the backend so a query works
+                    // immediately, without waiting for another upload.
+                    try {
+                        await initializeBackendWithData(restored.data, restored.filename);
+                    } catch (err) {
+                        console.warn('Backend did not accept the restored data:', err);
+                    }
+                    if (cancelled) return;
+
+                    setData(restored.data);
+                    setCurrentFilename(restored.filename);
+                    setInitialSheets(
+                        Array.isArray(restored.sheetState) ? restored.sheetState : undefined
+                    );
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    setError(err instanceof Error ? err.message : 'Could not open your sheet.');
+                }
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+        // setCurrentWorkspace comes from context and is stable.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Child components (the chat sidebar in particular) announce data changes
+    // by dispatching a window event rather than calling back up the tree. The
+    // listener is re-registered when the filename or workspace changes so it
+    // never closes over a stale one.
+    useEffect(() => {
+        const handleDataUpdate = (event: Event) => {
+            const detail = (event as CustomEvent).detail;
+            if (!detail?.data) return;
+
+            const newData = detail.data as unknown[];
+            const newFilename = detail.filename || currentFilename;
+
+            setData(newData);
+            if (newFilename && newFilename !== currentFilename) {
+                setCurrentFilename(newFilename);
+            }
+            void saveDataToWorkspace(newData, newFilename);
+        };
+
+        window.addEventListener('dataUpdate', handleDataUpdate);
+        return () => window.removeEventListener('dataUpdate', handleDataUpdate);
+    }, [saveDataToWorkspace, currentFilename]);
+
+    const handleAdapterReady = (adapter: any) => {
+        univerAdapterRef.current = adapter;
+    };
+
+    const ingestFile = async (file: File) => {
+        if (!workspaceId) return;
+        setIsCreatingSheet(true);
+        try {
+            const result = await uploadFile(file, workspaceId);
+            if (result.data && result.data.length > 0) {
+                setData(result.data);
+                setCurrentFilename(file.name);
+                await saveDataToWorkspace(result.data, file.name);
+            } else {
+                alert('Failed to process the uploaded file. Please try again.');
+            }
+        } catch (err) {
+            console.error('Upload error:', err);
+            alert(err instanceof Error ? err.message : 'Failed to upload file.');
+        } finally {
+            setIsCreatingSheet(false);
+        }
+    };
+
+    const handleFileUploadFromSpreadsheet = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        await ingestFile(file);
+        event.target.value = '';
+    };
+
+    const handleFileUploadFromNavbar = async (files: FileList) => {
+        const file = files[0];
+        if (file) await ingestFile(file);
+    };
+
+    const handleClearData = async () => {
+        setData([]);
+        setCurrentFilename(undefined);
+        try {
+            await resetState(workspaceId ?? undefined);
+        } catch (err) {
+            console.warn('Could not reset backend state:', err);
+        }
+        await saveDataToWorkspace([], undefined);
+    };
+
+    const handleGenerateQualityReport = async () => {
+        if (!data || data.length === 0) {
+            alert('No data available for quality analysis');
+            return;
+        }
+        setIsGeneratingReport(true);
+        try {
+            const report = await generateQualityReportData(data, async (dataArray: unknown[][]) =>
+                commandService.analyzeData(
+                    'Generate a comprehensive data quality report with exact locations of all issues including duplicates, missing values, and data inconsistencies',
+                    dataArray
+                )
+            );
+            setDataQualityReport(report);
+            setShowDataQualityReport(true);
+        } catch (err) {
+            console.error('Error generating quality report:', err);
+            alert('Failed to generate the data quality report.');
+        } finally {
+            setIsGeneratingReport(false);
+        }
+    };
+
+    const handleGenerateReport = async () => {
+        if (!data || data.length === 0) {
+            alert('Upload a dataset before generating a report.');
+            return;
+        }
+        setIsGeneratingReport(true);
+        try {
+            const { report_id } = await generateReport();
+
+            // The backend builds the PDF in the background, so poll until it
+            // is either ready or has failed.
+            let status = await checkReportStatus(report_id);
+            for (let attempt = 0; attempt < 60 && status.status === 'generating'; attempt++) {
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                status = await checkReportStatus(report_id);
+            }
+
+            if (status.status !== 'ready') {
+                alert(status.error || 'Report generation timed out. Please try again.');
+                return;
+            }
+
+            const blob = await downloadReport(report_id);
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `report_${report_id}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Error generating report:', err);
+            alert(err instanceof Error ? err.message : 'Failed to generate report');
+        } finally {
+            setIsGeneratingReport(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-background text-white">
+                <div className="flex justify-center items-center h-screen">
+                    <div className="text-center text-white/80">
+                        <div className="w-10 h-10 border-4 border-white/40 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                        <div className="text-sm">Opening your sheet...</div>
                     </div>
+                </div>
+            </div>
+        );
+    }
 
-                    {/* URL bar */}
-                    <div className="flex-1 mx-4">
-                      <div className="bg-white/5 rounded-lg px-4 py-2 border border-white/10 flex items-center gap-3">
-                        <svg
-                          className="w-4 h-4 text-green-400"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
+    if (error || !workspace) {
+        return (
+            <div className="min-h-screen bg-background">
+                <div className="flex justify-center items-center h-screen px-6">
+                    <div className="text-center max-w-md">
+                        <h2 className="text-2xl font-bold text-white mb-3">Could not open your sheet</h2>
+                        <p className="text-white/60 text-sm mb-6">
+                            {error || 'The workspace could not be loaded.'}
+                        </p>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                          />
-                        </svg>
-                        <span className="text-gray-300 text-sm font-mono">
-                          app.edi.ai
-                        </span>
-                      </div>
+                            Try again
+                        </button>
                     </div>
-                  </div>
-
-                  {/* Screenshot */}
-                  <div className="relative bg-white overflow-hidden">
-                    <Image
-                      src="/product_ss.png"
-                      alt="EDI.ai Product Screenshot"
-                      width={1200}
-                      height={800}
-                      className="w-full h-auto"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/5 via-transparent to-black/5 pointer-events-none" />
-                  </div>
-                </GlassmorphicCard>
-              </div>
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <FeatureCards />
-
-      {/* Comparison Section */}
-      <section className="relative py-32 overflow-hidden bg-gradient-to-b from-black via-deep-space to-black">
-        <div className="container mx-auto px-6">
-          {/* Section Header */}
-          <ScrollReveal direction="fade">
-            <div className="text-center mb-16">
-              <h2 className="text-5xl md:text-6xl font-display font-bold gradient-text-holographic mb-6">
-                Traditional vs AI-Powered
-              </h2>
-              <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-                See the difference AI makes in your daily workflow
-              </p>
-            </div>
-          </ScrollReveal>
-
-          {/* Comparison Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
-            {/* Traditional Side */}
-            <ScrollReveal direction="left">
-              <GlassmorphicCard className="p-8 h-full grayscale hover:grayscale-0 transition-all duration-500">
-                <h3 className="text-2xl font-display font-bold text-center mb-8 text-white">
-                  Traditional Spreadsheets
-                </h3>
-                <div className="space-y-4">
-                  {[
-                    {
-                      label: 'Complex Formulas',
-                      desc: '=VLOOKUP(A2,Sheet2!A:C,3,FALSE)',
-                    },
-                    {
-                      label: 'Manual Analysis',
-                      desc: 'Hours of manual pivot tables',
-                    },
-                    {
-                      label: 'Chart Creation',
-                      desc: '10+ clicks to create basic charts',
-                    },
-                    {
-                      label: 'Error Prone',
-                      desc: '#N/A, #REF! errors everywhere',
-                    },
-                    {
-                      label: 'Limited Collaboration',
-                      desc: 'Email spreadsheets back and forth',
-                    },
-                    {
-                      label: 'Steep Learning Curve',
-                      desc: 'Master complex formulas and functions',
-                    },
-                  ].map((item, index) => (
-                    <div key={index} className="flex items-start space-x-3">
-                      <X className="text-red-400 mt-1 w-5 h-5 flex-shrink-0" />
-                      <div>
-                        <p className="text-white font-medium">{item.label}</p>
-                        <p className="text-gray-400 text-sm">{item.desc}</p>
-                      </div>
-                    </div>
-                  ))}
                 </div>
-              </GlassmorphicCard>
-            </ScrollReveal>
+            </div>
+        );
+    }
 
-            {/* EDI.ai Side */}
-            <ScrollReveal direction="right">
-              <GlassmorphicCard
-                className="p-8 h-full glow"
-                variant="strong"
-                glowColor="cyan"
-              >
-                <h3 className="text-2xl font-display font-bold text-center mb-8 gradient-text-holographic">
-                  EDI.ai
-                </h3>
-                <div className="space-y-4">
-                  {[
-                    {
-                      label: 'Natural Language',
-                      desc: '"Show me customer purchase history"',
-                    },
-                    {
-                      label: 'Instant AI Insights',
-                      desc: 'AI-powered analysis in seconds',
-                    },
-                    {
-                      label: 'Auto-Generated Charts',
-                      desc: 'Charts created automatically from questions',
-                    },
-                    {
-                      label: 'Error-Free',
-                      desc: 'AI validates and corrects automatically',
-                    },
-                    {
-                      label: 'Real-Time Collaboration',
-                      desc: 'Collaborative AI workspace',
-                    },
-                    {
-                      label: 'Zero Learning Curve',
-                      desc: 'Just speak naturally to your data',
-                    },
-                  ].map((item, index) => (
-                    <div key={index} className="flex items-start space-x-3">
-                      <Check className="text-neon-cyan mt-1 w-5 h-5 flex-shrink-0" />
-                      <div>
-                        <p className="text-white font-medium">{item.label}</p>
-                        <p className="text-gray-400 text-sm">{item.desc}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </GlassmorphicCard>
-            </ScrollReveal>
-          </div>
-        </div>
-      </section>
+    const noop = () => {};
 
+    return (
+        <>
+            <WorkModeWorkspace
+                workspace={workspace}
+                workspaces={[workspace]}
+                data={data}
+                isCreatingSheet={isCreatingSheet}
+                isGeneratingReport={isGeneratingReport}
+                onWorkspaceChange={noop}
+                onRenameWorkspace={noop}
+                onDeleteWorkspace={noop}
+                onFileUpload={handleFileUploadFromNavbar}
+                onGenerateQualityReport={handleGenerateQualityReport}
+                onGenerateReport={handleGenerateReport}
+                onExtractColumns={noop}
+                onClearData={handleClearData}
+                onSpreadsheetCommand={async (command: string) => ({
+                    success: true,
+                    message: `Processed command: "${command}"`
+                })}
+                onDataUpdate={setData}
+                onFileUploadFromSpreadsheet={handleFileUploadFromSpreadsheet}
+                setShowSyntheticDatasetDialog={noop}
+                setShowColumnExtraction={noop}
+                currentFilename={currentFilename}
+                initialSheets={initialSheets}
+                onAdapterReady={handleAdapterReady}
+            />
 
-
-      {/* Footer */}
-      <WaveFooter />
-    </div>
-  );
+            <DataQualityReportModal
+                isOpen={showDataQualityReport}
+                onClose={() => setShowDataQualityReport(false)}
+                report={dataQualityReport}
+                onRefresh={handleGenerateQualityReport}
+            />
+        </>
+    );
 }

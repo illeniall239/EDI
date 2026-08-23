@@ -1018,6 +1018,121 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
         print(f"❌ Error initializing backend with data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to initialize backend: {str(e)}")
 
+@app.post("/api/workspace")
+async def create_workspace_endpoint(request: Optional[Dict[str, Any]] = None):
+    """
+    Create an empty workspace and hand back its id.
+
+    The app has no sign-in: the browser keeps this id in localStorage and sends
+    it with every request. Supabase is reached only from here, with the
+    service-role key, so the public anon key never needs read access to the
+    table.
+    """
+    name = (request or {}).get("name") or "Untitled"
+    try:
+        workspace_id = workspace_store.create_workspace(name)
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    return {"id": workspace_id, "name": name}
+
+
+@app.get("/api/workspace/{workspace_id}")
+async def get_workspace_endpoint(workspace_id: str):
+    """Return the stored sheet, filename and chat history for a workspace."""
+    try:
+        row = workspace_store.fetch_workspace(workspace_id)
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    return {
+        "id": row.get("id"),
+        "name": row.get("name"),
+        "data": row.get("data") or [],
+        "filename": row.get("filename"),
+        "column_order": row.get("column_order") or [],
+        "sheet_state": row.get("sheet_state"),
+        "chat_messages": row.get("chat_messages") or [],
+    }
+
+
+@app.put("/api/workspace/{workspace_id}")
+async def save_workspace_endpoint(workspace_id: str, request: Dict[str, Any]):
+    """
+    Save whatever the client sends. Fields that are absent are left alone, so a
+    chat-only save does not wipe the dataset.
+    """
+    try:
+        workspace_store.save_workspace(
+            workspace_id,
+            data=request.get("data"),
+            filename=request.get("filename"),
+            sheet_state=request.get("sheet_state"),
+            column_order=request.get("column_order"),
+            chat_messages=request.get("chat_messages"),
+        )
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    return {"success": True}
+
+
+@app.get("/api/workspace/{workspace_id}/chats")
+async def list_chats_endpoint(workspace_id: str):
+    """List the chat threads belonging to a workspace."""
+    try:
+        return {"chats": workspace_store.list_chats(workspace_id)}
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@app.post("/api/workspace/{workspace_id}/chats")
+async def create_chat_endpoint(workspace_id: str, request: Optional[Dict[str, Any]] = None):
+    """Start a new chat thread in a workspace."""
+    title = (request or {}).get("title") or "New Chat"
+    try:
+        return workspace_store.create_chat(workspace_id, title)
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@app.get("/api/chats/{chat_id}")
+async def get_chat_endpoint(chat_id: str):
+    """Return one chat thread's messages."""
+    try:
+        chat = workspace_store.fetch_chat(chat_id)
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return chat
+
+
+@app.put("/api/chats/{chat_id}")
+async def save_chat_endpoint(chat_id: str, request: Dict[str, Any]):
+    """Save a chat thread's messages and/or title."""
+    try:
+        workspace_store.save_chat(
+            chat_id,
+            messages=request.get("messages"),
+            title=request.get("title"),
+        )
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    return {"success": True}
+
+
+@app.delete("/api/chats/{chat_id}")
+async def delete_chat_endpoint(chat_id: str):
+    """Delete a chat thread."""
+    try:
+        workspace_store.delete_chat(chat_id)
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    return {"success": True}
+
+
 @app.get("/api/data")
 async def get_current_data(workspace_id: Optional[str] = None):
     try:
