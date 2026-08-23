@@ -24,7 +24,6 @@
     { "source": "/api/range-filter", "destination": { "service": "backend" } },
     { "source": "/api/columns", "destination": { "service": "backend" } },
     { "source": "/api/extract-columns", "destination": { "service": "backend" } },
-    { "source": "/api/analyze-chart", "destination": { "service": "backend" } },
     { "source": "/api/analyze-formula", "destination": { "service": "backend" } },
     { "source": "/api/initialize-data", "destination": { "service": "backend" } },
     { "source": "/analyze-formula", "destination": { "service": "backend" } },
