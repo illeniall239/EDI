@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Plus, RefreshCw, Save, Check, Zap } from 'lucide-react';
+import { Plus, RefreshCw, Save, Check, Zap, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { isUniverEnabled, toggleSpreadsheetEngine } from '@/config/spreadsheetConfig';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
@@ -6544,15 +6544,15 @@ export default function ChatSidebar({
                 <div className="flex items-center justify-between h-full">
                     <button
                         onClick={onToggle}
+                        aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+                        title={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
                         className="w-10 h-10 flex items-center justify-center rounded-full bg-black hover:bg-black/80 border border-white/10 transition-all duration-200 text-white/80 hover:text-white shadow-sm hover:shadow-md"
                     >
-                        <Image 
-                            src="/sidebar.png" 
-                            alt="Toggle sidebar" 
-                            width={20} 
-                            height={20}
-                            className="opacity-75 hover:opacity-100 transition-opacity duration-200"
-                        />
+                        {isExpanded ? (
+                            <PanelLeftClose className="w-5 h-5" strokeWidth={1.75} aria-hidden="true" />
+                        ) : (
+                            <PanelLeftOpen className="w-5 h-5" strokeWidth={1.75} aria-hidden="true" />
+                        )}
                     </button>
                     
                     {/* Chat Controls in Header */}
@@ -6977,6 +6977,11 @@ export default function ChatSidebar({
                             alt="Expanded Data Visualization"
                             width={1600}
                             height={1200}
+                            // Only reachable from chart images saved before charts
+                            // became client-rendered specs. Skip the optimizer:
+                            // /_next/image is not served under the two-service
+                            // deployment, so an optimized request 404s.
+                            unoptimized
                             className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                             draggable={false}
