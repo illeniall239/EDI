@@ -5,7 +5,7 @@ import { Plus, RefreshCw, Save, Check, Zap, PanelLeftClose, PanelLeftOpen } from
 import { isUniverEnabled, toggleSpreadsheetEngine } from '@/config/spreadsheetConfig';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, sendLearnQuery, saveWorkspaceData, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace } from '@/utils/api';
+import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, sendLearnQuery, saveWorkspaceData, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, LimitError } from '@/utils/api';
 import { commandService } from '@/services/commandService';
 import { llmCommandClassifier, CommandClassification } from '@/services/llmCommandClassifier';
 // NEW: Universal Query Router for intelligent routing
@@ -386,7 +386,12 @@ export default function ChatSidebar({
             const errorMessage: ChatMessage = {
                 id: (Date.now() + 1).toString(),
                 type: 'assistant',
-                content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : String(error)}`,
+                // A demo limit is not a malfunction, and its message already
+                // explains itself, so it is shown as written rather than
+                // dressed up as an error the user should report.
+                content: error instanceof LimitError
+                    ? error.message
+                    : `Sorry, I encountered an error: ${error instanceof Error ? error.message : String(error)}`,
                 timestamp: new Date()
             };
 

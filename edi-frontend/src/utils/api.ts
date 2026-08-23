@@ -2,6 +2,34 @@ import { API_ENDPOINTS, API_BASE_URL, SUPPORTED_FILE_TYPES, MAX_FILE_SIZE } from
 import { LearnQueryResponse, LearningProgress } from '@/types';
 import { DataPreview, QueryResponse, Chat, ChatMessage } from '@/types';
 
+/**
+ * A refusal from the demo's usage limits: 429 (too many questions) or 413
+ * (question, file, or dataset too large).
+ *
+ * Kept distinct from an ordinary failure because the backend's message is
+ * already a complete explanation written for the person who hit it -- it says
+ * what the limit is and what to do about it. Callers render it as-is rather
+ * than wrapping it in "something went wrong", which would read as a bug in the
+ * app instead of a deliberate boundary.
+ */
+export class LimitError extends Error {
+    readonly status: number;
+
+    constructor(message: string, status: number) {
+        super(message);
+        this.name = 'LimitError';
+        this.status = status;
+    }
+}
+
+function limitRefusal(response: Response, detail?: string): LimitError | null {
+    if (response.status !== 429 && response.status !== 413) return null;
+    return new LimitError(
+        detail || 'This demo limits how much it will do at once. Please try again in a moment.',
+        response.status
+    );
+}
+
 export async function uploadFile(file: File, workspaceId: string = 'default'): Promise<DataPreview> {
     if (!SUPPORTED_FILE_TYPES.includes(file.type as string)) {
         throw new Error('Unsupported file type. Please upload a CSV or Excel file.');
@@ -27,7 +55,7 @@ export async function uploadFile(file: File, workspaceId: string = 'default'): P
     console.log('Server response:', data);
 
     if (!response.ok) {
-        throw new Error(data.detail || 'Failed to upload file');
+        throw limitRefusal(response, data.detail) || new Error(data.detail || 'Failed to upload file');
     }
 
     // Ensure the response has the expected structure
@@ -100,7 +128,7 @@ export async function sendQuery(query: string, chatId: string, options?: { isVoi
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         console.error('Query failed:', errorData);
-        throw new Error(errorData.detail || 'Failed to send query');
+        throw limitRefusal(response, errorData.detail) || new Error(errorData.detail || 'Failed to send query');
     }
 
     const data = await response.json();

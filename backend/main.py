@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query, Request, Path
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -36,9 +36,45 @@ import workspace_store
 from workspace_ai_processor import create_ai_processor
 from intelligent_analysis import IntelligentAnalyzer
 from smart_formatter import SmartFormatter
+import limits
 import settings
 
 app = FastAPI()
+
+
+# Demo limits. Registered before CORS so that it ends up *inside* it --
+# add_middleware prepends, so the last one registered is the outermost, and a
+# 429 raised here still comes back with the CORS headers on it rather than as
+# an opaque network error in the browser.
+@app.middleware("http")
+async def apply_demo_limits(request: Request, call_next):
+    """
+    Refuse a request before it costs anything.
+
+    Doing this in middleware rather than as a per-route dependency means a
+    route added later is metered by default if its path matches, instead of
+    being unprotected until somebody remembers to decorate it.
+    """
+    try:
+        if request.url.path == "/api/upload":
+            # Checked from the header so an oversized body is refused without
+            # being read into memory first.
+            declared = request.headers.get("content-length")
+            limits.enforce_upload_size(int(declared) if declared and declared.isdigit() else None)
+
+        if limits.is_metered(request.url.path):
+            limits.enforce_call_budget(request)
+    except HTTPException as exc:
+        # An HTTPException raised inside middleware never reaches FastAPI's
+        # handler -- it would surface as a 500 -- so it is rendered here.
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "error": exc.detail, "success": False},
+            headers=exc.headers,
+        )
+
+    return await call_next(request)
+
 
 # Configure CORS
 app.add_middleware(
@@ -303,13 +339,21 @@ async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
         # Read straight from the request. Writing a temp file would fail on a
         # read-only filesystem, and buys nothing when the bytes are in memory.
         content = await file.read()
+
+        # The middleware already checked the declared Content-Length. This
+        # re-checks the bytes actually received, since the header is the
+        # client's claim about the body rather than the body itself.
+        limits.enforce_upload_size(len(content))
+
         response, df = data_handler.load_bytes(
             content, file.filename, lambda x, y: print(f"Progress: {x}, {y}")
         )
-        
+
         if df is None:
             raise HTTPException(status_code=400, detail=response)
-        
+
+        limits.enforce_dataset_size(len(df), len(df.columns))
+
         # Initialize agents with the new data
         agent_services.initialize_agents(data_handler)
         
@@ -322,6 +366,11 @@ async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
             "rows": len(df),
             "success": True
         }
+    except HTTPException:
+        # Size limits and parse failures already carry a message that explains
+        # what to do about them; the catch-all below would replace it with a
+        # generic one and hide the reason.
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail="I had trouble processing your file. Please make sure it's a valid data file (CSV, Excel, etc.) and try again.")
 
@@ -334,7 +383,7 @@ async def process_query(query: Dict[str, Any]):
     print(f"🗂️ Request keys: {list(query.keys()) if isinstance(query, dict) else 'Not a dict'}")
     
     try:
-        question = query.get("question")
+        question = limits.enforce_question_length(query.get("question"))
         chat_id = query.get("chat_id")  # NEW: Extract chat_id
         is_speech = query.get("is_speech", False)
         mode = query.get("mode", "simple")  # NEW: Extract mode, default to simple
@@ -999,7 +1048,12 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
         
         if not data or len(data) == 0:
             raise HTTPException(status_code=400, detail="No data provided for initialization")
-        
+
+        # This path takes rows straight from the request body rather than from
+        # a parsed file, so it needs the same size check the upload path gets
+        # -- otherwise it is a way around it.
+        limits.enforce_dataset_size(len(data), len(data[0]) if isinstance(data[0], dict) else 0)
+
         print(f"🔄 Initializing backend with {len(data)} rows from Supabase")
         print(f"📄 Filename: {filename}")
         
@@ -1025,6 +1079,8 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
             "filename": filename
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ Error initializing backend with data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to initialize backend: {str(e)}")
@@ -1075,6 +1131,13 @@ async def save_workspace_endpoint(workspace_id: str, request: Dict[str, Any]):
     Save whatever the client sends. Fields that are absent are left alone, so a
     chat-only save does not wipe the dataset.
     """
+    # Unmetered, because the sheet saves on every edit and throttling that
+    # would break ordinary use. It is still a write into Postgres that anyone
+    # can call, so the payload is bounded even though it costs no LLM call.
+    rows = request.get("data")
+    if isinstance(rows, list) and rows:
+        limits.enforce_dataset_size(len(rows), len(rows[0]) if isinstance(rows[0], dict) else 0)
+
     try:
         workspace_store.save_workspace(
             workspace_id,
@@ -1191,7 +1254,13 @@ async def health_check():
         "api_keys": {
             "google_api_key": "configured" if settings.GOOGLE_API_KEY else "missing",
             "supabase": "configured" if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY else "missing"
-        }
+        },
+        # Reported because the daily caps fail open: if the usage_counters
+        # migration has not been applied, the demo keeps working but is
+        # protected only by the per-instance burst limit. That is invisible
+        # from the outside, so it is stated here rather than left to be
+        # discovered from a bill.
+        "limits": limits.status()
     }
 
 @app.get("/api/reports/{report_id}/status")
@@ -1541,7 +1610,9 @@ async def orchestrate_compound_query(request: CompoundQueryRequest):
     print(f"📥 Query: {request.query}")
     print(f"🔷 Workspace ID: {request.workspace_id}")
     print(f"👁️ Preview Only: {request.preview_only}")
-    
+
+    limits.enforce_question_length(request.query)
+
     try:
         orchestrator = get_orchestrator()
         
@@ -1628,6 +1699,8 @@ async def process_learn_query(request: LearnModeQueryRequest):
     print(f"📚 Question: {request.question}")
     print(f"📚 Chat ID: {request.chat_id}")
     print(f"📚 Conversation History: {len(request.conversation_history or [])} messages")
+
+    limits.enforce_question_length(request.question)
 
     # Validate conversation history format
     conversation_valid = True

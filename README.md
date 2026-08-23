@@ -38,9 +38,9 @@ You need a Google AI Studio key and a Supabase project.
 cp sample.env .env      # then fill in the three values
 ```
 
-Apply the schema change that makes workspaces ownerless. Paste
-[`supabase/migrations/20260823000000_remove_auth_requirement.sql`](supabase/migrations/20260823000000_remove_auth_requirement.sql)
-into the Supabase SQL editor, or run it with the CLI:
+Apply the two migrations in `supabase/migrations/` — one makes workspaces
+ownerless, the other creates the counters the usage limits are enforced with.
+Paste them into the Supabase SQL editor, or run them with the CLI:
 
 ```bash
 supabase db push
@@ -84,10 +84,47 @@ like something else:
 Set `GOOGLE_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, and
 `SUPABASE_SERVICE_ROLE_KEY` in the project's environment variables.
 
-## Limits worth knowing
+## Usage limits
 
-- Vercel caps a request or response body at **4.5 MB**, so uploads are limited
-  to 4 MB. Larger files need the backend hosted somewhere without that cap.
+The link is public, there is no sign-up, and every question is a Gemini call
+billed to whoever deployed it. `backend/limits.py` holds the whole policy:
+
+| | Default | Override |
+|---|---|---|
+| Questions per visitor per minute | 5 | `EDI_BURST_CALLS`, `EDI_BURST_WINDOW_SECONDS` |
+| Questions per visitor per day | 50 | `EDI_DAILY_CALLS_PER_VISITOR` |
+| Questions per day, everyone | 1000 | `EDI_DAILY_CALLS_TOTAL` |
+| Question length | 2000 chars | `EDI_MAX_QUESTION_CHARS` |
+| Upload size | 4 MB | `EDI_MAX_UPLOAD_BYTES` |
+| Rows / columns | 20000 / 100 | `EDI_MAX_ROWS`, `EDI_MAX_COLUMNS` |
+
+The per-visitor limits are keyed on client IP, which bounds what one person
+can do casually but is not an identity — the *global* daily cap is what
+actually bounds the bill, because it counts calls rather than callers and so
+survives rotated IPs and cleared browser storage.
+
+Daily counters live in Postgres, not process memory: serverless instances
+share no state, so an in-memory counter only sees the traffic that happened to
+land on that instance. **They fail open.** If the `usage_counters` migration
+has not been applied the app still works, protected only by the per-instance
+burst limit. `GET /api/health` reports which of the two you are actually
+running under:
+
+```json
+"limits": { "daily_counters": "active", "daily_total": 1000, ... }
+```
+
+`"unavailable"` there means the migration is missing. `"untested"` means no
+question has been asked yet since the instance started.
+
+Set `EDI_LIMITS_ENABLED=0` to switch it all off when running locally against
+your own key.
+
+## Other limits worth knowing
+
+- Vercel caps a request or response body at **4.5 MB**, which is why the upload
+  limit is 4 MB. Larger files need the backend hosted somewhere without that
+  cap.
 - The backend is stateless. Every request that touches the data re-reads it
   from Supabase and rebuilds an in-memory SQLite database, with a per-instance
   cache keyed on a hash of the rows so a warm instance skips the rebuild.
