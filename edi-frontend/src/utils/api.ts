@@ -261,7 +261,7 @@ export async function loadWorkspaceData(workspaceId: string): Promise<{ data: un
 export async function initializeBackendWithData(data: unknown[], filename?: string): Promise<{ success: boolean, message: string }> {
     try {
         // Use Next.js API route proxy to avoid browser CORS/preflight
-        const response = await fetch('/api/initialize-data', {
+        const response = await fetch(API_ENDPOINTS.initializeData, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -396,7 +396,7 @@ export async function sendLearnQuery(payload: {
 
 // Fetch all reports for a workspace
 export async function fetchReportsForWorkspace(workspaceId: string): Promise<Array<{ id: string; created_at: string; status: 'ready' | 'generating' | 'error' }>> {
-    const response = await fetch(`/api/reports?workspace_id=${encodeURIComponent(workspaceId)}`);
+    const response = await fetch(`${API_BASE_URL}/api/reports?workspace_id=${encodeURIComponent(workspaceId)}`);
     if (!response.ok) {
         throw new Error('Failed to fetch reports');
     }

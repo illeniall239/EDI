@@ -67,9 +67,22 @@ In production the two are one Vercel project and same-origin, so
 
 ## Deploying
 
-`vercel.json` declares both halves as services of a single project: Next.js at
-the root and the FastAPI app under `backend/`, with `/api/*` routed to Python
-and everything else to Next.
+`vercel.json` declares both halves as services of a single Vercel project:
+Next.js from `edi-frontend/` and the FastAPI app from `backend/`, with `/api/*`
+routed to Python and everything else to Next. Frontend and backend end up on
+one domain, so the browser only ever makes same-origin requests and there is no
+CORS to configure.
+
+Two project settings matter, and getting either wrong fails in a way that
+looks like something else:
+
+- **Root Directory must be the repository root**, not `edi-frontend/`. Vercel
+  only reads `vercel.json` from the root directory it is given. Pointed at the
+  subdirectory it silently ignores this file, serves the frontend alone, and
+  every `/api/*` call lands on Next's 404 page.
+- **Do not set `NEXT_PUBLIC_API_BASE_URL`.** It is inlined into the browser
+  bundle at build time, so a stale value there sends the deployed site to
+  whatever host it names. Leaving it unset keeps calls same-origin.
 
 Set `GOOGLE_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, and
 `SUPABASE_SERVICE_ROLE_KEY` in the project's environment variables.

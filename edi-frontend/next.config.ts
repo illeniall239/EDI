@@ -7,6 +7,19 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
+  // In production the frontend and backend are two services of one Vercel
+  // project behind a single domain, and vercel.json routes /api/* to Python.
+  // Locally they are two processes on two ports, which used to mean absolute
+  // cross-origin URLs baked into the browser bundle -- and therefore CORS, a
+  // localhost-vs-127.0.0.1 origin mismatch, and any relative /api/ call
+  // silently hitting Next instead of the backend. Proxying here instead makes
+  // development same-origin too, so the client can always use plain /api/*.
+  async rewrites() {
+    const backend = process.env.BACKEND_ORIGIN;
+    if (!backend) return [];
+    return [{ source: '/api/:path*', destination: `${backend}/api/:path*` }];
+  },
+
   images: {
     remotePatterns: [
       {
