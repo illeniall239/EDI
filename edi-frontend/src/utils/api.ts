@@ -8,7 +8,7 @@ export async function uploadFile(file: File, workspaceId: string = 'default'): P
     }
 
     if (file.size > MAX_FILE_SIZE) {
-        throw new Error('File size exceeds the maximum limit of 10MB.');
+        throw new Error('File size exceeds the maximum limit of 4MB.');
     }
 
     const formData = new FormData();
@@ -39,7 +39,7 @@ export async function uploadFile(file: File, workspaceId: string = 'default'): P
     return data;
 }
 
-export async function sendClarificationChoice(choiceId: string, originalQuery: string, category: string): Promise<QueryResponse> {
+export async function sendClarificationChoice(choiceId: string, originalQuery: string, category: string, workspaceId?: string): Promise<QueryResponse> {
     console.log('🎯 Sending clarification choice:', { choiceId, originalQuery, category });
     
     const response = await fetch(`${API_BASE_URL}/api/clarification-choice`, {
@@ -50,7 +50,8 @@ export async function sendClarificationChoice(choiceId: string, originalQuery: s
         body: JSON.stringify({
             choice_id: choiceId,
             original_query: originalQuery,
-            category: category
+            category: category,
+            workspace_id: workspaceId
         }),
     });
 
@@ -65,7 +66,7 @@ export async function sendClarificationChoice(choiceId: string, originalQuery: s
     return data;
 }
 
-export async function sendQuery(query: string, chatId: string, options?: { isVoice?: boolean, mode?: string }): Promise<QueryResponse> {
+export async function sendQuery(query: string, chatId: string, options?: { isVoice?: boolean, mode?: string, workspaceId?: string }): Promise<QueryResponse> {
     console.log('Sending query:', { query, options });
     
     // Check for duplicate removal keywords for debugging
@@ -91,7 +92,8 @@ export async function sendQuery(query: string, chatId: string, options?: { isVoi
             question: query,
             chat_id: chatId,
             is_speech: options?.isVoice || false,
-            mode: options?.mode || 'simple'
+            mode: options?.mode || 'simple',
+            workspace_id: options?.workspaceId
         }),
     });
 

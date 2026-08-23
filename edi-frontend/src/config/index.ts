@@ -1,4 +1,7 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+// Frontend and backend are two services behind one domain, so API calls are
+// same-origin and vercel.json routes /api/* to the Python service. Left
+// overridable for running the backend separately during local development.
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 export const API_ENDPOINTS = {
     upload: `${API_BASE_URL}/api/upload`,
@@ -29,4 +32,6 @@ export const SUPPORTED_FILE_TYPES = [
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 ];
 
-export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB in bytes 
+// Vercel Functions cap a request body at 4.5MB, so anything larger is
+// rejected by the platform before it reaches the backend.
+export const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB, under the 4.5MB limit 

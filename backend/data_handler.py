@@ -1,5 +1,7 @@
 import pandas as pd
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
+import io
 import re
 import os
 import time
@@ -14,6 +16,11 @@ class DataHandler:
         self.column_mapping = None
         self._raw_filepath = None  # Store the full original filepath
         self._display_filename = None # Store a user-friendly name (e.g., just the file's name)
+
+    @property
+    def display_filename(self):
+        """User-facing name of the loaded dataset, if any."""
+        return self._display_filename
 
 
     def clean_column_name(self, name):
@@ -94,7 +101,20 @@ class DataHandler:
                     preview_info += f"  - {issue}\n"
         return preview_info
 
-    def load_data(self, file_path_str, progress_callback):
+    def load_bytes(self, content, filename, progress_callback=None):
+        """
+        Load a dataset from raw bytes rather than a path.
+
+        Used when rehydrating a workspace from object storage, where the file
+        never touches the local filesystem.
+        """
+        return self.load_data(
+            filename,
+            progress_callback or (lambda fraction, message: None),
+            content=content,
+        )
+
+    def load_data(self, file_path_str, progress_callback, content=None):
         try:
             progress_callback(0.1, "Starting file load...")
             
@@ -107,10 +127,16 @@ class DataHandler:
 
             print(f"DEBUG: Loading file: {self._display_filename}")
 
+            if content is not None:
+                source = io.BytesIO(content)
+            else:
+                with open(self._raw_filepath, 'rb') as handle:
+                    source = io.BytesIO(handle.read())
+
             if self._display_filename.lower().endswith('.xlsx'):
-                self.df = pd.read_excel(self._raw_filepath, keep_default_na=True, na_values=['', ' ', None])
+                self.df = pd.read_excel(source, keep_default_na=True, na_values=['', ' ', None])
             elif self._display_filename.lower().endswith('.csv'):
-                self.df = pd.read_csv(self._raw_filepath, keep_default_na=True, na_values=['', ' ', None])
+                self.df = pd.read_csv(source, keep_default_na=True, na_values=['', ' ', None])
             else:
                 progress_callback(1.0, "Failed! Unsupported file format.")
                 return "Unsupported file format. Please upload an Excel (.xlsx) or CSV file.", None
@@ -139,8 +165,14 @@ class DataHandler:
             self.df.columns = [col.strip() for col in original_columns]
 
             progress_callback(0.5, "Creating database...")
-            db_file_name = f"temp_db_{re.sub(r'[^a-zA-Z0-9]', '_', self._display_filename)}.db"
-            self.engine = create_engine(f'sqlite:///{db_file_name}', connect_args={'check_same_thread': False})
+            # In-memory rather than a temp .db file: the filesystem is read-only
+            # apart from /tmp on serverless, and /tmp does not persist between
+            # invocations, so writing the database to disk buys nothing.
+            self.engine = create_engine(
+                'sqlite://',
+                connect_args={'check_same_thread': False},
+                poolclass=StaticPool,
+            )
             self.df.to_sql('data', self.engine, index=False, if_exists='replace')
             
             self.db_sqlalchemy = SQLDatabase(self.engine) 
@@ -184,6 +216,19 @@ class DataHandler:
         except Exception as e:
             return f"Error exporting data: {str(e)}"
 
+    def load_dataframe(self, df, filename=None):
+        """
+        Populate this handler from an already-parsed DataFrame.
+
+        Used when rehydrating a workspace from stored rows, where there is no
+        file to read. Builds the same in-memory SQLite database and LangChain
+        SQLDatabase that load_data would.
+        """
+        self._display_filename = filename or self._display_filename or "dataset.csv"
+        self._raw_filepath = None
+        self.update_df_and_db(df)
+        return self.df
+
     def update_df_and_db(self, new_df):
         print("DEBUG: Updating DataFrame and database")
         print(f"DEBUG: New DataFrame shape: {new_df.shape}")
@@ -211,9 +256,12 @@ class DataHandler:
             if not self._display_filename:
                 self._display_filename = f"synthetic_dataset_{int(time.time())}"
             
-            db_file_name = f"temp_db_{self._display_filename.replace('.', '_').replace(' ', '_')}.db"
-            print(f"DEBUG: Creating new database engine for: {db_file_name}")
-            self.engine = create_engine(f'sqlite:///{db_file_name}', connect_args={'check_same_thread': False})
+            print("DEBUG: Creating new in-memory database engine")
+            self.engine = create_engine(
+                'sqlite://',
+                connect_args={'check_same_thread': False},
+                poolclass=StaticPool,
+            )
         
         # Update the SQL database
         self.df.to_sql('data', self.engine, index=False, if_exists='replace')

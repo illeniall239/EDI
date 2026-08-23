@@ -1,0 +1,50 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "frontend": {
+      "root": "edi-frontend/",
+      "framework": "nextjs"
+    },
+    "backend": {
+      "root": "backend/",
+      "entrypoint": "main:app",
+      "excludeFiles": "{**/__pycache__/**,**/*.pyc,static/**,generated_reports/**,generated_charts/**,**/*.db,**/*.log}"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/upload", "destination": { "service": "backend" } },
+    { "source": "/api/query", "destination": { "service": "backend" } },
+    { "source": "/api/data", "destination": { "service": "backend" } },
+    { "source": "/api/health", "destination": { "service": "backend" } },
+    { "source": "/api/clarification-choice", "destination": { "service": "backend" } },
+    { "source": "/api/generate-report", "destination": { "service": "backend" } },
+    { "source": "/api/download-report/(.*)", "destination": { "service": "backend" } },
+    { "source": "/api/reports/(.*)", "destination": { "service": "backend" } },
+    { "source": "/api/cancel-operation", "destination": { "service": "backend" } },
+    { "source": "/api/reset-state", "destination": { "service": "backend" } },
+    { "source": "/api/range-filter", "destination": { "service": "backend" } },
+    { "source": "/api/columns", "destination": { "service": "backend" } },
+    { "source": "/api/extract-columns", "destination": { "service": "backend" } },
+    { "source": "/api/analyze-chart", "destination": { "service": "backend" } },
+    { "source": "/api/analyze-formula", "destination": { "service": "backend" } },
+    { "source": "/api/initialize-data", "destination": { "service": "backend" } },
+    { "source": "/analyze-formula", "destination": { "service": "backend" } },
+    { "source": "/api/generate-synthetic-dataset", "destination": { "service": "backend" } },
+    { "source": "/api/orchestrate", "destination": { "service": "backend" } },
+    { "source": "/api/spreadsheet-command", "destination": { "service": "backend" } },
+    { "source": "/api/learn/(.*)", "destination": { "service": "backend" } },
+    { "source": "/api/workspace/(.*)", "destination": { "service": "backend" } },
+    { "source": "/static/(.*)", "destination": { "service": "backend" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ]
+}

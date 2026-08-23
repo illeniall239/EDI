@@ -2652,7 +2652,7 @@ export default function ChatSidebar({
         if (!classification || classification.confidence < 0.8) {
             // Low confidence - route to backend
             console.log('⚠️ Low frontend confidence, routing to backend');
-            const response = await sendQuery(query, activeChat?.id || 'default', { isVoice: false, mode: queryMode });
+            const response = await sendQuery(query, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
             handleQueryResponse(response);
             return;
         }
@@ -2720,7 +2720,7 @@ export default function ChatSidebar({
         
         // Fallback to backend if not handled
         console.log('🔄 Falling back to backend processing');
-        const response = await sendQuery(query, activeChat?.id || 'default', { isVoice: false, mode: queryMode });
+        const response = await sendQuery(query, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
         handleQueryResponse(response);
     };
 
@@ -3243,7 +3243,7 @@ export default function ChatSidebar({
                         
                     } else if (step.step_type === 'backend') {
                         // Use existing backend query flow
-                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { isVoice: false, mode: queryMode });
+                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
                         
                         // Handle data updates
                         if (stepResult.data_updated && stepResult.updated_data?.data) {
@@ -3263,7 +3263,7 @@ export default function ChatSidebar({
                         
                     } else if (step.step_type === 'agent') {
                         // Use existing agent flow (if available)
-                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { isVoice: false, mode: queryMode });
+                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
                         executedSteps.push(step.description);
                         
                     } else if (step.step_type === 'manual_highlight') {
@@ -3284,7 +3284,7 @@ export default function ChatSidebar({
                         
                     } else if (step.step_type === 'chart') {
                         // Use existing chart generation flow (if available)
-                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { isVoice: false, mode: queryMode });
+                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
                         executedSteps.push(step.description);
                         
                     } else {
@@ -4436,7 +4436,8 @@ export default function ChatSidebar({
                 // YOUR CASE: "Compare average playtime..." goes here directly!
                 const result = await sendQuery(userMessage, activeChat?.id || 'default', { 
                     isVoice: false, 
-                    mode: queryMode 
+                    mode: queryMode,
+                    workspaceId: currentWorkspace?.id
                 });
                 
                 console.log('✅ Direct backend result:', result);
@@ -4593,7 +4594,7 @@ export default function ChatSidebar({
                 const mappedIntent = (classification as any)?.intent;
                 if (mappedIntent === 'backend') {
                     console.log('🚀 Unified system routing to BACKEND');
-                    response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode });
+                    response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
                     
                     // Handle data updates if present
                     if (response.data_updated && response.updated_data?.data) {
@@ -4651,7 +4652,7 @@ export default function ChatSidebar({
 
                         // For other data modifications, route to backend
                         console.log('🗑️ LLM detected data modification - routing to backend');
-                        response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode });
+                        response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
                         
                         // Handle data updates immediately (since main dataUpdate dispatch isn't reached)
                         console.log('🔍 === DATA_MODIFICATION DATAUPDATE DISPATCH DEBUG ===');
@@ -5658,7 +5659,7 @@ export default function ChatSidebar({
                     
                     case 'general_query':
                         console.log('💬 LLM detected general query - routing to backend');
-                        response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode });
+                        response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
                         break;
 
                     case 'compound_operation':
@@ -6121,7 +6122,7 @@ export default function ChatSidebar({
             } else {
                 // Not a spreadsheet command, use regular query processing
                 console.log('🌐 Routing to regular query service...');
-                response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode });
+                response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
             }
             
             // Handle data updates from the backend

@@ -6,9 +6,14 @@ from langchain_groq import ChatGroq
 load_dotenv()
 
 # API keys from environment
-GROQ_API_KEY = os.getenv("NEXT_PUBLIC_GROQ_API_KEY")
-AZURE_SPEECH_KEY = os.getenv("AZURE_API_KEY")
-AZURE_SERVICE_REGION = os.getenv("AZURE_REGION")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") or os.getenv("NEXT_PUBLIC_GROQ_API_KEY")
+
+# Where uploaded datasets live. Vercel Functions have a read-only filesystem
+# apart from /tmp, which does not survive between invocations, so the dataset
+# is re-read from Supabase Storage on each request.
+SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+SUPABASE_DATASET_BUCKET = os.getenv("SUPABASE_DATASET_BUCKET", "datasets")
 
 # Initialize Kimi LLM via Groq
 LLM = None
@@ -26,8 +31,8 @@ if GROQ_API_KEY:
         print("Please check your NEXT_PUBLIC_GROQ_API_KEY environment variable")
         LLM = None
 else:
-    print("NEXT_PUBLIC_GROQ_API_KEY not found in environment variables")
-    print("Please set NEXT_PUBLIC_GROQ_API_KEY in your .env file")
+    print("GROQ_API_KEY not found in environment variables")
+    print("Please set GROQ_API_KEY in your .env file")
     LLM = None
 
 def initialize_llm():
@@ -36,7 +41,7 @@ def initialize_llm():
     This ensures no context contamination between generations.
     """
     if not GROQ_API_KEY:
-        print("NEXT_PUBLIC_GROQ_API_KEY not found in environment variables")
+        print("GROQ_API_KEY not found in environment variables")
         return None
 
     try:

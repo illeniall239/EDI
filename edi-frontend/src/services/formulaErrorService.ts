@@ -68,7 +68,7 @@ class FormulaErrorService {
 
     try {
       // Make API call to analyze the error
-      const response = await fetch('/api/analyze-formula-error', {
+      const response = await fetch('/analyze-formula', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

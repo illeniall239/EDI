@@ -14,6 +14,7 @@ from typing import Optional, Dict, Any, List
 import pandas as pd
 import numpy as np
 import logging
+import tempfile
 from difflib import SequenceMatcher
 
 # Load environment variables from .env file
@@ -26,15 +27,12 @@ except ImportError:
 except Exception as e:
     print(f"[WARN] Error loading .env file: {str(e)}")
 
-# Add the parent directory to sys.path to import our modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 # Import our existing modules
 from data_handler import DataHandler
 from agent_services import AgentServices
 from report_generator import ReportGenerator
-from speech_utils import SpeechUtil
 from query_orchestrator import get_orchestrator
+import workspace_store
 from workspace_ai_processor import create_ai_processor
 from intelligent_analysis import IntelligentAnalyzer
 from smart_formatter import SmartFormatter
@@ -52,9 +50,21 @@ app.add_middleware(
     expose_headers=["*"]  # Allow exposure of custom headers
 )
 
-# Ensure visualization directories exist
-CHARTS_DIR = os.path.join(os.path.dirname(__file__), "static", "visualizations")
-REPORTS_DIR = os.path.join(os.path.dirname(__file__), "generated_reports")
+# Scratch directories for generated artefacts.
+#
+# Serverless instances get a read-only filesystem apart from /tmp, so writing
+# under the project directory raises at import time and takes down the whole
+# function. /tmp is per-instance and does not survive between invocations,
+# which is fine for artefacts that are read back within the same request, but
+# means anything a later request needs must be returned in the response or
+# stored externally rather than left on disk.
+_WRITABLE_ROOT = (
+    tempfile.gettempdir()
+    if os.environ.get("VERCEL") or not os.access(os.path.dirname(__file__), os.W_OK)
+    else os.path.dirname(__file__)
+)
+CHARTS_DIR = os.path.join(_WRITABLE_ROOT, "static", "visualizations")
+REPORTS_DIR = os.path.join(_WRITABLE_ROOT, "generated_reports")
 os.makedirs(CHARTS_DIR, exist_ok=True)
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
@@ -63,11 +73,56 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Mount static directory for serving visualizations
-app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
+# Serves anything written to CHARTS_DIR within the same instance. Charts are
+# returned as data for the client to render, so this is a fallback rather than
+# the primary path -- files here do not outlive the instance.
+app.mount("/static", StaticFiles(directory=os.path.join(_WRITABLE_ROOT, "static")), name="static")
 
 # Initialize our services
 data_handler = DataHandler()
-speech_util = SpeechUtil(api_key=settings.AZURE_SPEECH_KEY, region=settings.AZURE_SERVICE_REGION)
+
+
+def hydrate(workspace_id):
+    """
+    Point the module-level data_handler at a workspace's stored dataset.
+
+    Serverless instances share no state between requests -- whichever instance
+    handled the upload is rarely the one that handles the next query -- so the
+    dataset is rebuilt from the `workspaces` row on each request that needs it.
+    workspace_store caches the parsed handler per instance, so a warm instance
+    only pays the rebuild cost when the data has actually changed.
+
+    Falls back to the existing handler when no workspace_id is supplied, which
+    keeps `uvicorn main:app` working the way it always did locally.
+
+    Note: this rebinds a module global, so it assumes an instance serves one
+    request at a time. That holds for a single-user app; it would need the
+    handler threaded through the call chain to be safe under real concurrency.
+    """
+    global data_handler
+    if not workspace_id:
+        return data_handler
+    try:
+        handler = workspace_store.get_handler(workspace_id)
+    except workspace_store.WorkspaceStoreError as exc:
+        logger.warning("Could not hydrate workspace %s: %s", workspace_id, exc)
+        return data_handler
+    if handler is None:
+        return data_handler
+    data_handler = handler
+    if agent_services is not None:
+        agent_services.initialize_agents(handler)
+    return handler
+
+
+def persist(workspace_id):
+    """Write the current DataFrame back to the workspace row after a mutation."""
+    if not workspace_id:
+        return
+    try:
+        workspace_store.save_handler(workspace_id, data_handler)
+    except workspace_store.WorkspaceStoreError as exc:
+        logger.error("Could not persist workspace %s: %s", workspace_id, exc)
 
 # Check if LLM is properly configured
 if settings.LLM is None:
@@ -76,11 +131,7 @@ if settings.LLM is None:
     report_generator = None
 else:
     try:
-        # Test the LLM connection
-        test_response = settings.LLM.invoke("Hello")
-        logger.info("LLM connection successful")
-
-        agent_services = AgentServices(llm=settings.LLM, speech_util_instance=speech_util, charts_dir=CHARTS_DIR)
+        agent_services = AgentServices(llm=settings.LLM, charts_dir=CHARTS_DIR)
         agent_services.initialize_agents(data_handler)
         report_generator = ReportGenerator(
             data_handler=data_handler,
@@ -218,17 +269,12 @@ def create_fallback_dataset(description: str, rows: int) -> Dict:
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
     try:
-        # Save the uploaded file temporarily
-        temp_path = f"temp_{file.filename}"
-        with open(temp_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-        
-        # Load the data using our existing DataHandler
-        response, df = data_handler.load_data(temp_path, lambda x, y: print(f"Progress: {x}, {y}"))
-        
-        # Clean up the temporary file
-        os.remove(temp_path)
+        # Read straight from the request. Writing a temp file would fail on a
+        # read-only filesystem, and buys nothing when the bytes are in memory.
+        content = await file.read()
+        response, df = data_handler.load_bytes(
+            content, file.filename, lambda x, y: print(f"Progress: {x}, {y}")
+        )
         
         if df is None:
             raise HTTPException(status_code=400, detail=response)
@@ -250,6 +296,7 @@ async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
 
 @app.post("/api/query")
 async def process_query(query: Dict[str, Any]):
+    hydrate(query.get("workspace_id"))
     print("🌐 === API ENDPOINT /api/query CALLED ===")
     print(f"📥 Incoming request data: {query}")
     print(f"🔍 Request type: {type(query)}")
@@ -499,6 +546,7 @@ async def process_query(query: Dict[str, Any]):
                     "columns": updated_df.columns.tolist(),
                     "rows": len(updated_df)
                 }
+                persist(query.get("workspace_id"))
                 print(f"📊 Updated data included in response: {len(updated_df)} rows, {len(updated_df.columns)} columns")
             else:
                 print("⚠️ Data handler returned None after modification")
@@ -547,6 +595,7 @@ async def process_clarification_choice(request: Dict[str, Any]):
     Process user's clarification choice and execute the selected action.
     """
     try:
+        hydrate(request.get("workspace_id"))
         choice_id = request.get("choice_id")
         original_query = request.get("original_query")
         category = request.get("category")
@@ -583,6 +632,7 @@ async def process_clarification_choice(request: Dict[str, Any]):
                     "columns": updated_df.columns.tolist(),
                     "rows": len(updated_df)
                 }
+                persist(request.get("workspace_id"))
         
         if visualization:
             viz_path = f"/static/visualizations/{visualization['filename']}"
@@ -600,6 +650,7 @@ async def process_clarification_choice(request: Dict[str, Any]):
 
 @app.post("/api/generate-report")
 async def generate_report(report_request: ReportRequest, background_tasks: BackgroundTasks):
+    hydrate(report_request.workspace_id)
     try:
         if data_handler.get_df() is None:
             raise HTTPException(status_code=400, detail="I need some data to generate a report. Please upload a dataset first, then I can create an analysis report for you.")
@@ -686,6 +737,7 @@ async def process_spreadsheet_command(query: Dict[str, Any]):
     # NOTE: ~865 lines of unreachable Luckysheet generation code removed during Phase 3 cleanup
 @app.post("/api/range-filter")
 async def process_range_filter(filter_request: Dict[str, Any]):
+    hydrate(filter_request.get("workspace_id"))
     """
     Apply or remove range filters on spreadsheet data.
     Supports filtering by column values (exact match or contains).
@@ -938,20 +990,8 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
         import pandas as pd
         df = pd.DataFrame(data)
         
-        # Set the DataFrame and filename in data_handler
-        data_handler.df = df
-        data_handler.filename = filename
-        data_handler._display_filename = filename
-        
-        # Create temporary SQLite database (using the same logic as load_data)
-        import re
-        from sqlalchemy import create_engine
-        from langchain_community.utilities import SQLDatabase
-        
-        temp_db_name = f"temp_db_{re.sub(r'[^a-zA-Z0-9]', '_', filename)}.db" if filename else "temp_db_restored_data.db"
-        data_handler.engine = create_engine(f'sqlite:///{temp_db_name}', connect_args={'check_same_thread': False})
-        df.to_sql('data', data_handler.engine, index=False, if_exists='replace')
-        data_handler.db_sqlalchemy = SQLDatabase(data_handler.engine)
+        # Builds the in-memory SQLite database and LangChain SQLDatabase.
+        data_handler.load_dataframe(df, filename)
         
         # Initialize agents with the restored data
         agent_services.initialize_agents(data_handler)
@@ -973,8 +1013,9 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=f"Failed to initialize backend: {str(e)}")
 
 @app.get("/api/data")
-async def get_current_data():
+async def get_current_data(workspace_id: Optional[str] = None):
     try:
+        hydrate(workspace_id)
         if data_handler.get_df() is None:
             raise HTTPException(status_code=400, detail="No data loaded")
         
@@ -985,6 +1026,9 @@ async def get_current_data():
             "rows": len(df),
             "filename": data_handler.get_filename() or "Dataset"
         }
+    except HTTPException:
+        # Let the deliberate 400 through instead of relabelling it a 500.
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1037,7 +1081,7 @@ async def health_check():
         "data_handler": "available" if data_handler else "unavailable",
         "agent_services": "available" if agent_services else "unavailable",
         "report_generator": "available" if report_generator else "unavailable",
-        "speech_utils": "available" if speech_util else "unavailable"
+        "speech_utils": "removed"
     }
     
     # Check LLM status
@@ -1056,7 +1100,7 @@ async def health_check():
         "services": services_status,
         "api_keys": {
             "groq_api_key": "configured" if settings.GROQ_API_KEY else "missing",
-            "azure_speech_key": "configured" if settings.AZURE_SPEECH_KEY else "missing"
+            "supabase": "configured" if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY else "missing"
         }
     }
 
@@ -1783,6 +1827,9 @@ async def analyze_workspace_insights(
         print(f"   - Analysis Type: {analysis_type}")
         print(f"   - Focus Area: {focus_area}")
 
+        # Rebuild this workspace's dataset before reading it (see hydrate()).
+        hydrate(workspace_id)
+
         # Get current DataFrame from data handler
         df = data_handler.get_df()
 
@@ -1914,6 +1961,9 @@ async def smart_format_workspace(
         print(f"📐 === SMART FORMATTING REQUEST ===")
         print(f"   - Workspace ID: {workspace_id}")
         print(f"   - Template: {template}")
+
+        # Rebuild this workspace's dataset before reading it (see hydrate()).
+        hydrate(workspace_id)
 
         # Get current DataFrame from data handler
         df = data_handler.get_df()
@@ -2182,6 +2232,9 @@ async def quick_data_entry(
 
         action = request.action
         params = request.parameters
+
+        # Rebuild this workspace's dataset before reading it (see hydrate()).
+        hydrate(workspace_id)
 
         # Get current DataFrame from data handler
         df = data_handler.get_df()

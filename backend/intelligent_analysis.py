@@ -1,11 +1,81 @@
-from typing import List, Dict, Optional
+import math
+from typing import List, Dict, Optional, Tuple
 import pandas as pd
 import numpy as np
-from scipy import stats
-from sklearn.ensemble import IsolationForest
-from statsmodels.tsa.seasonal import STL
-from scipy.stats import pearsonr
-from statsmodels.stats.multitest import multipletests
+
+# scipy / scikit-learn / statsmodels were dropped to keep the serverless bundle
+# small and cold starts fast (they accounted for ~185 MB). The handful of
+# routines actually used are reimplemented below on pandas + numpy + stdlib.
+
+
+def _zscores(values: np.ndarray) -> np.ndarray:
+    """Population z-scores, matching scipy.stats.zscore's default ddof=0."""
+    std = values.std(ddof=0)
+    if not np.isfinite(std) or std == 0:
+        return np.zeros_like(values, dtype=float)
+    return (values - values.mean()) / std
+
+
+def _pearson(a: np.ndarray, b: np.ndarray) -> Tuple[float, float]:
+    """
+    Pearson correlation with a two-tailed p-value, replacing scipy.stats.pearsonr.
+
+    The p-value uses the Fisher z-transform against the normal distribution
+    rather than the exact t-distribution. Callers here require n >= 10, where
+    the two agree closely enough for ranking correlations by significance.
+    """
+    n = len(a)
+    if n < 3:
+        return float("nan"), float("nan")
+    sa, sb = a.std(ddof=0), b.std(ddof=0)
+    if not np.isfinite(sa) or not np.isfinite(sb) or sa == 0 or sb == 0:
+        return float("nan"), float("nan")
+
+    r = float(np.clip(((a - a.mean()) * (b - b.mean())).mean() / (sa * sb), -1.0, 1.0))
+    if n < 4 or abs(r) >= 1.0:
+        return r, 0.0
+
+    z = math.atanh(r) * math.sqrt(n - 3)
+    p = math.erfc(abs(z) / math.sqrt(2.0))  # two-tailed
+    return r, float(min(max(p, 0.0), 1.0))
+
+
+def _bonferroni(pvalues: List[float]) -> List[float]:
+    """Bonferroni correction, replacing statsmodels' multipletests."""
+    n = len(pvalues)
+    return [float(min(p * n, 1.0)) for p in pvalues]
+
+
+def _seasonal_strength(series: pd.Series, period: int) -> Optional[float]:
+    """
+    Additive seasonal decomposition via a centred moving average, replacing
+    statsmodels' STL. Returns var(seasonal) / (var(seasonal) + var(residual)),
+    the same strength metric the STL version reported.
+    """
+    if len(series) < 2 * period:
+        return None
+
+    values = series.astype(float)
+    trend = values.rolling(window=period, center=True, min_periods=period).mean()
+    detrended = values - trend
+
+    # Average each position within the cycle, then centre the seasonal profile.
+    position = np.arange(len(values)) % period
+    seasonal_means = pd.Series(detrended.values, index=position).groupby(level=0).mean()
+    if seasonal_means.isna().all():
+        return None
+    seasonal_means = seasonal_means - seasonal_means.mean()
+
+    seasonal = pd.Series(seasonal_means.reindex(position).values, index=values.index)
+    residual = (detrended - seasonal).dropna()
+    seasonal_aligned = seasonal.loc[residual.index]
+
+    seasonal_var = float(np.var(seasonal_aligned))
+    residual_var = float(np.var(residual))
+    total = seasonal_var + residual_var
+    if total <= 0:
+        return None
+    return seasonal_var / total
 
 
 class IntelligentAnalyzer:
@@ -13,8 +83,8 @@ class IntelligentAnalyzer:
     Intelligent data analysis engine for automated insights generation.
 
     Provides:
-    - Anomaly detection (z-score, IQR, Isolation Forest)
-    - Time-series seasonality detection (STL decomposition)
+    - Anomaly detection (z-score, IQR)
+    - Time-series seasonality detection (moving-average decomposition)
     - Correlation analysis with statistical significance testing
     - Data profiling and visualization recommendations
     """
@@ -67,7 +137,7 @@ class IntelligentAnalyzer:
                 continue
 
             if method == 'zscore':
-                z_scores = np.abs(stats.zscore(data))
+                z_scores = np.abs(_zscores(data.to_numpy(dtype=float)))
                 outlier_indices = np.where(z_scores > threshold)[0]
 
                 for idx in outlier_indices:
@@ -110,7 +180,7 @@ class IntelligentAnalyzer:
         value_col: str
     ) -> Optional[Dict]:
         """
-        Time-series seasonality detection using STL decomposition.
+        Time-series seasonality detection via moving-average decomposition.
 
         Parameters:
         - temporal_col: Date/time column name
@@ -132,18 +202,13 @@ class IntelligentAnalyzer:
         ts_data = ts_data.sort_values(temporal_col).set_index(temporal_col)
         ts_data = ts_data[value_col].dropna()
 
-        if len(ts_data) < 14:  # Minimum data points for STL
+        if len(ts_data) < 14:  # Minimum data points for decomposition
             return None
 
         try:
-            # STL decomposition (Seasonal-Trend-Loess)
-            stl = STL(ts_data, seasonal=7)  # Assume weekly seasonality
-            result = stl.fit()
-
-            # Calculate seasonality strength
-            seasonal_var = np.var(result.seasonal)
-            residual_var = np.var(result.resid)
-            seasonality_strength = seasonal_var / (seasonal_var + residual_var)
+            seasonality_strength = _seasonal_strength(ts_data, period=7)  # weekly
+            if seasonality_strength is None:
+                return None
 
             return {
                 "temporal_column": temporal_col,
@@ -191,7 +256,11 @@ class IntelligentAnalyzer:
 
                 try:
                     # Pearson correlation + p-value
-                    coef, pvalue = pearsonr(data1, data2)
+                    coef, pvalue = _pearson(
+                        data1.to_numpy(dtype=float), data2.to_numpy(dtype=float)
+                    )
+                    if not np.isfinite(coef) or not np.isfinite(pvalue):
+                        continue
 
                     # Filter by threshold and significance
                     if abs(coef) >= threshold and pvalue < 0.05:
@@ -210,7 +279,7 @@ class IntelligentAnalyzer:
         if correlations:
             pvalues = [c['pvalue'] for c in correlations]
             try:
-                _, corrected_pvalues, _, _ = multipletests(pvalues, method='bonferroni')
+                corrected_pvalues = _bonferroni(pvalues)
                 for corr, corrected_p in zip(correlations, corrected_pvalues):
                     corr['corrected_pvalue'] = float(corrected_p)
             except:
@@ -333,7 +402,7 @@ class IntelligentAnalyzer:
             data = self.df[col].dropna()
             if len(data) > 0:
                 try:
-                    z_scores = np.abs(stats.zscore(data))
+                    z_scores = np.abs(_zscores(data.to_numpy(dtype=float)))
                     count += int((z_scores > 3).sum())
                 except:
                     pass

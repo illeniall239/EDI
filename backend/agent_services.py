@@ -1,6 +1,7 @@
 import uuid
 import os
 import subprocess
+import tempfile
 import matplotlib.pyplot as plt
 import json
 import pandas as pd
@@ -58,10 +59,7 @@ import sys
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('visualization_debug.log', encoding='utf-8')
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger('AgentServices')
 
@@ -88,9 +86,9 @@ class CustomSQLDatabaseToolkit(SQLDatabaseToolkit):
         ]
 
 class AgentServices:
-    def __init__(self, llm, speech_util_instance, charts_dir=None):
+    def __init__(self, llm, charts_dir=None):
         self.llm = llm
-        self.speech_util = speech_util_instance
+        self.speech_util = None  # speech removed; kept as a no-op for callers
         self.operation_cancelled_flag = False
         
         # Use a simple path in a web-accessible location
@@ -98,8 +96,10 @@ class AgentServices:
             if charts_dir:
                 self.charts_dir = os.path.abspath(charts_dir)
             else:
-                # Save directly to static/visualizations directory for web access
-                self.charts_dir = os.path.abspath("static/visualizations")
+                # Save into a writable scratch location for web access.
+                self.charts_dir = os.path.join(
+                    tempfile.gettempdir(), "static", "visualizations"
+                )
                 logger.debug(f"Setting visualization directory to: {self.charts_dir}")
             
             # Ensure the directory exists
@@ -119,8 +119,8 @@ class AgentServices:
                 logger.info(f"Confirmed write permissions for: {self.charts_dir}")
             except Exception as e:
                 logger.error(f"Cannot write to {self.charts_dir}: {str(e)}")
-                # Fall back to static directory if path is not writable
-                self.charts_dir = os.path.abspath("static")
+                # Fall back to a writable scratch directory
+                self.charts_dir = os.path.join(tempfile.gettempdir(), "static")
                 logger.info(f"Falling back to: {self.charts_dir}")
                 os.makedirs(self.charts_dir, exist_ok=True)
                 
@@ -135,8 +135,8 @@ class AgentServices:
         
         except Exception as e:
             logger.error(f"Error setting up visualization directory: {str(e)}")
-            # Ultimate fallback - use current directory
-            self.charts_dir = os.path.abspath(".")
+            # Ultimate fallback - system temp, which is writable everywhere
+            self.charts_dir = tempfile.gettempdir()
             logger.info(f"Using fallback directory: {self.charts_dir}")
             os.makedirs(self.charts_dir, exist_ok=True)
 
