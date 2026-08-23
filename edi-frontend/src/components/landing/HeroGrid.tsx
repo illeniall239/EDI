@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { seededValue } from '@/utils/seededRandom';
 
 export default function HeroGrid() {
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -128,11 +129,11 @@ function GridPattern({ opacity, active }: any) {
                     key={i}
                     className={`relative border border-white/${opacity * 10} rounded-sm flex items-center justify-center group`}
                 >
-                    {active && Math.random() > 0.8 && (
+                    {active && seededValue(i, 1) > 0.8 && (
                         <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: [0, 1, 0] }}
-                            transition={{ duration: 2, repeat: Infinity, delay: Math.random() * 2 }}
+                            transition={{ duration: 2, repeat: Infinity, delay: seededValue(i, 2) * 2 }}
                             className="w-full h-full bg-neon-cyan/20"
                         />
                     )}

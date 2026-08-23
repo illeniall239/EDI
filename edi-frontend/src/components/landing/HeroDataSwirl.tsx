@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import { seededValue } from '@/utils/seededRandom';
 
 export default function HeroDataSwirl() {
     const rings = [1, 2, 3];
@@ -36,7 +37,7 @@ function DataRing({ index, total }: { index: number, total: number }) {
         <div className="absolute inset-0 transform-style-3d">
             {Array.from({ length: count }).map((_, i) => {
                 const angle = (i / count) * 360;
-                const delay = Math.random() * 2;
+                const delay = seededValue(index * 100 + i, 1) * 2;
 
                 return (
                     <motion.div

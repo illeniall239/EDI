@@ -4,6 +4,7 @@ import { motion, useScroll, useTransform } from 'framer-motion';
 import { useRef } from 'react';
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { MessageSquare, Table, Sparkles, TrendingUp } from 'lucide-react';
+import { seededValue } from '@/utils/seededRandom';
 
 export default function HeroFloatingCards() {
     const containerRef = useRef(null);
@@ -150,18 +151,18 @@ export default function HeroFloatingCards() {
                         key={i}
                         className="absolute w-1 h-1 bg-white rounded-full"
                         initial={{
-                            x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1000),
-                            y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
+                            x: seededValue(i, 1) * (typeof window !== 'undefined' ? window.innerWidth : 1000),
+                            y: seededValue(i, 2) * (typeof window !== 'undefined' ? window.innerHeight : 800),
                             opacity: 0,
                         }}
                         animate={{
-                            y: [null, Math.random() * -100],
+                            y: [null, seededValue(i, 3) * -100],
                             opacity: [0, 1, 0],
                         }}
                         transition={{
-                            duration: Math.random() * 5 + 3,
+                            duration: seededValue(i, 4) * 5 + 3,
                             repeat: Infinity,
-                            delay: Math.random() * 2
+                            delay: seededValue(i, 5) * 2
                         }}
                     />
                 ))}

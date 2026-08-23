@@ -5,6 +5,7 @@ import { useFrame } from '@react-three/fiber';
 import { Points, PointMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 import { useMousePosition } from '@/hooks/useMousePosition';
+import { seededRandom } from '@/utils/seededRandom';
 
 interface ParticleField3DProps {
   count?: number;
@@ -18,17 +19,18 @@ export function ParticleField3D({ count = 100 }: ParticleField3DProps) {
   const particles = useMemo(() => {
     const positions = new Float32Array(count * 3);
     const velocities = new Float32Array(count * 3);
+    const rand = seededRandom(count);
 
     for (let i = 0; i < count; i++) {
       // Position
-      positions[i * 3] = (Math.random() - 0.5) * 10;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 10;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 3;
+      positions[i * 3] = (rand() - 0.5) * 10;
+      positions[i * 3 + 1] = (rand() - 0.5) * 10;
+      positions[i * 3 + 2] = (rand() - 0.5) * 3;
 
       // Velocity
-      velocities[i * 3] = (Math.random() - 0.5) * 0.02;
-      velocities[i * 3 + 1] = (Math.random() - 0.5) * 0.02;
-      velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
+      velocities[i * 3] = (rand() - 0.5) * 0.02;
+      velocities[i * 3 + 1] = (rand() - 0.5) * 0.02;
+      velocities[i * 3 + 2] = (rand() - 0.5) * 0.02;
     }
 
     return { positions, velocities };
