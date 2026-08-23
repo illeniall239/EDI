@@ -126,7 +126,7 @@ def persist(workspace_id):
 
 # Check if LLM is properly configured
 if settings.LLM is None:
-    logger.error("LLM is not properly configured. Please check your NEXT_PUBLIC_GROQ_API_KEY environment variable.")
+    logger.error("LLM is not properly configured. Please check your GOOGLE_API_KEY environment variable.")
     agent_services = None
     report_generator = None
 else:
@@ -139,7 +139,7 @@ else:
         )
     except Exception as e:
         logger.error(f"Failed to initialize LLM services: {str(e)}")
-        logger.error("Please check your NEXT_PUBLIC_GROQ_API_KEY and ensure it's valid")
+        logger.error("Please check your GOOGLE_API_KEY and ensure it's valid")
         agent_services = None
         report_generator = None
 
@@ -1099,7 +1099,7 @@ async def health_check():
         "llm": llm_status,
         "services": services_status,
         "api_keys": {
-            "groq_api_key": "configured" if settings.GROQ_API_KEY else "missing",
+            "google_api_key": "configured" if settings.GOOGLE_API_KEY else "missing",
             "supabase": "configured" if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY else "missing"
         }
     }

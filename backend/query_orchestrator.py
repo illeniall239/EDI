@@ -17,20 +17,17 @@ from dataclasses import dataclass
 from typing import Dict, Any, List
 import re
 
-# Import Kimi via Groq using LangChain
+# Gemini via LangChain. settings owns the model choice so there is one place
+# to change it rather than three.
 try:
-    from langchain_groq import ChatGroq
     from langchain_core.messages import HumanMessage
-    from dotenv import load_dotenv
-    load_dotenv()
-    GROQ_API_KEY = os.getenv("NEXT_PUBLIC_GROQ_API_KEY")
-    GROQ_AVAILABLE = bool(GROQ_API_KEY)
-    if not GROQ_AVAILABLE:
-        print("Warning: NEXT_PUBLIC_GROQ_API_KEY not found. LLM decomposition will not work.")
+    import settings
+    LLM_AVAILABLE = bool(settings.GOOGLE_API_KEY)
+    if not LLM_AVAILABLE:
+        print("Warning: GOOGLE_API_KEY not found. LLM decomposition will not work.")
 except ImportError:
-    print("Warning: langchain-groq not installed. LLM decomposition will not work.")
-    GROQ_AVAILABLE = False
-    GROQ_API_KEY = None
+    print("Warning: langchain-google-genai not installed. LLM decomposition will not work.")
+    LLM_AVAILABLE = False
 
 
 @dataclass(frozen=True)
@@ -138,16 +135,11 @@ class QueryOrchestrator:
     """Main orchestrator for compound query processing"""
 
     def __init__(self):
-        if GROQ_AVAILABLE:
+        if LLM_AVAILABLE:
             try:
-                self.model = ChatGroq(
-                    model="moonshotai/kimi-k2-instruct-0905",
-                    temperature=0.4,  # Consistent with settings.py
-                    groq_api_key=GROQ_API_KEY,
-                    max_tokens=8192,
-                )
+                self.model = settings._build_llm(temperature=0.4)
             except Exception as e:
-                print(f"Warning: Failed to initialize Kimi model via Groq: {str(e)}")
+                print(f"Warning: Failed to initialize Gemini model: {str(e)}")
                 self.model = None
         else:
             self.model = None

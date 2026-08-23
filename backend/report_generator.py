@@ -16,13 +16,13 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
 
-# --- Kimi Integration via Groq ---
-from langchain_groq import ChatGroq
+# --- Gemini integration ---
 from langchain_core.messages import HumanMessage
+import settings
 
 # --- ReportGenerator Class ---
 class ReportGenerator:
-    def __init__(self, data_handler, agent_services_instance, groq_api_key=None):
+    def __init__(self, data_handler, agent_services_instance, api_key=None):
         # self.llm is instantiated here
         self.data_handler = data_handler
         self.agent_services = agent_services_instance # For cancellation flag
@@ -36,22 +36,17 @@ class ReportGenerator:
         self.max_plots_per_section = 3
         self.max_cat_for_bivariate = 10
 
-        # --- Instantiate Kimi LLM via Groq ---
-        api_key = groq_api_key or os.getenv("NEXT_PUBLIC_GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("Groq API key not provided or NEXT_PUBLIC_GROQ_API_KEY environment variable not set.")
+        # --- Instantiate the Gemini LLM ---
+        if not (api_key or settings.GOOGLE_API_KEY):
+            raise ValueError("Google API key not provided and GOOGLE_API_KEY is not set.")
 
-        self.llm = ChatGroq(
-            model="moonshotai/kimi-k2-instruct-0905",
-            temperature=0.6,  # Adjust for creativity vs. factuality in reports
-            groq_api_key=api_key,
-            max_tokens=8192,  # Set max tokens to ensure complete responses
-        )
-        print("ReportGenerator initialized with Kimi model via Groq (moonshotai/kimi-k2-instruct-0905).")
+        # Warmer than the query path: reports read better with some latitude.
+        self.llm = settings._build_llm(temperature=0.6)
+        print(f"ReportGenerator initialized with {settings.GEMINI_MODEL} via Google Gemini.")
 
 
     def _invoke_llm(self, prompt_text, max_retries=3, delay=5):
-        """Helper function to call Kimi LLM via Groq with retries and error handling."""
+        """Helper function to call the Gemini LLM with retries and error handling."""
         self._check_cancellation() # Check before making an API call
         for attempt in range(max_retries):
             try:
@@ -62,7 +57,7 @@ class ReportGenerator:
                 if hasattr(response, 'content') and response.content:
                     return response.content.strip()
                 else:
-                    error_message = f"Kimi API call resulted in no content. Prompt: '{prompt_text[:200]}...'"
+                    error_message = f"Gemini API call resulted in no content. Prompt: '{prompt_text[:200]}...'"
                     if attempt < max_retries - 1:
                         print(f"Warning: {error_message} Retrying ({attempt + 1}/{max_retries})...")
                         time.sleep(delay * (attempt + 1))
@@ -73,7 +68,7 @@ class ReportGenerator:
                         return "Error: LLM response not available after multiple retries."
 
             except Exception as e:
-                error_message = f"Error calling Kimi API via Groq: {str(e)}. Prompt: '{prompt_text[:200]}...'"
+                error_message = f"Error calling Gemini API: {str(e)}. Prompt: '{prompt_text[:200]}...'"
                 if attempt < max_retries - 1:
                     print(f"Warning: {error_message} Retrying ({attempt + 1}/{max_retries})...")
                     time.sleep(delay * (attempt + 1))
@@ -234,7 +229,7 @@ class ReportGenerator:
         self._rl_add_table(dtype_summary, "Summary of Feature Data Types")
         num_cols, cat_cols, dt_cols = self._get_column_types(df)
         
-        # For Kimi, it's good practice to frame prompts clearly.
+        # For Gemini, it's good practice to frame prompts clearly.
         # Let's make the prompt for data types interpretation more direct.
         data_types_context = f"""
         The dataset comprises:
@@ -612,9 +607,9 @@ class ReportGenerator:
 
     # --- Main Report Generation Method ---
     def generate_report_pdf_reportlab(self, output_filepath=None, progress_callback=None):
-        """Generate a comprehensive PDF report using ReportLab and Kimi."""
+        """Generate a comprehensive PDF report using ReportLab and Gemini."""
         self._check_cancellation()  # Check before starting
-        print("Using ReportLab and Kimi for PDF generation with enhanced structure.")
+        print("Using ReportLab and Gemini for PDF generation with enhanced structure.")
         
         df = self.data_handler.get_df()
         if df is None or df.empty:
@@ -636,7 +631,7 @@ class ReportGenerator:
             report_filename_pdf = output_filepath
         else:
             report_uuid = uuid.uuid4()
-            report_filename_pdf = os.path.join(reports_dir, f"Automated_Kimi_Analysis_{sanitized_base_filename}_{report_uuid}.pdf")
+            report_filename_pdf = os.path.join(reports_dir, f"Automated_Gemini_Analysis_{sanitized_base_filename}_{report_uuid}.pdf")
 
         doc = SimpleDocTemplate(report_filename_pdf, pagesize=letter,
                               rightMargin=0.75*inch, leftMargin=0.75*inch,
@@ -647,7 +642,7 @@ class ReportGenerator:
             canvas.setFont('Helvetica', 8)
             report_date = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")
             footer_title = (safe_report_title_name[:50] + '...') if len(safe_report_title_name) > 50 else safe_report_title_name
-            page_num_text = f"Page {doc.page} | EDI.ai Kimi Analysis: {footer_title} | Generated: {report_date}" # Updated footer
+            page_num_text = f"Page {doc.page} | EDI.ai Gemini Analysis: {footer_title} | Generated: {report_date}" # Updated footer
             canvas.drawCentredString(letter[0]/2, 0.5*inch, page_num_text)
             canvas.restoreState()
 
@@ -664,33 +659,33 @@ class ReportGenerator:
                 progress_callback(current_step / max_steps, desc)
 
         try:
-            self._rl_add_title(f"Automated Data Analysis Report (via Kimi): {safe_report_title_name}") # Updated title
+            self._rl_add_title(f"Automated Data Analysis Report (via Gemini): {safe_report_title_name}") # Updated title
             
             exec_summary_placeholder_index = len(self.story)
             self.story.append(Spacer(1,0.01*inch))
 
             self._check_cancellation()
-            update_progress("Generating Data Overview (Kimi)...")
+            update_progress("Generating Data Overview (Gemini)...")
             df_overview_summary = self._generate_data_overview(df.copy()) 
             all_section_summaries.append(f"Overview: {df_overview_summary}")
 
             self._check_cancellation()
-            update_progress("Assessing Data Quality (Kimi)...")
+            update_progress("Assessing Data Quality (Gemini)...")
             dq_summary = self._generate_data_quality_assessment(df.copy())
             all_section_summaries.append(f"Quality: {dq_summary}")
             
             self._check_cancellation()
-            update_progress("Performing Univariate Analysis (Kimi)...")
+            update_progress("Performing Univariate Analysis (Gemini)...")
             univar_summary = self._generate_univariate_analysis(df.copy())
             all_section_summaries.append(f"Univariate: {univar_summary}")
             
             self._check_cancellation()
-            update_progress("Performing Bivariate Analysis (Kimi)...")
+            update_progress("Performing Bivariate Analysis (Gemini)...")
             bivar_summary = self._generate_bivariate_analysis(df.copy())
             all_section_summaries.append(f"Bivariate: {bivar_summary}")
 
             self._check_cancellation()
-            update_progress("Synthesizing Key Findings (Kimi)...")
+            update_progress("Synthesizing Key Findings (Gemini)...")
             current_full_summary_for_findings = "\n".join(all_section_summaries)
             self._generate_key_findings_summary(df.copy(), current_full_summary_for_findings)
             all_section_summaries.append("Key findings synthesized based on quality, univariate, and bivariate analyses.") 
@@ -699,20 +694,20 @@ class ReportGenerator:
             story_after_placeholder = self.story[exec_summary_placeholder_index+1:]
             self.story = self.story[:exec_summary_placeholder_index] 
             
-            update_progress("Generating Executive Summary (Kimi)...") 
+            update_progress("Generating Executive Summary (Gemini)...") 
             self._generate_executive_summary(current_full_summary_for_findings) 
             self.story.extend(story_after_placeholder) 
 
             self._check_cancellation()
-            update_progress("Formulating Conclusion & Next Steps (Kimi)...")
+            update_progress("Formulating Conclusion & Next Steps (Gemini)...")
             current_full_summary_for_conclusion = "\n".join(all_section_summaries)
             self._generate_conclusion_and_next_steps(df.copy(), current_full_summary_for_conclusion)
             
             update_progress("Building PDF Document...")
             doc.build(self.story, onFirstPage=my_page_template, onLaterPages=my_page_template)
 
-            if progress_callback: progress_callback(1.0, "Report PDF generated successfully with Kimi!")
-            return report_filename_pdf, f"Report (Kimi) generated: {os.path.basename(report_filename_pdf)}"
+            if progress_callback: progress_callback(1.0, "Report PDF generated successfully with Gemini!")
+            return report_filename_pdf, f"Report (Gemini) generated: {os.path.basename(report_filename_pdf)}"
         
         except InterruptedError: 
             # Cleanup
@@ -725,10 +720,10 @@ class ReportGenerator:
             if os.path.exists(report_filename_pdf):
                 try: os.remove(report_filename_pdf)
                 except OSError: pass
-            print(f"Error building PDF with ReportLab (Kimi workflow): {e}")
+            print(f"Error building PDF with ReportLab (Gemini workflow): {e}")
             import traceback
             traceback.print_exc()
-            return None, f"Error building PDF (Kimi): {str(e)}"
+            return None, f"Error building PDF (Gemini): {str(e)}"
 
     def generate_report(self, output_filepath=None, progress_callback=None):
         """Main method to generate the entire report. Wrapper around generate_report_pdf_reportlab."""
