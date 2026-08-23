@@ -1464,8 +1464,9 @@ Rules:
             return None, "Only read-only chart queries are allowed."
 
         try:
-            # pandas 1.5.x cannot take a SQLAlchemy 2.0 Engine directly
-            # ('OptionEngine' has no attribute 'execute'); hand it a Connection.
+            # Hand read_sql_query a Connection rather than the Engine: an
+            # explicit connection scopes the read and is accepted by every
+            # pandas/SQLAlchemy 2.0 combination.
             with self.data_handler.engine.connect() as conn:
                 rows_df = pd.read_sql_query(sa_text(sql), conn)
         except Exception as e:
