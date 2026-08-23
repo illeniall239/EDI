@@ -75,6 +75,12 @@ export default function ChatSidebar({
     // NEW: Multiple chat state management
     const [chats, setChats] = useState<Chat[]>([]);
     const [activeChat, setActiveChat] = useState<Chat | null>(null);
+
+    // How many messages are on screen, readable without becoming a dependency.
+    // loadWorkspaceChats needs this for its "don't clobber an open chat" guard,
+    // but must not be re-created when it changes -- see the note on that
+    // callback's dependency list.
+    const messageCountRef = useRef(0);
     const [isCreatingChat, setIsCreatingChat] = useState(false);
 
     // Learning guidance state
@@ -6342,12 +6348,12 @@ export default function ChatSidebar({
                 workspaceId: currentWorkspace.id,
                 chatsFound: workspaceChats.length,
                 currentActiveChat: activeChat?.id,
-                currentMessagesCount: messages.length
+                currentMessagesCount: messageCountRef.current
             });
-            
+
             // Always load the most recent chat if we have chats and no messages are currently loaded
             // This ensures consistent behavior on page reload regardless of activeChat state
-            if (workspaceChats.length > 0 && messages.length === 0) {
+            if (workspaceChats.length > 0 && messageCountRef.current === 0) {
                 const mostRecentChat = workspaceChats[0]; // Already sorted by updated_at DESC
                 console.log('📂 Loading most recent chat:', mostRecentChat.id, 'Messages:', mostRecentChat.messages?.length || 0);
                 
@@ -6377,7 +6383,14 @@ export default function ChatSidebar({
             // This prevents the welcome screen flash during the gap between chat load and message load
             setIsLoadingChat(false);
         }
-    }, [currentWorkspace, activeChat, messages.length]);
+        // Deliberately keyed on the workspace alone. Listing `messages.length`
+        // here re-created this callback after every single message, which
+        // re-fired the effect below and refetched the chat list mid-conversation
+        // -- blanking the sidebar to "Loading chats..." right after each answer
+        // appeared. The message count is read through a ref instead, and
+        // `activeChat` was only ever used by the debug log above.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentWorkspace]);
 
     // Create a new chat
     const handleCreateNewChat = async () => {
@@ -6484,6 +6497,10 @@ export default function ChatSidebar({
             alert('Failed to cycle chat. Please try again.');
         }
     };
+
+    useEffect(() => {
+        messageCountRef.current = messages.length;
+    }, [messages.length]);
 
     // Load chats when workspace changes
     useEffect(() => {

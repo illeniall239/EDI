@@ -67,6 +67,22 @@ function shortLabel(value: unknown): string {
     return text.length > 16 ? `${text.slice(0, 15)}…` : text;
 }
 
+/**
+ * Compact form for axis ticks: 1800000 -> "1.8M".
+ *
+ * The chart lives in a ~330px sidebar, where a full "1,800,000" is wider than
+ * the y-axis gutter and gets clipped to ",800,000" -- which reads as a smaller
+ * number rather than as a truncated one. Tooltips keep the exact value.
+ */
+function axisTick(value: unknown): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return String(value ?? '');
+    const abs = Math.abs(value);
+    const trim = (n: number) => n.toFixed(1).replace(/\.0$/, '');
+    if (abs >= 1_000_000) return `${trim(value / 1_000_000)}M`;
+    if (abs >= 10_000) return `${trim(value / 1_000)}K`;
+    return formatValue(value);
+}
+
 interface TooltipEntry {
     name?: string;
     value?: unknown;
@@ -138,6 +154,21 @@ export function ChartRenderer({ spec }: { spec: ChartSpec }) {
         nonZero.length > 1 &&
         Math.max(...nonZero) > 10 * Math.min(...nonZero);
 
+    /**
+     * Whether the category labels can sit side by side.
+     *
+     * Category count alone is the wrong test: five products named "Aurora
+     * Laptop" collide in a narrow panel, while eight month numbers fit
+     * comfortably. What matters is the total width the labels need, so this
+     * compares summed label length against roughly what the axis can hold at
+     * this font size.
+     */
+    const labelChars = data.reduce(
+        (total, row) => total + shortLabel(row[xKey]).length,
+        0
+    );
+    const crowded = data.length > 6 || labelChars > 34;
+
     const buildChart = (
         keys: typeof seriesKeys,
         colors: string[],
@@ -146,8 +177,8 @@ export function ChartRenderer({ spec }: { spec: ChartSpec }) {
     const common = (
         <>
             <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey={xKey} {...axisProps} tickFormatter={shortLabel} interval={0} angle={data.length > 6 ? -35 : 0} textAnchor={data.length > 6 ? 'end' : 'middle'} height={data.length > 6 ? 64 : 30} />
-            <YAxis {...axisProps} width={52} tickFormatter={(v) => formatValue(v)} />
+            <XAxis dataKey={xKey} {...axisProps} tickFormatter={shortLabel} interval={0} angle={crowded ? -35 : 0} textAnchor={crowded ? 'end' : 'middle'} height={crowded ? 64 : 30} />
+            <YAxis {...axisProps} width={46} tickFormatter={axisTick} />
             <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.06)' }} />
             {/* A single series is named by the title, so no legend box. */}
             {showLegend && <Legend wrapperStyle={{ fontSize: 11, color: AXIS_INK }} />}
