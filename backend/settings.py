@@ -24,11 +24,15 @@ def _build_llm(temperature=0.4):
     """
     Construct a Gemini chat model.
 
-    Deliberately does not set convert_system_message_to_human. Besides being
-    deprecated, folding the system prompt into the human turn measurably
-    weakens instruction-following: with it enabled the model wrapped generated
-    SQL in markdown fences despite being told not to, which the SQL parsing
-    downstream then has to strip. Gemini handles system messages natively.
+    Deliberately does not set convert_system_message_to_human: it is deprecated
+    in langchain-google-genai, and Gemini handles system messages natively.
+
+    It also degrades instruction-following. Asked for SQL with "no fences" in
+    the system message, the model emitted markdown fences 10/10 times with the
+    flag on versus 4/10 with it off. That is not why it was removed, though --
+    _execute_sql_query_directly already strips fences, and tightening the
+    prompt wording to "no markdown code fences" took both conditions to 0/10.
+    So this is hygiene, not a correctness fix.
     """
     return ChatGoogleGenerativeAI(
         model=GEMINI_MODEL,
