@@ -19,7 +19,6 @@ supabase==2.15.1
 
 matplotlib==3.10.0
 seaborn==0.13.2
-plotly==6.0.1
 reportlab==4.4.0
 pillow==11.1.0
 

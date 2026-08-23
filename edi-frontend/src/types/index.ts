@@ -21,13 +21,33 @@ export interface ClarificationResponse {
     original_query: string;
 }
 
+export interface ChartSpec {
+    type: 'chart_spec';
+    chart_type: 'bar' | 'line' | 'area' | 'pie' | 'scatter';
+    title?: string;
+    x_key: string;
+    series: Array<{ key: string; label: string }>;
+    data: Array<Record<string, unknown>>;
+    sql?: string;
+    original_query?: string;
+}
+
+/**
+ * Charts are returned as data for the client to render. The image variants are
+ * legacy: a file path only resolves on the backend instance that wrote it, so
+ * it does not survive on serverless.
+ */
+export type Visualization =
+    | ChartSpec
+    | {
+          type: 'matplotlib_figure' | 'plotly_html';
+          path: string;
+          original_query?: string;
+      };
+
 export interface QueryResponse {
     response: string;
-    visualization?: {
-        type: 'matplotlib_figure' | 'plotly_html';
-        path: string;
-        original_query?: string;
-    };
+    visualization?: Visualization;
     data_updated?: boolean;
     updated_data?: {
         data: Array<any>;
@@ -46,11 +66,7 @@ export interface ChatMessage {
     timestamp?: Date | number;
     isAnalyzing?: boolean;
     isTyping?: boolean;
-    visualization?: {
-        type: 'matplotlib_figure' | 'plotly_html';
-        path: string;
-        original_query?: string;
-    };
+    visualization?: Visualization;
     analysis?: {
         chart_type: string;
         patterns: string;

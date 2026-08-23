@@ -42,17 +42,9 @@ except ImportError:
 
 import seaborn as sns
 import numpy as np # Often needed with pandas and plotting
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, Any
+from sqlalchemy import text as sa_text
 import textwrap
-
-# Import Plotly
-try:
-    import plotly.express as px
-    import plotly.graph_objects as go
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-    print("Warning: Plotly is not installed. 3D interactive visualizations will not be available. Run 'pip install plotly'")
 
 # Configure logging with UTF-8 encoding to handle emojis on Windows
 import sys
@@ -417,30 +409,11 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
             df = self.data_handler.get_df()
             logger.debug(f"DataFrame shape: {df.shape}, columns: {df.columns.tolist()}")
             
-            plotly_instruction = ""
-            if PLOTLY_AVAILABLE:
-                logger.debug("Plotly is available, including Plotly instructions")
-                plotly_instruction = """
-        - For 3D visualizations or complex interactive plots, PREFER `plotly.express as px`.
-          - Generate the Plotly figure object (e.g., `fig = px.scatter_3d(...)`).
-          - Create a unique HTML filename: `chart_filename = f"generated_charts/plot_{uuid.uuid4()}.html"`
-          - Save the figure: `fig.write_html(chart_filename)`
-          - Assign the `chart_filename` string to `result`.
-        - For simpler 2D plots, you can use `matplotlib.pyplot as plt`.
-          - Create the plot and assign the figure to `result` (e.g., `result = plt.gcf()`).
-        """
-            else:
-                logger.debug("Plotly not available, using Matplotlib instructions only")
-                plotly_instruction = """
-        - For visualizations, use `matplotlib.pyplot as plt`.
-          - Create the plot and assign the figure to `result` (e.g., `result = plt.gcf()`).
-        """
-
             # Log the prompt being sent to LLM
             logger.debug("Sending code generation prompt to LLM")
-            
+
             prompt = f"""
-You are an expert Python programmer specializing in pandas, matplotlib, and plotly. Generate executable Python code to address the following query on a pandas DataFrame named 'df'.
+You are an expert Python programmer specializing in pandas. Generate executable Python code to address the following query on a pandas DataFrame named 'df'.
 
 Query: "{question}"
 Query Category: {query_category}
@@ -452,41 +425,20 @@ DataFrame dtypes:
 
 Instructions:
 1. Your code will be executed in a function, so DO NOT use 'return' statements.
-2. Instead, set your results to a variable named 'result'.
-3. For VISUALIZATION:
-    {plotly_instruction}
-4. For DATA_CLEANING or FILTER_DATA: Assign the modified DataFrame to 'result'.
-5. DO NOT include import statements for `pandas as pd`, `numpy as np`, `matplotlib.pyplot as plt`, `plotly.express as px`, or `uuid`. These are already available in the execution scope.
-6. Ensure the code handles errors, edge cases, and invalid inputs gracefully within a try-except block. Assign any error message string to 'result' in case of failure.
-7. DO NOT attempt file I/O operations other than saving plots as instructed (e.g., `fig.write_html()` for Plotly, or matplotlib saving handled externally).
-8. Keep code simple and focused on the specific task.
-9. If using matplotlib, create a new figure with `plt.figure()` before plotting.
+2. Instead, assign the modified DataFrame to a variable named 'result'.
+3. DO NOT include import statements for `pandas as pd` or `numpy as np`. These are already available in the execution scope.
+4. Ensure the code handles errors, edge cases, and invalid inputs gracefully within a try-except block. Assign any error message string to 'result' in case of failure.
+5. DO NOT attempt any file I/O.
+6. Keep code simple and focused on the specific task.
 
 Code template:
 '''python
 # Initialize result variable that will be captured
 result = None
-# Ensure 'generated_charts' directory exists for Plotly charts
-# os.makedirs("generated_charts", exist_ok=True) # This will be handled by the calling function
 
 try:
-    # Your code here
-    # Example for Plotly:
-    # if PLOTLY_AVAILABLE and query_implies_3d_or_interactive: # You decide this based on the query
-    #     import uuid # uuid is available
-    #     import plotly.express as px # px is available
-    #     fig = px.scatter_3d(df, x='col1', y='col2', z='col3')
-    #     chart_filename = f"generated_charts/plot_{{uuid.uuid4()}}.html"
-    #     # The directory 'generated_charts' will be created if it doesn't exist by the calling code.
-    #     fig.write_html(chart_filename)
-    #     result = chart_filename
-    # else: # Example for Matplotlib
-    #     import matplotlib.pyplot as plt # plt is available
-    #     plt.figure()
-    #     df['some_column'].plot(kind='hist')
-    #     result = plt.gcf() # Get current figure
-
     # ... your actual code based on the query ...
+    result = df
 
 except Exception as e:
     # Handle errors
@@ -519,7 +471,7 @@ except Exception as e:
                     potential_code = []
                     in_code_block = False
                     for line in lines:
-                        if "result =" in line or "df." in line or "plt." in line or (PLOTLY_AVAILABLE and "px." in line):
+                        if "result =" in line or "df." in line:
                             in_code_block = True
                         if in_code_block:
                             potential_code.append(line)
@@ -563,10 +515,6 @@ except Exception as e:
 
     def safe_execute_pandas_code(self, code, query_category):
         """Safely execute generated pandas code in a restricted environment."""
-        if query_category == 'VISUALIZATION':
-            # Ensure we're using a fresh figure
-            plt.close('all')
-        
         if self.operation_cancelled_flag:
             logger.info("Operation cancelled flag detected in safe_execute_pandas_code")
             return None, "I've stopped processing that request as you requested."
@@ -606,15 +554,6 @@ except Exception as e:
                 }
             }
             
-            if PLOTLY_AVAILABLE:
-                logger.debug("Adding Plotly to execution environment")
-                safe_globals['px'] = px
-                safe_globals['go'] = go
-                safe_globals['PLOTLY_AVAILABLE'] = True
-            else:
-                logger.debug("Plotly not available in execution environment")
-                safe_globals['PLOTLY_AVAILABLE'] = False
-            
             safe_locals = {'result': None}
             
             # Execute the code
@@ -628,28 +567,6 @@ except Exception as e:
             execution_result = safe_locals.get('result')
             logger.debug(f"Execution result type: {type(execution_result)}")
 
-            if query_category == 'VISUALIZATION':
-                logger.debug("Processing visualization result")
-                
-                if isinstance(execution_result, plt.Figure):
-                    logger.debug("Found matplotlib Figure result")
-                    viz_paths, message = self._save_matplotlib_figure(execution_result)
-                    logger.debug(f"Save matplotlib result: paths={viz_paths}, message={message}")
-                    return viz_paths, message
-                elif plt.get_fignums():  # Check for any open figures
-                    logger.debug("Found open matplotlib figures")
-                    viz_paths, message = self._save_matplotlib_figure(plt.gcf())
-                    logger.debug(f"Save matplotlib result: paths={viz_paths}, message={message}")
-                    return viz_paths, message
-                elif isinstance(execution_result, str) and execution_result.endswith(".html"):
-                    logger.debug("Found plotly HTML result")
-                    viz_paths, message = self._save_plotly_figure(execution_result)
-                    logger.debug(f"Save plotly result: paths={viz_paths}, message={message}")
-                    return viz_paths, message
-                else:
-                    logger.warning(f"Unexpected visualization result type: {type(execution_result)}")
-                    return None, "No valid visualization was produced"
-                    
             # Handle non-visualization results
             logger.debug(f"Returning non-visualization result of type: {type(execution_result)}")
             return execution_result, "Execution completed successfully."
@@ -657,149 +574,6 @@ except Exception as e:
         except Exception as e:
             logger.exception("Error in safe_execute_pandas_code")
             return None, f"Error executing generated code: {str(e)}"
-
-    def _save_matplotlib_figure(self, fig):
-        """Helper method to save Matplotlib figures."""
-        logger.debug("Entering _save_matplotlib_figure")
-        try:
-            logger.debug("Configuring Matplotlib figure size")
-            fig.set_size_inches(12, 8)  # Larger figure size
-            logger.debug("Setting Matplotlib xticks rotation")
-            plt.xticks(rotation=45, ha='right')
-            logger.debug("Adjusting Matplotlib subplots")
-            plt.subplots_adjust(bottom=0.2)
-            logger.debug("Applying Matplotlib tight_layout")
-            plt.tight_layout(pad=2.0)
-            
-            logger.debug("Generating unique filename for Matplotlib figure")
-            # Simple filename with no subdirectories
-            filename = f"viz_{uuid.uuid4().hex[:8]}.png"
-            logger.debug(f"Generated filename: {filename}")
-            filepath = os.path.join(self.charts_dir, filename)
-            logger.debug(f"Full filepath for Matplotlib figure: {filepath}")
-            
-            logger.info(f"Attempting to save Matplotlib figure to: {filepath}")
-            
-            # Save the figure with higher DPI 
-            try:
-                logger.debug(f"Calling fig.savefig() for: {filepath}")
-                fig.savefig(filepath, 
-                           bbox_inches='tight', 
-                           dpi=300,  # Increased DPI for better quality
-                           format='png'  # Explicitly set format
-                )
-                logger.info(f"Successfully saved Matplotlib figure to: {filepath} using fig.savefig()")
-                plt.close(fig)
-                logger.debug(f"Closed figure after saving: {filepath}")
-                
-                # Return a dictionary with visualization paths and filename as required by frontend
-                visualization_paths = {
-                    "type": "matplotlib_figure",
-                    "path": filepath,
-                    "filename": filename  # Add filename key for frontend
-                }
-                logger.debug(f"Returning visualization paths: {visualization_paths}")
-                return visualization_paths, "Visualization created successfully."
-            except Exception as e_fig_save:
-                logger.error(f"fig.savefig() failed for {filepath}: {str(e_fig_save)}")
-                logger.debug(f"Attempting plt.savefig() as fallback for: {filepath}")
-                try:
-                    # Ensure the figure is the current figure for plt.savefig()
-                    plt.figure(fig.number) # Set current figure
-                    plt.savefig(filepath, 
-                              bbox_inches='tight', 
-                              dpi=300,  # Increased DPI for better quality
-                              format='png'  # Explicitly set format
-                    )
-                    logger.info(f"Successfully saved Matplotlib figure to: {filepath} using plt.savefig()")
-                    plt.close(fig)
-                    logger.debug(f"Closed figure after fallback save: {filepath}")
-                    
-                    # Return a dictionary with visualization paths and filename as required by frontend
-                    visualization_paths = {
-                        "type": "matplotlib_figure",
-                        "path": filepath,
-                        "filename": filename  # Add filename key for frontend
-                    }
-                    logger.debug(f"Returning visualization paths: {visualization_paths}")
-                    return visualization_paths, "Visualization created successfully."
-                except Exception as e_plt_save:
-                    logger.error(f"plt.savefig() also failed for {filepath}: {str(e_plt_save)}")
-                    plt.close(fig) # Attempt to close the figure even if save fails
-                    logger.debug(f"Closed figure after all save attempts failed: {filepath}")
-                    return None, f"Failed to save visualization after multiple attempts: {str(e_plt_save)}"
-            
-        except Exception as e_main:
-            logger.exception("Overall error in _save_matplotlib_figure")
-            if 'fig' in locals() and fig is not None:
-                try:
-                    plt.close(fig) # Clean up in case of any other error
-                    logger.debug("Closed figure due to an overall error in _save_matplotlib_figure")
-                except Exception as e_close_fig:
-                    logger.error(f"Failed to close figure during error handling: {str(e_close_fig)}")
-            return None, f"Error in figure preparation or saving: {str(e_main)}"
-
-    def _save_plotly_figure(self, html_content):
-        """Helper method to save Plotly figures."""
-        logger.debug("Entering _save_plotly_figure")
-        try:
-            logger.debug("Generating unique filename for Plotly figure")
-            # Simple filename with no subdirectories
-            filename = f"viz_{uuid.uuid4().hex[:8]}.html"
-            logger.debug(f"Generated filename: {filename}")
-            filepath = os.path.join(self.charts_dir, filename)
-            logger.debug(f"Full filepath for Plotly figure: {filepath}")
-            
-            logger.info(f"Attempting to save Plotly figure to: {filepath}")
-            
-            # Save the HTML content
-            try:
-                logger.debug(f"Opening file for writing: {filepath}")
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    logger.debug(f"Writing HTML content to: {filepath}")
-                    f.write(html_content)
-                    logger.debug(f"Finished writing HTML content to: {filepath}")
-                logger.info(f"Successfully saved Plotly figure to: {filepath}")
-                
-                # Return a dictionary with visualization path and filename as required by frontend
-                visualization_paths = {
-                    "type": "plotly_html",
-                    "path": filepath,
-                    "filename": filename  # Add filename key for frontend
-                }
-                logger.debug(f"Returning visualization paths: {visualization_paths}")
-                return visualization_paths, "Visualization created successfully."
-            except Exception as e_initial_save:
-                logger.error(f"Failed to save Plotly figure to {filepath}: {str(e_initial_save)}")
-                logger.debug("Attempting to save Plotly figure to temporary directory as fallback")
-                try:
-                    import tempfile
-                    temp_dir = tempfile.gettempdir()
-                    logger.debug(f"Using temporary directory: {temp_dir}")
-                    fallback_filepath = os.path.join(temp_dir, filename)
-                    logger.debug(f"Full fallback filepath for Plotly figure: {fallback_filepath}")
-                    logger.debug(f"Opening fallback file for writing: {fallback_filepath}")
-                    with open(fallback_filepath, 'w', encoding='utf-8') as f:
-                        logger.debug(f"Writing HTML content to fallback file: {fallback_filepath}")
-                        f.write(html_content)
-                        logger.debug(f"Finished writing HTML content to fallback file: {fallback_filepath}")
-                    logger.info(f"Successfully saved Plotly figure to fallback temp location: {fallback_filepath}")
-                    
-                    # Return a dictionary with visualization path and filename as required by frontend
-                    visualization_paths = {
-                        "type": "plotly_html",
-                        "path": fallback_filepath,
-                        "filename": filename  # Add filename key for frontend
-                    }
-                    logger.debug(f"Returning visualization paths: {visualization_paths}")
-                    return visualization_paths, "Visualization created successfully."
-                except Exception as e_fallback_save:
-                    logger.error(f"Failed to save Plotly figure to temporary directory: {str(e_fallback_save)}")
-                    return None, f"Failed to save Plotly figure after multiple attempts: {str(e_fallback_save)}"
-                
-        except Exception as e_main:
-            logger.exception("Overall error in _save_plotly_figure")
-            return None, f"Error saving Plotly figure: {str(e_main)}"
 
     def categorize_query(self, question: str) -> tuple[str, int]:
         """Categorize the query and return confidence score"""
@@ -1574,6 +1348,172 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
             # Don't add error responses to memory
             return error_response, None
 
+    # Chart types the frontend renderer knows how to draw.
+    SUPPORTED_CHART_TYPES = ("bar", "line", "area", "pie", "scatter")
+
+    def _describe_columns(self, df, max_distinct: int = 12) -> str:
+        """
+        Describe the columns for a prompt, including the actual values of
+        low-cardinality text columns.
+
+        Without this the model guesses at contents and writes filters that
+        match nothing -- asking for "dramas per channel" on a table where every
+        row is a drama produced `WHERE Genre = 'Drama'`, and Genre holds
+        Romance/Family/etc., so the query returned zero rows. Showing the real
+        values stops it inventing predicates.
+        """
+        lines = []
+        for col in df.columns:
+            series = df[col]
+            if pd.api.types.is_numeric_dtype(series):
+                lines.append(f"- {col} (numeric)")
+                continue
+            if pd.api.types.is_datetime64_any_dtype(series):
+                lines.append(f"- {col} (date)")
+                continue
+
+            distinct = series.dropna().astype(str).unique()
+            if 0 < len(distinct) <= max_distinct:
+                values = ", ".join(repr(v) for v in sorted(distinct)[:max_distinct])
+                lines.append(f"- {col} (text; values: {values})")
+            else:
+                sample = ", ".join(repr(v) for v in distinct[:3])
+                lines.append(f"- {col} (text; {len(distinct)} distinct, e.g. {sample})")
+        return "\n".join(lines)
+
+    def _generate_chart_spec(self, question: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        Build a declarative chart spec for the frontend to render.
+
+        Replaces the previous approach of asking the LLM for matplotlib code and
+        exec()ing it. That wrote a PNG to local disk, which does not survive on
+        serverless -- the file lives only on the instance that made it, so a
+        later request for the image can land elsewhere and 404. It also meant
+        running model-generated code on every chart request.
+
+        Here the model only picks a chart type and writes SQL. We run the SQL
+        ourselves and hand back the rows, so the output is data rather than an
+        image and nothing generated is executed as code.
+
+        Returns (spec, error).
+        """
+        df = self.data_handler.get_df() if self.data_handler else None
+        if df is None:
+            return None, "No data loaded."
+
+        prompt = f"""
+Pick a chart and write the SQL to populate it, answering: "{question}"
+
+The table is named 'data'. Its columns are:
+{self._describe_columns(df)}
+
+Reply with a single JSON object and nothing else:
+{{
+  "chart_type": one of {list(self.SUPPORTED_CHART_TYPES)},
+  "title": short chart title,
+  "x_key": the column from your SELECT used for the category / x-axis,
+  "series": [list of numeric columns from your SELECT to plot],
+  "sql": the SQLite query
+}}
+
+Rules:
+- Use ONLY the columns listed above in the SQL.
+- Do NOT invent WHERE filters. Only filter on a value shown above, and only if
+  the question actually asks to narrow the data. Every row is already a record
+  of the thing being asked about.
+- Alias every computed column (e.g. COUNT(*) AS drama_count) and use those
+  aliases in "x_key" and "series" -- they must match your SELECT exactly.
+- "series" must be numeric columns. "x_key" must not appear in "series".
+- Aggregate rather than returning raw rows, and ORDER BY the main series
+  descending unless the question implies otherwise.
+- Return at most 20 rows so the chart stays readable.
+- For "pie", use exactly one series.
+- Return raw JSON. No markdown code fences, no commentary.
+"""
+        try:
+            raw = self.llm.invoke(prompt).content.strip()
+        except Exception as e:
+            logger.exception("Chart spec generation failed")
+            return None, f"Could not generate a chart: {str(e)}"
+
+        # Defensive: the model is told not to fence, but strip them if present.
+        raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.IGNORECASE | re.MULTILINE)
+        raw = re.sub(r'```$', '', raw, flags=re.MULTILINE).strip()
+
+        try:
+            spec = json.loads(raw)
+        except json.JSONDecodeError as e:
+            logger.error(f"Chart spec was not valid JSON: {raw[:300]}")
+            return None, f"Could not understand the chart definition: {str(e)}"
+
+        chart_type = str(spec.get("chart_type", "")).lower().strip()
+        if chart_type not in self.SUPPORTED_CHART_TYPES:
+            logger.warning(f"Unsupported chart_type {chart_type!r}, defaulting to bar")
+            chart_type = "bar"
+
+        sql = (spec.get("sql") or "").strip().rstrip(";")
+        if not sql:
+            return None, "The chart definition did not include a query."
+
+        # Only ever read. The model writes this SQL, so anything that could
+        # modify the dataset is rejected outright rather than sanitised.
+        lowered = re.sub(r'\s+', ' ', sql.lower())
+        if not lowered.startswith("select") and not lowered.startswith("with"):
+            return None, "Only read-only chart queries are allowed."
+        if re.search(r'(insert|update|delete|drop|alter|create|replace|attach|pragma)', lowered):
+            return None, "Only read-only chart queries are allowed."
+
+        try:
+            # pandas 1.5.x cannot take a SQLAlchemy 2.0 Engine directly
+            # ('OptionEngine' has no attribute 'execute'); hand it a Connection.
+            with self.data_handler.engine.connect() as conn:
+                rows_df = pd.read_sql_query(sa_text(sql), conn)
+        except Exception as e:
+            logger.error(f"Chart SQL failed: {sql} -> {e}")
+            return None, f"The chart query could not be run: {str(e)}"
+
+        if rows_df.empty:
+            return None, "That chart would have no data to show."
+
+        rows_df = rows_df.head(50)
+        result_columns = list(rows_df.columns)
+
+        x_key = spec.get("x_key")
+        if x_key not in result_columns:
+            x_key = result_columns[0]
+
+        series = [c for c in (spec.get("series") or []) if c in result_columns and c != x_key]
+        if not series:
+            # Fall back to whatever numeric columns the query actually returned.
+            series = [c for c in result_columns
+                      if c != x_key and pd.api.types.is_numeric_dtype(rows_df[c])]
+        if not series:
+            return None, "The chart query returned nothing numeric to plot."
+        if chart_type == "pie":
+            series = series[:1]
+        else:
+            # The renderer's palette is monochrome, and greys only stay
+            # distinguishable for three steps: #ffffff/#b3b3b3/#6e6e6e sit at
+            # dE 22.9 apart, while a fourth step drops adjacent pairs under the
+            # dE 15 floor where they read as the same colour. Cap rather than
+            # emit series nobody can tell apart.
+            series = series[:3]
+
+        # NaN is not valid JSON, and the x axis reads better as text.
+        rows_df = rows_df.where(pd.notnull(rows_df), None)
+        rows_df[x_key] = rows_df[x_key].astype(str)
+
+        return {
+            "type": "chart_spec",
+            "chart_type": chart_type,
+            "title": spec.get("title") or question,
+            "x_key": x_key,
+            "series": [{"key": c, "label": c.replace("_", " ").title()} for c in series],
+            "data": json.loads(rows_df.to_json(orient="records", date_format="iso")),
+            "sql": sql,
+            "original_query": question,
+        }, None
+
     def _process_visualization_request(self, question: str) -> Tuple[str, Optional[Dict[str, str]]]:
         """
         Process a visualization request and generate an appropriate visualization.
@@ -1598,54 +1538,23 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
         logger.debug(f"📊 DataFrame shape: {df.shape}")
         
         try:
-            # Generate code to create the visualization
-            code, error = self.generate_pandas_code(question, "VISUALIZATION")
-            
-            if error or not code:
-                return f"Failed to generate visualization code: {error}", None
-                
-            # Execute the generated code safely
-            visualization_paths, execution_message = self.safe_execute_pandas_code(code, "VISUALIZATION")
-            
-            if not visualization_paths:
-                return f"Error executing visualization code: {execution_message}", None
-                
+            spec, error = self._generate_chart_spec(question)
+
+            if error or not spec:
+                return error or "I couldn't build that chart.", None
+
             # Add to visualizations history
             self.visualizations.append({
                 "question": question,
-                "paths": visualization_paths,
+                "chart_type": spec.get("chart_type"),
                 "timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
             })
-            
-            # For the frontend, we need to ensure the visualization is in the expected format
-            logger.debug(f"Original visualization paths object: {visualization_paths}")
-            
-            # Store the original query in visualization metadata for future analysis
-            visualization_paths['original_query'] = question
-            
-            # If we already have a 'filename' key, use it as is
-            if "filename" in visualization_paths:
-                logger.debug(f"Using existing filename: {visualization_paths['filename']}")
-                return "Visualization created successfully.", visualization_paths
-            
-            # Otherwise, extract filename from path
-            filename = os.path.basename(visualization_paths.get('path', ''))
-            if not filename:
-                # Try alternative keys if 'path' is not found
-                for key, value in visualization_paths.items():
-                    if isinstance(value, str) and (value.endswith('.png') or value.endswith('.html')):
-                        filename = os.path.basename(value)
-                        break
-            
-            if filename:
-                logger.debug(f"Extracted filename: {filename}")
-                visualization_paths['filename'] = filename
-                visualization_paths['original_query'] = question
-                return "Visualization created successfully.", visualization_paths
-            else:
-                logger.error(f"Could not extract filename from visualization paths: {visualization_paths}")
-                return "Visualization created but filename could not be determined.", None
-                
+
+            logger.debug(f"📊 Chart spec: {spec['chart_type']} "
+                         f"x={spec['x_key']} series={[x['key'] for x in spec['series']]} "
+                         f"rows={len(spec['data'])}")
+            return "Here's the chart.", spec
+
         except Exception as e:
             logger.error(f"❌ Visualization error: {str(e)}")
             logger.exception("Full exception details:")

@@ -15,6 +15,7 @@ import { TypeAnimation } from 'react-type-animation';
 import Image from 'next/image';
 import { API_BASE_URL } from '@/config';
 import ReactMarkdown from 'react-markdown';
+import { ChartRenderer, LegacyChartImage } from '@/components/charts/ChartRenderer';
 import remarkGfm from 'remark-gfm';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useLearnMode } from '@/contexts/LearnModeContext';
@@ -6781,43 +6782,15 @@ export default function ChatSidebar({
                                                 </ReactMarkdown>
                                                 {message.visualization && (
                                                     <div className="mt-3 space-y-2">
-                                                        {message.visualization.type === 'matplotlib_figure' ? (
-                                                            <>
-                                                                <div className="relative w-full max-w-2xl mx-auto">
-                                                                    <Image
-                                                                        src={`${API_BASE_URL}${message.visualization?.path ?? ''}`}
-                                                                        alt="Data Visualization"
-                                                                        width={800}
-                                                                        height={400}
-                                                                        className="rounded-lg w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
-                                                                        style={{ maxHeight: '400px' }}
-                                                                        onClick={() => message.visualization && setExpandedImage(`${API_BASE_URL}${message.visualization.path}`)}
-                                                                    />
-                                                                </div>
-                                                                <button
-                                                                    onClick={() => downloadChart(message.visualization!.path, message.visualization!.type)}
-                                                                    className="w-full text-xs bg-black hover:bg-black/90 text-white rounded py-1 px-2 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 border border-white/20"
-                                                                >
-                                                                    Save Chart
-                                                                </button>
-                                                            </>
-                                                        ) : message.visualization.type === 'plotly_html' ? (
-                                                            <>
-                                                                <iframe
-                                                                    src={`${API_BASE_URL}${message.visualization.path}`}
-                                                                    className="w-full h-40 rounded-lg border-0"
-                                                                />
-                                                                <button
-                                                                    onClick={() => downloadChart(message.visualization!.path, message.visualization!.type)}
-                                                                    className="w-full text-xs bg-black hover:bg-black/90 text-white rounded py-1 px-2 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20 border border-white/20"
-                                                                >
-                                                                    Save Chart
-                                                                </button>
-                                                            </>
+                                                        {message.visualization.type === 'chart_spec' ? (
+                                                            <ChartRenderer spec={message.visualization} />
                                                         ) : (
-                                                            <div className="p-2 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
-                                                                ⚠️ Unknown visualization type: {message.visualization.type}
-                                                            </div>
+                                                            <LegacyChartImage
+                                                                viz={message.visualization}
+                                                                baseUrl={API_BASE_URL}
+                                                                onExpand={setExpandedImage}
+                                                                onDownload={downloadChart}
+                                                            />
                                                         )}
                                                     </div>
                                                 )}

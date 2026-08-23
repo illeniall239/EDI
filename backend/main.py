@@ -115,6 +115,26 @@ def hydrate(workspace_id):
     return handler
 
 
+def _shape_visualization(visualization, question):
+    """
+    Normalise what AgentServices returned into the response payload.
+
+    Charts are now returned as a spec the client renders, so the payload
+    carries data rather than a file path. The legacy image branch stays for
+    anything still producing a file, but note that a path only resolves on the
+    instance that wrote it -- on serverless the file does not outlive the
+    invocation.
+    """
+    if visualization.get("type") == "chart_spec":
+        return visualization
+
+    return {
+        "type": visualization.get("type"),
+        "path": f"/static/visualizations/{visualization.get('filename', '')}",
+        "original_query": visualization.get("original_query", question),
+    }
+
+
 def persist(workspace_id):
     """Write the current DataFrame back to the workspace row after a mutation."""
     if not workspace_id:
@@ -553,18 +573,9 @@ async def process_query(query: Dict[str, Any]):
         
         if visualization:
             print("🎨 === PROCESSING VISUALIZATION ===")
-            print(f"🔍 Visualization details: {visualization}")
-            
-            # Ensure the path is correctly formatted for static file serving
-            viz_path = f"/static/visualizations/{visualization['filename']}"
-            print(f"🔗 Formatted visualization path: {viz_path}")
-            
-            response_data["visualization"] = {
-                "type": visualization["type"],
-                "path": viz_path,
-                "original_query": visualization.get("original_query", question)
-            }
-            print(f"✅ Visualization added to response: {response_data['visualization']}")
+            print(f"🔍 Visualization type: {visualization.get('type')}")
+            response_data["visualization"] = _shape_visualization(visualization, question)
+            print(f"✅ Visualization added to response: {response_data['visualization'].get('type')}")
         else:
             print("ℹ️ No visualization to add to response")
         
@@ -635,12 +646,7 @@ async def process_clarification_choice(request: Dict[str, Any]):
                 persist(request.get("workspace_id"))
         
         if visualization:
-            viz_path = f"/static/visualizations/{visualization['filename']}"
-            response_data["visualization"] = {
-                "type": visualization["type"],
-                "path": viz_path,
-                "original_query": visualization.get("original_query", original_query)
-            }
+            response_data["visualization"] = _shape_visualization(visualization, original_query)
         
         return response_data
         
