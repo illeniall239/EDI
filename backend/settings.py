@@ -24,16 +24,17 @@ def _build_llm(temperature=0.4):
     """
     Construct a Gemini chat model.
 
-    convert_system_message_to_human is on because the SQL and pandas agents
-    put their instructions in a system message, which the Gemini API does not
-    accept in the same shape as OpenAI-style providers.
+    Deliberately does not set convert_system_message_to_human. Besides being
+    deprecated, folding the system prompt into the human turn measurably
+    weakens instruction-following: with it enabled the model wrapped generated
+    SQL in markdown fences despite being told not to, which the SQL parsing
+    downstream then has to strip. Gemini handles system messages natively.
     """
     return ChatGoogleGenerativeAI(
         model=GEMINI_MODEL,
         temperature=temperature,  # lower keeps structured output consistent
         google_api_key=GOOGLE_API_KEY,
         max_output_tokens=8192,   # enough for complete responses
-        convert_system_message_to_human=True,
     )
 
 
