@@ -3,7 +3,7 @@
 import React from 'react';
 import { Plus, RefreshCw, Save, Check, Zap, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { isUniverEnabled, toggleSpreadsheetEngine } from '@/config/spreadsheetConfig';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, sendLearnQuery, saveWorkspaceData, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, LimitError } from '@/utils/api';
 import { commandService } from '@/services/commandService';
@@ -22,6 +22,69 @@ import { useLearnMode } from '@/contexts/LearnModeContext';
 import AIPrompt from '@/components/AIPrompt';
 import { UniverAdapter } from '@/utils/univerAdapter';
 import { findDuplicateRows, parseColumnSpec } from '@/utils/duplicateDetector';
+
+/**
+ * Set the figures in an answer in tabular mono.
+ *
+ * The model writes prose, but what someone using a data tool scans for is
+ * the numbers. Pulling them out of the text nodes lets them be typed
+ * differently without asking the model to mark them up -- which it would do
+ * inconsistently, and which would put formatting instructions in a prompt
+ * that should be about accuracy.
+ */
+const FIGURE = /(\$?\d[\d,]*(?:\.\d+)?%?)/g;
+
+function withFigures(node: React.ReactNode): React.ReactNode {
+    if (typeof node === 'string') {
+        const parts = node.split(FIGURE);
+        if (parts.length === 1) return node;
+        return parts.map((part, i) =>
+            i % 2 === 1 ? <span key={i} className="edi-num">{part}</span> : part
+        );
+    }
+    if (Array.isArray(node)) {
+        return node.map((child, i) => <Fragment key={i}>{withFigures(child)}</Fragment>);
+    }
+    return node;
+}
+
+const FIGURE_MARKDOWN = {
+    p: ({ children }: { children?: React.ReactNode }) => <p>{withFigures(children)}</p>,
+    li: ({ children }: { children?: React.ReactNode }) => <li>{withFigures(children)}</li>,
+    strong: ({ children }: { children?: React.ReactNode }) => <strong>{withFigures(children)}</strong>
+};
+
+/**
+ * How many rows of actual data the sheet holds.
+ *
+ * The array that reaches here is whatever the spreadsheet last emitted, which
+ * can carry a trailing blank row that the persisted copy does not have -- so a
+ * 120-row file reports 121. This label sits a few inches from an assistant
+ * that answers "there are 120 rows", and the two disagreeing looks like a bug
+ * in the analysis rather than in the chrome.
+ */
+function dataRowCount(rows?: Array<any>): number {
+    if (!rows || rows.length === 0) return 0;
+
+    const populated = rows.filter(
+        (row) =>
+            row &&
+            typeof row === 'object' &&
+            Object.values(row).some((v) => v !== null && v !== undefined && String(v).trim() !== '')
+    );
+    if (populated.length === 0) return 0;
+
+    // Two shapes arrive here. Straight from an upload it is objects keyed by
+    // column. Once the spreadsheet has taken it, it is the 2D form the sheet
+    // uses -- `[headers, ...rows]` -- and that leading header row is what makes
+    // a 120-row file report 121.
+    const first = populated[0];
+    const isHeaderRow = Array.isArray(first)
+        ? populated.length > 1 && first.every((cell) => typeof cell === 'string')
+        : Object.keys(first).every((key) => String(first[key]) === key);
+
+    return isHeaderRow ? populated.length - 1 : populated.length;
+}
 
 interface ChatSidebarProps {
     isDataLoaded: boolean;
@@ -6545,22 +6608,21 @@ export default function ChatSidebar({
 
     return (
         <div
-            className={isExpanded ? 'w-[28rem] backdrop-blur-sm border-r border-border transition-all duration-300' : 'w-16 backdrop-blur-sm border-r border-border transition-all duration-300'}
+            className={`edi-panel ${isExpanded ? 'w-[28rem]' : 'w-16'} transition-all duration-300`}
             style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
                 height: '100%',
-                background: `linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 40%),
-                           linear-gradient(225deg, rgba(255, 255, 255, 0.07), transparent 45%),
-                           linear-gradient(180deg, #000, #000)`,
                 overflow: 'hidden',
                 zIndex: 10
             }}
         >
             {/* Header - Fixed Height: 64px */}
             <div 
-                className="p-4 bg-background transition-all duration-300 ease-in-out"
+                /* Transparent, not bg-background: an opaque black bar here cuts
+                   a hard band across the top of the panel's gradient. */
+                className="p-4 transition-all duration-300 ease-in-out"
                 style={{ height: '64px', overflow: 'hidden' }}
             >
                 <div className="flex items-center justify-between h-full">
@@ -6640,14 +6702,44 @@ export default function ChatSidebar({
                 </div>
             </div>
 
+            {/* What the panel is currently looking at. Two lines of real state
+                that were previously nowhere in the UI: which file is loaded and
+                how big it is. It also gives the header something to sit on. */}
+            {isExpanded && (
+                <div className="px-4 pb-3 -mt-1">
+                    <div
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg"
+                        style={{
+                            background: 'rgba(255,255,255,0.03)',
+                            border: '1px solid var(--edi-hairline-soft)'
+                        }}
+                    >
+                        <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{
+                                background: isDataLoaded ? 'var(--edi-signal)' : 'rgba(255,255,255,0.25)',
+                                boxShadow: isDataLoaded ? '0 0 8px rgba(255,174,4,0.75)' : 'none'
+                            }}
+                        />
+                        <span className="text-[12px] text-white/70 truncate min-w-0 flex-1">
+                            {filename || (isDataLoaded ? 'Untitled sheet' : 'No file loaded')}
+                        </span>
+                        {isDataLoaded && dataRowCount(data) > 0 && (
+                            <span className="edi-kicker shrink-0">
+                                {dataRowCount(data).toLocaleString()} rows
+                            </span>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Messages Area - Calculated Height */}
             {isExpanded && (
-                <div 
-                    className="p-4 space-y-4 bg-transparent"
+                <div
+                    className="p-4 pt-1 space-y-4 bg-transparent"
                     data-scroll-container
-                    style={{ 
-                        height: 'calc(100% - 244px)', /* 64px header + 180px input */
+                    style={{
+                        height: 'calc(100% - 296px)', /* header + context strip + input */
                         overflowY: 'auto',
                         overflowX: 'hidden'
                     }}
@@ -6661,15 +6753,57 @@ export default function ChatSidebar({
                         </div>
                     ) : messages.length === 0 ? (
                         <div className="text-sidebar-foreground text-sm space-y-6">
-                            {/* Welcome Section */}
-                            <div className="text-center mt-6">
-                                <div className="p-3 bg-card rounded-full w-fit mx-auto mb-4 border border-border">
-                                    <svg className="w-8 h-8 text-sidebar-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                                    </svg>
+                            {/* Opening state. This is the first thing anyone sees, so it
+                                states what the panel is for and hands over three real
+                                questions rather than describing itself in the abstract. */}
+                            <div className="mt-7">
+                                <div className="edi-kicker edi-rise mb-4" style={{ animationDelay: '40ms' }}>
+                                    {isDataLoaded ? 'Ready' : 'No dataset'}
                                 </div>
-                                <h3 className="text-lg font-semibold text-white mb-2">Welcome to EDI.ai</h3>
-                                <p className="text-muted-foreground text-xs">{minimal ? 'Your learning companion for spreadsheets' : 'Your intelligent data analysis companion'}</p>
+
+                                <h3
+                                    className="edi-rise text-[26px] leading-[1.16] font-medium tracking-[-0.02em] text-white mb-3"
+                                    style={{ animationDelay: '110ms' }}
+                                >
+                                    Ask your
+                                    <br />
+                                    spreadsheet
+                                    <br />
+                                    <span style={{ color: 'var(--edi-signal)' }}>anything.</span>
+                                </h3>
+
+                                <p
+                                    className="edi-rise text-[12.5px] leading-relaxed text-white/45 mb-6 max-w-[290px]"
+                                    style={{ animationDelay: '180ms' }}
+                                >
+                                    {minimal
+                                        ? 'Work through spreadsheet skills one step at a time.'
+                                        : 'Filter it, clean it, chart it, or have it explained back to you — in plain English.'}
+                                </p>
+
+                                {!minimal && (
+                                    <div className="space-y-2">
+                                        <div className="edi-kicker edi-rise mb-3" style={{ animationDelay: '240ms' }}>
+                                            Try asking
+                                        </div>
+                                        {[
+                                            'Which region has the highest total revenue?',
+                                            'Chart total revenue by product as a bar chart',
+                                            'Remove duplicate rows'
+                                        ].map((example, i) => (
+                                            <button
+                                                key={example}
+                                                type="button"
+                                                onClick={() => setInput(example)}
+                                                disabled={!isDataLoaded}
+                                                className="edi-suggestion edi-rise disabled:opacity-40 disabled:cursor-not-allowed"
+                                                style={{ animationDelay: `${290 + i * 70}ms` }}
+                                            >
+                                                {example}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Learn-mode onboarding tooltip */}
@@ -6767,16 +6901,20 @@ export default function ChatSidebar({
                         </div>
                     ) : (
                         messages.map((message, index) => (
-                            <div key={index} className={`${message.role === 'user' ? 'ml-4' : 'mr-4'}`}>
-                                <div className={`rounded-lg p-3 text-sm ${
-                                    message.role === 'user'
-                                        ? 'bg-black text-white border border-white/10 ml-auto max-w-[85%]'
-                                        : 'bg-black text-white border border-white/10 max-w-[95%]'
-                                }`}>
+                            <div key={index} className={`edi-rise ${message.role === 'user' ? 'flex' : 'mr-1'}`}>
+                                <div className={`text-sm ${message.role === 'user' ? 'edi-msg-user' : 'edi-msg-ai'}`}>
+                                    {message.role !== 'user' && !message.isAnalyzing && (
+                                        <div className="edi-byline">
+                                            <span className="edi-kicker" style={{ color: 'var(--edi-signal)' }}>EDI</span>
+                                            <span className="rule" />
+                                        </div>
+                                    )}
                                     {message.isAnalyzing ? (
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 border border-muted-foreground border-t-transparent rounded-full animate-spin"></div>
-                                            <span className="text-muted-foreground">Analyzing...</span>
+                                        <div className="space-y-2.5 py-0.5">
+                                            <div className="edi-kicker" style={{ color: 'var(--edi-signal)' }}>
+                                                Analysing<span className="edi-dots" />
+                                            </div>
+                                            <div className="edi-thinking-bar" />
                                         </div>
                                     ) : (() => {
                                         const raw = message.content || '';
@@ -6797,6 +6935,7 @@ export default function ChatSidebar({
                                             <>
                                                 <ReactMarkdown
                                                     remarkPlugins={[remarkGfm]}
+                                                    components={message.role === 'user' ? undefined : FIGURE_MARKDOWN}
                                                     className={`markdown-content max-w-none ${message.role === 'user' ? 'text-secondary-foreground' : 'text-card-foreground'}`}
                                                 >
                                                     {normalized}

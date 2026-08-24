@@ -671,3 +671,244 @@ body.modal-open .visualization-modal-overlay * {
     animation: none !important;
   }
 }
+/* ══════════════════════════════════════════════════════════════════
+   AI sidebar — "analyst's instrument"
+
+   The panel sits against a bright white spreadsheet, so it is built as
+   a dark *material* rather than a void: layered light, a hairline
+   system, and one warm signal colour that the cold sheet never uses.
+   ══════════════════════════════════════════════════════════════════ */
+
+:root {
+  --edi-signal: #ffae04;
+  --edi-signal-dim: rgba(255, 174, 4, 0.55);
+  --edi-hairline: rgba(255, 255, 255, 0.09);
+  --edi-hairline-soft: rgba(255, 255, 255, 0.055);
+}
+
+/* The panel itself. Two off-axis light sources plus a vertical
+   settle, so the surface has a direction instead of reading flat. */
+.edi-panel {
+  background:
+    radial-gradient(120% 55% at 8% -6%, rgba(255, 174, 4, 0.10), transparent 62%),
+    radial-gradient(90% 45% at 100% 4%, rgba(120, 170, 255, 0.07), transparent 60%),
+    linear-gradient(180deg, #111114 0%, #0b0b0e 42%, #08080a 100%);
+}
+
+/* Film grain. Without it the large flat areas band visibly on a dark
+   panel, and on video the compression makes that worse. */
+.edi-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E");
+}
+
+/* A hairline down the panel's inner edge, catching the sheet's light. */
+.edi-panel::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1px;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03) 40%, transparent);
+}
+
+/* Small uppercase mono labels. Does the structural work that a heavier
+   type scale would, without shouting. */
+.edi-kicker {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+/* Figures set in tabular mono. The single highest-signal detail in the
+   whole panel: it makes an answer read as data rather than as prose. */
+.edi-num {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.94em;
+  letter-spacing: -0.01em;
+  color: #ffd479;
+}
+
+/* ── Messages ────────────────────────────────────────────────────── */
+
+/* The question. Deliberately quiet and right-aligned: it is the thing
+   the reader already knows, so it should not compete with the answer. */
+.edi-msg-user {
+  margin-left: auto;
+  max-width: 86%;
+  padding: 9px 13px;
+  border-radius: 14px 14px 4px 14px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--edi-hairline);
+  color: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* The answer. A document, not a bubble: full measure, its own surface,
+   and a signal rule down the left so the eye finds it instantly. */
+.edi-msg-ai {
+  position: relative;
+  border-radius: 4px 14px 14px 14px;
+  padding: 13px 15px 14px 17px;
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018) 45%, rgba(255, 255, 255, 0.01));
+  border: 1px solid var(--edi-hairline);
+  border-left: none;
+  box-shadow: 0 10px 26px -18px rgba(0, 0, 0, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.edi-msg-ai::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 4px 0 0 4px;
+  background: linear-gradient(180deg, var(--edi-signal), var(--edi-signal-dim) 30%, rgba(255, 174, 4, 0.12));
+}
+
+/* Byline above each answer: mark, hairline, then the run's metadata. */
+.edi-byline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.edi-byline .rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--edi-hairline), transparent);
+}
+
+/* ── Thinking ────────────────────────────────────────────────────── */
+
+/* A travelling sweep rather than a spinner. Spinners read as "stuck";
+   a sweep reads as "working", which is what the wait actually is. */
+.edi-thinking-bar {
+  position: relative;
+  height: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.edi-thinking-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 38%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--edi-signal), transparent);
+  animation: edi-sweep 1.35s cubic-bezier(.45, 0, .55, 1) infinite;
+}
+
+@keyframes edi-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+
+.edi-dots::after {
+  content: '';
+  animation: edi-dots 1.4s steps(4, end) infinite;
+}
+
+@keyframes edi-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+}
+
+/* ── Empty state ─────────────────────────────────────────────────── */
+
+.edi-suggestion {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.68);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--edi-hairline-soft);
+  transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease;
+}
+
+.edi-suggestion:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 174, 4, 0.35);
+  color: #fff;
+  transform: translateX(2px);
+}
+
+/* Staggered entrance, so opening the app has one composed moment
+   instead of everything appearing at once. */
+.edi-rise {
+  opacity: 0;
+  animation: edi-rise .55s cubic-bezier(.22, 1, .36, 1) forwards;
+}
+
+@keyframes edi-rise {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Markdown inside an answer ───────────────────────────────────── */
+
+.edi-msg-ai .markdown-content p {
+  line-height: 1.62;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.edi-msg-ai .markdown-content strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+.edi-msg-ai .markdown-content ul {
+  margin: 7px 0 2px;
+  padding-left: 2px;
+  list-style: none;
+}
+
+.edi-msg-ai .markdown-content li {
+  position: relative;
+  padding-left: 15px;
+  margin: 5px 0;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+/* Square markers, to match the hairline geometry rather than fight it. */
+.edi-msg-ai .markdown-content li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 4px;
+  height: 4px;
+  background: var(--edi-signal-dim);
+}
+
+.edi-msg-ai .markdown-content h1,
+.edi-msg-ai .markdown-content h2,
+.edi-msg-ai .markdown-content h3 {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 13px 0 5px;
+  font-weight: 500;
+}

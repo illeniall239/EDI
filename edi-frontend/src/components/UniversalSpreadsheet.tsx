@@ -78,6 +78,33 @@ interface UniversalSpreadsheetProps {
   onAdapterReady?: (adapter: UniverAdapter | null) => void; // Callback to expose adapter to parent
 }
 
+/**
+ * Column names and data-row count, for either shape the sheet's data can hold.
+ *
+ * Straight from an upload it is objects keyed by column. Once the spreadsheet
+ * has taken ownership it is the 2D form the sheet works in -- `[headers,
+ * ...rows]`. Reading `Object.keys(data[0])` on that second shape yields "0",
+ * "1", "2" and counts the header as a data row, which is how the formula
+ * dialog came to offer columns named 0-5 over the range A2:A122 for a file
+ * with 120 rows.
+ */
+function describeGrid(rows?: any[]): { headers: string[]; rowCount: number } {
+    if (!rows || rows.length === 0) return { headers: [], rowCount: 0 };
+
+    const first = rows[0];
+    if (Array.isArray(first)) {
+        const headerRow = rows.length > 1 && first.every((cell) => typeof cell === 'string');
+        return {
+            headers: headerRow
+                ? first.map(String)
+                : first.map((_, i) => String.fromCharCode(65 + i)),
+            rowCount: headerRow ? rows.length - 1 : rows.length
+        };
+    }
+
+    return { headers: Object.keys(first), rowCount: rows.length };
+}
+
 export default function UniversalSpreadsheet({
   data = [],
   onCommand,
@@ -356,28 +383,25 @@ export default function UniversalSpreadsheet({
   // Formula Dialog helper functions (from NativeSpreadsheet)
   const columnLetter = (index: number) => String.fromCharCode(65 + index);
   
-  const allColumns = useMemo(() => {
-    return currentData && currentData.length > 0 ? Object.keys(currentData[0]) : [];
-  }, [currentData]);
+  const allColumns = useMemo(() => describeGrid(currentData).headers, [currentData]);
 
   const getDataRangeInfo = useCallback(() => {
     if (!currentData || currentData.length === 0) return null;
-    
-    const headers = Object.keys(currentData[0]);
+
+    const { headers, rowCount } = describeGrid(currentData);
+    if (headers.length === 0 || rowCount === 0) return null;
+
     const dataStartRow = 2; // Row 1 is headers
-    const lastRow = currentData.length + 1;
-    
+    const lastRow = rowCount + 1;
+
     const columnRanges = headers.map((header, idx) => {
       const colLetter = columnLetter(idx);
       const range = `${colLetter}${dataStartRow}:${colLetter}${lastRow}`;
-      const dataCount = currentData.length;
-      const hasData = dataCount > 0;
-      
-      return { range, dataCount, hasData };
+      return { range, dataCount: rowCount, hasData: rowCount > 0 };
     });
-    
-    const summary = `${currentData.length} rows × ${headers.length} columns (${columnLetter(0)}${dataStartRow}:${columnLetter(headers.length - 1)}${lastRow})`;
-    
+
+    const summary = `${rowCount} rows × ${headers.length} columns (${columnLetter(0)}${dataStartRow}:${columnLetter(headers.length - 1)}${lastRow})`;
+
     return { columnRanges, dataStartRow, lastRow, summary };
   }, [currentData]);
 
