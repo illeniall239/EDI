@@ -85,6 +85,7 @@ _METERED_PREFIXES = (
     "/api/clarification-choice",
     "/api/extract-columns",
     "/api/generate-report",
+    "/api/generate-formula",
     "/api/generate-synthetic-dataset",
     "/analyze-formula",
 )

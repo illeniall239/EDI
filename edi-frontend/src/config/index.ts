@@ -15,6 +15,7 @@ export const API_ENDPOINTS = {
     query: `${API_BASE_URL}/api/query`,
     data: `${API_BASE_URL}/api/data`,
     generateReport: `${API_BASE_URL}/api/generate-report`,
+    generateFormula: `${API_BASE_URL}/api/generate-formula`,
     cancelOperation: `${API_BASE_URL}/api/cancel-operation`,
     resetState: `${API_BASE_URL}/api/reset-state`,
     // spreadsheetCommand removed: deprecated backend endpoint

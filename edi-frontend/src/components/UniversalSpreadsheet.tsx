@@ -54,6 +54,7 @@ import '@univerjs/sheets-conditional-formatting-ui/lib/index.css';
 import '@univerjs/sheets-hyper-link-ui/lib/index.css';
 import '@univerjs/sheets-drawing-ui/lib/index.css';
 
+import { API_ENDPOINTS } from '@/config';
 import { UniverConverter } from '@/utils/univerConverter';
 import { UniverAdapter, createUniverAdapter } from '@/utils/univerAdapter';
 import ChatSidebar from '@/components/ChatSidebar';
@@ -158,6 +159,7 @@ export default function UniversalSpreadsheet({
   const [formulaDialogPos, setFormulaDialogPos] = useState<{top: number, left: number} | null>(null);
   const [formulaLoading, setFormulaLoading] = useState(false);
   const [generatedFormula, setGeneratedFormula] = useState<string | null>(null);
+  const [formulaExplanation, setFormulaExplanation] = useState<string | null>(null);
   const [formulaError, setFormulaError] = useState<string | null>(null);
   const [formulaCell, setFormulaCell] = useState<{row: number, col: number}>({row: 0, col: 0});
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
@@ -409,7 +411,7 @@ export default function UniversalSpreadsheet({
   const handleFormulaCancel = useCallback(() => {
     setShowFormulaDialog(false);
     setFormulaInput('');
-    setGeneratedFormula(null);
+    setGeneratedFormula(null); setFormulaExplanation(null);
     setFormulaError(null);
     setSelectedColumns([]);
   }, []);
@@ -441,22 +443,38 @@ export default function UniversalSpreadsheet({
         prompt += ` (columns: ${columnsWithLetters.join(', ')})`;
       }
 
-      // Add data range context
+      // Add data range context.
+      //
+      // Each line has to name the column, because the column name is the only
+      // thing connecting the user's words ("revenue for the South region") to a
+      // cell range. This previously recovered the name by taking the range
+      // back apart -- "A2:A121" -> "A" -> allColumns.indexOf("A") -> -1 --
+      // and every line came out as "@: A2:A121", leaving the model to guess
+      // which column was which. It guessed wrong, and produced formulas that
+      // pointed at the wrong columns while looking perfectly plausible.
       if (dataRangeInfo) {
         const columnDetails = dataRangeInfo.columnRanges
-          .map(col => `${columnLetter(allColumns.indexOf(col.range.split(':')[0].replace(/[0-9]/g, '')))}: ${col.range} [${col.dataCount} data rows]`)
+          .map((col, idx) => `${allColumns[idx]} (${columnLetter(idx)}): ${col.range} [${col.dataCount} data rows]`)
           .join('\n  - ');
 
         prompt += `\n\nIMPORTANT DATA CONTEXT:\n- ${dataRangeInfo.summary}\n- Column data ranges:\n  - ${columnDetails}\n- ALWAYS use specific ranges instead of entire columns\n- Header is in row 1, actual data starts from row ${dataRangeInfo.dataStartRow}\n- Do not include the header row in calculations`;
       }
 
       const fullPrompt = `Write a spreadsheet formula for: ${prompt} (for cell ${columnLetter(formulaCell.col)}${formulaCell.row + 1})`;
-      console.log('🧠 [Univer] Sending formula request:', fullPrompt);
 
-      // Deprecated backend path removed. Future formula generation should use local helpers or a new frontend service.
-      throw new Error('Formula generation service not available in Univer mode');
+      const response = await fetch(API_ENDPOINTS.generateFormula, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: fullPrompt })
+      });
 
-      // Note: leaving the rest of the block unreachable after the thrown error.
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.formula) {
+        throw new Error(result.detail || 'Could not generate a formula. Try rewording it.');
+      }
+
+      setGeneratedFormula(result.formula);
+      setFormulaExplanation(result.explanation || null);
     } catch (error) {
       console.error('Error generating formula:', error);
       setFormulaError(error instanceof Error ? error.message : 'Failed to generate formula');
@@ -466,7 +484,7 @@ export default function UniversalSpreadsheet({
   }, [formulaInput, selectedColumns, formulaCell, getDataRangeInfo, allColumns]);
 
   const handleFormulaRegenerate = useCallback(() => {
-    setGeneratedFormula(null);
+    setGeneratedFormula(null); setFormulaExplanation(null);
     handleFormulaSubmit();
   }, [handleFormulaSubmit]);
 
@@ -855,7 +873,7 @@ export default function UniversalSpreadsheet({
       setFormulaDialogPos(null); // Center dialog
       setShowFormulaDialog(true);
       setFormulaInput('');
-      setGeneratedFormula(null);
+      setGeneratedFormula(null); setFormulaExplanation(null);
       setFormulaError(null);
       setSelectedColumns([]);
     };
@@ -1178,7 +1196,7 @@ export default function UniversalSpreadsheet({
             <input
               type="text"
               value={formulaInput}
-              onChange={e => { setFormulaInput(e.target.value); setGeneratedFormula(null); setFormulaError(null); }}
+              onChange={e => { setFormulaInput(e.target.value); setGeneratedFormula(null); setFormulaExplanation(null); setFormulaError(null); }}
               placeholder="e.g. sum all values above"
               className="w-full p-3 text-base rounded-md border border-border text-foreground bg-input mb-3 mt-0.5 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
               autoFocus
@@ -1193,8 +1211,16 @@ export default function UniversalSpreadsheet({
                     type="text"
                     value={generatedFormula}
                     onChange={e => setGeneratedFormula(e.target.value)}
-                    className="w-full p-2.5 text-sm rounded-md border border-border text-foreground bg-input mb-2.5 focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="w-full p-2.5 text-sm rounded-md border border-border text-foreground bg-input mb-2 font-mono focus:outline-none focus:ring-2 focus:ring-ring"
                   />
+                  {/* What the formula does, in a sentence. A formula pasted into
+                      a cell without explanation is something to be trusted or
+                      not; with one it can be checked. */}
+                  {formulaExplanation && (
+                    <div className="mb-2.5 text-xs leading-relaxed text-muted-foreground">
+                      {formulaExplanation}
+                    </div>
+                  )}
                 </>
               )}
           </div>

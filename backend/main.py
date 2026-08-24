@@ -1362,6 +1362,77 @@ ANALYZE THE FORMULA CAREFULLY to identify what delimiter it's looking for versus
             detail=f"Failed to analyze formula error: {str(e)}"
         )
 
+class FormulaRequest(BaseModel):
+    prompt: str
+
+
+@app.post("/api/generate-formula")
+async def generate_formula(request: FormulaRequest):
+    """
+    Turn a description of a calculation into a spreadsheet formula.
+
+    The client sends its description already stitched together with the sheet's
+    real column letters and data ranges, so the model can point at actual cells
+    rather than guessing at whole columns.
+    """
+    prompt = limits.enforce_question_length(request.prompt)
+    if not prompt.strip():
+        raise HTTPException(status_code=400, detail="Describe the calculation you want.")
+    if settings.LLM is None:
+        raise HTTPException(
+            status_code=503,
+            detail="The formula assistant needs GOOGLE_API_KEY to be configured."
+        )
+
+    system_lines = [
+        "You write spreadsheet formulas. Reply with JSON only: ",
+        '{"formula": "=...", "explanation": "one short sentence"}.',
+        "Rules:",
+        "- The formula must start with '='.",
+        "- Use the exact cell ranges given to you. Never use whole-column references like E:E.",
+        "- Never include the header row in a calculation.",
+        "- Use only functions that work in both Excel and Google Sheets.",
+        "- Do not wrap the JSON in markdown code fences.",
+    ]
+
+    try:
+        reply = settings.LLM.invoke([
+            ("system", "\n".join(system_lines)),
+            ("human", prompt),
+        ])
+        text = (reply.content or "").strip()
+    except Exception as exc:
+        logger.error("Formula generation failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="The formula assistant could not reach the model. Please try again."
+        )
+
+    # Asked not to fence the JSON, the model still sometimes does.
+    text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
+
+    formula = ""
+    explanation = ""
+    try:
+        payload = json.loads(text)
+        formula = str(payload.get("formula", "")).strip()
+        explanation = str(payload.get("explanation", "")).strip()
+    except json.JSONDecodeError:
+        # Not valid JSON. Take the first thing that looks like a formula rather
+        # than failing outright, since the formula is the part that matters.
+        match = re.search(r"=[^\r\n\"]+", text)
+        if match:
+            formula = match.group(0).strip()
+
+    if not formula.startswith("="):
+        raise HTTPException(
+            status_code=502,
+            detail="The model did not return a usable formula. Try rewording it."
+        )
+
+    return {"success": True, "formula": formula, "explanation": explanation}
+
+
 @app.get("/api/columns")
 async def get_columns_for_extraction():
     """
