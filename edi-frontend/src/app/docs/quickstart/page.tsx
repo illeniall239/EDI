@@ -49,15 +49,7 @@ ollama serve`}</code></pre>
             <pre><code>{`EDI_LLM_PROVIDER=ollama python backend/check_model.py`}</code></pre>
 
             <p>Then start the backend:</p>
-            <pre><code>{`EDI_LLM_PROVIDER=ollama EDI_LIMITS_ENABLED=0 \\
-  uvicorn main:app --reload --port 8000 --app-dir backend`}</code></pre>
-
-            <div className="edi-note">
-                <strong>Why <code>EDI_LIMITS_ENABLED=0</code>.</strong> The usage caps exist
-                to stop strangers spending your money on a public URL. Running locally
-                against your own model there is no bill to protect, and the default of five
-                questions a minute will just get in your way.
-            </div>
+            <pre><code>{`EDI_LLM_PROVIDER=ollama uvicorn main:app --reload --port 8000 --app-dir backend`}</code></pre>
 
             <h3>2. Frontend</h3>
             <pre><code>{`cd edi-frontend

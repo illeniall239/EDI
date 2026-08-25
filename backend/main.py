@@ -136,6 +136,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Now that logging is configured, say which way the limits are set.
+limits.log_status()
+
 # Initialize our services
 data_handler = DataHandler()
 

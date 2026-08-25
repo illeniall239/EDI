@@ -142,8 +142,21 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
 
             <h2>Usage limits</h2>
             <p>
-                A public link with no sign-up means every question is a model call charged to
-                whoever deployed it. <code>backend/limits.py</code> holds the whole policy:
+                <strong>Off by default.</strong> Running EDI for yourself there is nobody to
+                rate limit, and a cap of a few questions a minute is only an obstacle. Turn
+                them on before anyone else can reach it:
+            </p>
+            <pre><code>{`EDI_LIMITS_ENABLED=1`}</code></pre>
+            <p>
+                What they defend against is specific to a public link: no sign-up, so every
+                visitor is anonymous, and every question is a model call charged to whoever
+                deployed it. Without them one visitor with a loop can spend the whole quota,
+                and the deployment doubles as a free LLM proxy for anyone who finds it.
+            </p>
+            <p>
+                <code>backend/limits.py</code> holds the whole policy. Every number is
+                overridable — these defaults were sized for a handful of people trying out
+                a link, not for a deployment with real users:
             </p>
             <div className="table-scroll">
                 <table>
@@ -206,11 +219,6 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
                 <code>&quot;unavailable&quot;</code> when the migration is missing, and{' '}
                 <code>&quot;untested&quot;</code> when no question has been asked yet.
             </div>
-
-            <p>
-                Set <code>EDI_LIMITS_ENABLED=0</code> to switch it all off. Reasonable against
-                your own local model; not reasonable on anything with a public URL.
-            </p>
 
             <h2>Other limits worth knowing</h2>
             <ul>

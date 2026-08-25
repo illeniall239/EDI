@@ -51,7 +51,7 @@ pip install -r backend/requirements.txt
 pip install langchain-ollama==0.3.3     # only the provider you use
 
 ollama serve
-EDI_LLM_PROVIDER=ollama EDI_LIMITS_ENABLED=0   uvicorn main:app --reload --port 8000 --app-dir backend
+EDI_LLM_PROVIDER=ollama uvicorn main:app --reload --port 8000 --app-dir backend
 ```
 
 Check the model can do the job before trusting it — a weak one does not error,
@@ -139,10 +139,25 @@ look like something else:
   This is a property of serverless, not of EDI — a VPS with a disk has neither
   problem and can stay on SQLite.
 
-## Usage limits
+## Usage limits, if you put this on a public URL
 
-The link is public, there is no sign-up, and every question is a model call
-billed to whoever deployed it. `backend/limits.py` holds the whole policy:
+**Off by default.** Running EDI for yourself there is nobody to rate limit,
+and a cap of a few questions a minute is only an obstacle.
+
+Turn them on before anyone else can reach it:
+
+```bash
+EDI_LIMITS_ENABLED=1
+```
+
+What they defend against is specific to that situation: there is no sign-up,
+so every visitor is anonymous, and every question is a model call billed to
+you. Without limits one visitor with a loop can spend the whole quota, and
+the deployment doubles as a free LLM proxy for anyone who finds it.
+
+`backend/limits.py` holds the whole policy, and every number is overridable —
+the defaults were sized for a handful of people trying out a link, not for a
+deployment with real users:
 
 | | Default | Override |
 |---|---|---|
@@ -171,9 +186,6 @@ running under:
 
 `"unavailable"` there means the migration is missing. `"untested"` means no
 question has been asked yet since the instance started.
-
-Set `EDI_LIMITS_ENABLED=0` to switch it all off when running locally against
-your own key.
 
 ## Other limits worth knowing
 

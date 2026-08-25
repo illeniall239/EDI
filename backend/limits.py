@@ -1,10 +1,15 @@
 """
-Usage limits for a public demo.
+Usage limits, for when the app is on a public URL.
 
-This app is a showcase: the link is public, there is no sign-up, and every
-question costs a Gemini call billed to whoever deployed it. Without limits a
-single visitor with a loop can spend the owner's quota in a minute, and the
-whole thing doubles as a free LLM proxy for anyone who finds it.
+Off by default. Running EDI for yourself -- on your machine, or on a server
+only you reach -- there is nobody to rate limit, and a cap of a few questions
+a minute is just something that gets in the way.
+
+Turn them on with EDI_LIMITS_ENABLED=1 before putting it somewhere anyone can
+reach. What they defend against is specific: no sign-up, so every visitor is
+anonymous, and every question costs a model call billed to whoever deployed
+it. Without limits one visitor with a loop can spend the whole quota, and the
+deployment doubles as a free LLM proxy for anyone who finds it.
 
 Two independent limits, because they defend against different things:
 
@@ -51,9 +56,9 @@ def _int_env(name, default):
         return default
 
 
-# All overridable, so a deployment can be loosened for a demo day or tightened
-# after one. The defaults are sized for "a few people trying it out", not for
-# production traffic.
+# All overridable. The defaults are sized for "a handful of people trying out
+# a public link", which is what they were written for -- not for production
+# traffic, and not for a deployment with real users behind it.
 MAX_QUESTION_CHARS = _int_env("EDI_MAX_QUESTION_CHARS", 2000)
 MAX_UPLOAD_BYTES = _int_env("EDI_MAX_UPLOAD_BYTES", 4 * 1024 * 1024)
 MAX_ROWS = _int_env("EDI_MAX_ROWS", 20000)
@@ -64,8 +69,33 @@ BURST_WINDOW_SECONDS = _int_env("EDI_BURST_WINDOW_SECONDS", 60)
 DAILY_CALLS_PER_VISITOR = _int_env("EDI_DAILY_CALLS_PER_VISITOR", 50)
 DAILY_CALLS_TOTAL = _int_env("EDI_DAILY_CALLS_TOTAL", 1000)
 
-# Set EDI_LIMITS_ENABLED=0 to turn the whole thing off when running locally.
-ENABLED = os.getenv("EDI_LIMITS_ENABLED", "1").strip().lower() not in ("0", "false", "no")
+# Off unless asked for. The common case is one person running this for
+# themselves, where there is nothing to defend against and a cap only gets in
+# the way. Exposing it to the internet is a deliberate act, and turning these
+# on is part of it -- see the deployment notes.
+ENABLED = os.getenv("EDI_LIMITS_ENABLED", "0").strip().lower() in ("1", "true", "yes")
+
+
+def log_status():
+    """
+    Say which way this is configured, once, at startup.
+
+    Called by main.py rather than run on import: this module is imported before
+    logging is configured, and a record emitted then goes nowhere -- which
+    would make the warning silent in exactly the case it exists for.
+    """
+    if ENABLED:
+        logger.info(
+            "Usage limits on: %d per %ds per visitor, %d per visitor per day, "
+            "%d per day across everyone.",
+            BURST_CALLS, BURST_WINDOW_SECONDS, DAILY_CALLS_PER_VISITOR, DAILY_CALLS_TOTAL,
+        )
+    else:
+        logger.warning(
+            "Usage limits are off. Set EDI_LIMITS_ENABLED=1 before putting this "
+            "on a public URL -- without it every visitor spends your model quota "
+            "without bound."
+        )
 
 
 # --------------------------------------------------------------------------

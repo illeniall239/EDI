@@ -88,8 +88,8 @@ export default function Api() {
             <h1>HTTP API</h1>
             <p className="lede">
                 Everything the frontend calls, all same-origin under <code>/api/</code>.
-                Getting those requests to the Python service is the deployment's job — a
-                reverse proxy, or a platform's routing rules; in development{' '}
+                Getting those requests to the Python service is the deployment&apos;s job — a
+                reverse proxy, or a platform&apos;s routing rules; in development{' '}
                 <code>next.config.ts</code> proxies them to <code>BACKEND_ORIGIN</code>.
             </p>
 
@@ -146,7 +146,7 @@ export default function Api() {
             </p>
 
             <div className="edi-note">
-                <strong>FastAPI's own schema is not routed.</strong> It generates one at{' '}
+                <strong>FastAPI&apos;s own schema is not routed.</strong> It generates one at{' '}
                 <code>/openapi.json</code>, with interactive docs at <code>/docs</code>, and
                 both work when you run the backend directly. Behind a proxy that forwards
                 only <code>/api/*</code> they reach the frontend instead and 404. Forward
