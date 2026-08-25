@@ -33,12 +33,25 @@ _UNCLOSED = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+# The opposite, and the more common one: a closing tag with no opener. Chat
+# templates for reasoning models usually prefill the opening tag themselves,
+# so the model generates only the closer and the opener never appears in the
+# reply at all. Ollama with thinking disabled does exactly this: reasoning
+# prose, then a stray </think>, then the answer. Everything up to and
+# including that first orphan closer is working, not answer.
+_ORPHAN_CLOSE = re.compile(
+    r"\A(?:(?!<\s*(?:think|thinking|reasoning|reflection|scratchpad)\s*>).)*?"
+    r"<\s*/\s*(?:think|thinking|reasoning|reflection|scratchpad)\s*>",
+    re.DOTALL | re.IGNORECASE,
+)
+
 
 def strip_reasoning(text):
     """Remove reasoning blocks from a model reply. Safe on text without any."""
     if not text or "<" not in text:
         return text or ""
     cleaned = _BLOCK.sub("", text)
+    cleaned = _ORPHAN_CLOSE.sub("", cleaned)
     cleaned = _UNCLOSED.sub("", cleaned)
     return cleaned.strip()
 
