@@ -14,7 +14,7 @@ For running locally with no cloud account, see sqlite_store.py.
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import settings
@@ -107,7 +107,7 @@ def forget(workspace_id: str) -> None:
     _handlers.invalidate(workspace_id)
 
 
-def create_workspace(name: str = "Untitled") -> str:
+def create_workspace(name: str = "Untitled", workspace_type: str = "work") -> str:
     """
     Create an empty workspace row and return its id.
 
@@ -123,7 +123,7 @@ def create_workspace(name: str = "Untitled") -> str:
                 "id": workspace_id,
                 "name": name,
                 "data": [],
-                "workspace_type": "work",
+                "workspace_type": workspace_type,
             }
         ).execute()
     except Exception as exc:
@@ -234,6 +234,35 @@ def list_workspaces(workspace_ids: List[str]) -> List[dict]:
         }
         for row in (getattr(result, "data", None) or [])
     ]
+
+
+def purge_demo_workspaces(workspace_type: str, older_than_hours: int) -> int:
+    """
+    Delete demo workspaces last touched more than `older_than_hours` ago.
+
+    Demo mode creates a workspace per visit and the browser never remembers
+    it, so without this the table grows by one row for every visitor forever.
+    Scoped to `workspace_type` so it can never reach a real workspace on a
+    deployment that has both.
+
+    Chats go with them by cascade, as in delete_workspace. The delete does not
+    select `data` back, so sweeping a hundred stale workspaces does not pull
+    their datasets over the wire to count them.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=older_than_hours)).isoformat()
+    try:
+        result = (
+            _supabase()
+            .table(TABLE)
+            .delete()
+            .eq("workspace_type", workspace_type)
+            .lt("last_modified", cutoff)
+            .execute()
+        )
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not purge demo workspaces: {exc}") from exc
+
+    return len(getattr(result, "data", None) or [])
 
 
 def delete_workspace(workspace_id: str) -> bool:

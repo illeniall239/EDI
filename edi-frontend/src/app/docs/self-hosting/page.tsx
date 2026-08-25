@@ -134,6 +134,34 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
                 every API call hits Next&apos;s 404 page.
             </div>
 
+            <h2>Demo mode</h2>
+            <p>
+                For a public link whose job is to be tried rather than lived in. Every
+                visitor arrives on the same sample dataset, with no upload step in the way,
+                and nothing about them is remembered:
+            </p>
+            <pre><code>{`EDI_DEMO_MODE=1`}</code></pre>
+            <p>
+                The dataset is <code>backend/demo_data/retail_sales.csv</code> — replace it
+                with your own and the rest follows. Uploading is refused by the backend, not
+                merely hidden in the interface, so the endpoint cannot be posted to directly.
+            </p>
+            <p>
+                &ldquo;No persistence&rdquo; is the browser&rsquo;s half. A workspace row is
+                still created per visit, because the backend is stateless and re-reads the
+                dataset from the store on every request that touches data. What changes is
+                that the id lives in <code>sessionStorage</code> and nowhere else — so a
+                reload keeps the conversation someone is in the middle of, while a new tab or
+                a new day starts clean. Those rows are swept once they are more than six
+                hours old, on the next visit, so a demo does not fill its database one
+                visitor at a time.
+            </p>
+            <div className="edi-note">
+                <strong>Turn the usage limits on as well.</strong> A demo is a public URL by
+                definition, and the backend logs a warning at startup if you have enabled one
+                without the other.
+            </div>
+
             <h2>Usage limits</h2>
             <p>
                 <strong>Off by default.</strong> Running EDI for yourself there is nobody to

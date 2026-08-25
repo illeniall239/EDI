@@ -20,7 +20,7 @@ import logging
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -171,7 +171,7 @@ def forget(workspace_id: str) -> None:
     _handlers.invalidate(workspace_id)
 
 
-def create_workspace(name: str = "Untitled") -> str:
+def create_workspace(name: str = "Untitled", workspace_type: str = "work") -> str:
     """Create an empty workspace and return its id."""
     workspace_id = str(uuid.uuid4())
     now = _now()
@@ -179,8 +179,8 @@ def create_workspace(name: str = "Untitled") -> str:
         conn = _connect()
         conn.execute(
             "insert into workspaces (id, name, data, workspace_type, created_at, last_modified)"
-            " values (?, ?, '[]', 'work', ?, ?)",
-            (workspace_id, name, now, now),
+            " values (?, ?, '[]', ?, ?, ?)",
+            (workspace_id, name, workspace_type, now, now),
         )
         conn.commit()
     except sqlite3.Error as exc:
@@ -301,6 +301,31 @@ def list_workspaces(workspace_ids: List[str]) -> List[dict]:
         }
         for row in rows
     ]
+
+
+def purge_demo_workspaces(workspace_type: str, older_than_hours: int) -> int:
+    """
+    Delete demo workspaces last touched more than `older_than_hours` ago.
+
+    Demo mode creates a workspace per visit and the browser never remembers
+    it, so without this the table grows by one row for every visitor forever.
+    Scoped to `workspace_type` so it can never reach a real workspace on a
+    deployment that has both.
+
+    Chats go with them by cascade, as in delete_workspace.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=older_than_hours)).isoformat()
+    try:
+        conn = _connect()
+        cursor = conn.execute(
+            "delete from workspaces where workspace_type = ? and last_modified < ?",
+            (workspace_type, cutoff),
+        )
+        conn.commit()
+    except sqlite3.Error as exc:
+        raise WorkspaceStoreError(f"Could not purge demo workspaces: {exc}") from exc
+
+    return cursor.rowcount
 
 
 def delete_workspace(workspace_id: str) -> bool:

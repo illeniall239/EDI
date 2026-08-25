@@ -29,6 +29,7 @@ from query_orchestrator import get_orchestrator
 import workspace_store
 from intelligent_analysis import IntelligentAnalyzer
 from smart_formatter import SmartFormatter
+import demo
 import limits
 import settings
 from llm_text import content_of
@@ -207,6 +208,13 @@ class CompoundQueryRequest(BaseModel):
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
+    # The demo hides its upload controls, but hiding a button is not a
+    # restriction -- the endpoint is what anyone would actually post to.
+    if demo.ENABLED:
+        raise HTTPException(
+            status_code=403,
+            detail="This is a demo. It runs on its own sample dataset, so uploading is off.",
+        )
     try:
         # Read straight from the request. Writing a temp file would fail on a
         # read-only filesystem, and buys nothing when the bytes are in memory.
@@ -586,6 +594,52 @@ async def create_workspace_endpoint(request: Optional[Dict[str, Any]] = None):
     return {"id": workspace_id, "name": name}
 
 
+@app.post("/api/demo/session")
+async def create_demo_session():
+    """
+    A workspace holding the sample dataset, for one visitor, for one visit.
+
+    Demo mode hands everyone the same data rather than an empty grid and a
+    request to go and find a CSV. The browser is told the id but never writes
+    it to localStorage, so coming back tomorrow starts again.
+
+    Sweeping happens here rather than on a schedule: the moment a new demo
+    session is created is exactly when there is reason to believe old ones
+    have gone stale, and it needs no cron, no worker and no second service.
+    A failed sweep must never cost a visitor their session, so it is logged
+    and swallowed.
+    """
+    if not demo.ENABLED:
+        raise HTTPException(status_code=404, detail="Demo mode is not enabled.")
+
+    try:
+        swept = workspace_store.purge_demo_workspaces(
+            demo.WORKSPACE_TYPE, demo.RETENTION_HOURS
+        )
+        if swept:
+            logger.info("Swept %d expired demo workspace(s)", swept)
+    except Exception as exc:
+        logger.warning("Could not sweep expired demo workspaces: %s", exc)
+
+    rows = demo.sample_rows()
+    try:
+        workspace_id = workspace_store.create_workspace(
+            demo.SAMPLE_WORKSPACE_NAME, workspace_type=demo.WORKSPACE_TYPE
+        )
+        workspace_store.save_workspace(
+            workspace_id, data=rows, filename=demo.SAMPLE_FILENAME
+        )
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    return {
+        "id": workspace_id,
+        "name": demo.SAMPLE_WORKSPACE_NAME,
+        "filename": demo.SAMPLE_FILENAME,
+        "rows": len(rows),
+    }
+
+
 # A bound on the ids one request may ask about, so the list endpoint cannot
 # be turned into an arbitrary-length query. Well above what anyone keeps.
 _MAX_WORKSPACES = 200
@@ -751,6 +805,9 @@ async def health_check():
     
     return {
         "status": overall_status,
+        # The frontend reads this at boot to decide whether to remember a
+        # workspace, and whether to offer uploading at all.
+        "demo": demo.ENABLED,
         "data_loaded": data_handler.get_df() is not None if data_handler else False,
         "llm": llm_status,
         "services": services_status,

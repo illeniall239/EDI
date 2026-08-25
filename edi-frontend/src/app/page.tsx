@@ -21,8 +21,11 @@ import {
     listWorkspaceIds,
     setActiveWorkspaceId,
     forgetWorkspaceId,
-    hasTabChosenWorkspace
+    hasTabChosenWorkspace,
+    getDemoSessionId,
+    setDemoSessionId
 } from '@/utils/workspace';
+import { isDemo, createDemoSession } from '@/utils/demo';
 import { downloadCSV } from '@/utils/exportSheet';
 import { Workspace } from '@/types';
 
@@ -49,6 +52,9 @@ export default function HomePage() {
     const [isCreatingSheet, setIsCreatingSheet] = useState(false);
     const [currentFilename, setCurrentFilename] = useState<string | undefined>();
     const [initialSheets, setInitialSheets] = useState<unknown[] | undefined>(undefined);
+    // Set from the backend at boot. Demo deployments hand every visitor the
+    // same sample data and remember nothing about them.
+    const [demoMode, setDemoMode] = useState(false);
     const { setCurrentWorkspace } = useWorkspace();
 
     // Univer adapter, used to snapshot the sheet exactly as the user left it.
@@ -104,9 +110,11 @@ export default function HomePage() {
      * Used both for the first render and for switching, so the two cannot
      * drift apart.
      */
-    const openWorkspace = useCallback(async (id: string, name?: string) => {
+    const openWorkspace = useCallback(async (id: string, name?: string, remember = true) => {
         setWorkspaceId(id);
-        setActiveWorkspaceId(id);
+        // The demo's id belongs to the tab, not to the browser: writing it to
+        // the shared list is what would make a demo "come back" tomorrow.
+        if (remember) setActiveWorkspaceId(id);
 
         const restored = await loadWorkspaceData(id);
 
@@ -153,6 +161,32 @@ export default function HomePage() {
 
         (async () => {
             try {
+                const demo = await isDemo();
+                if (cancelled) return;
+                setDemoMode(demo);
+
+                if (demo) {
+                    // A reload keeps the session; a new tab or a new day does
+                    // not. The id is only ever in sessionStorage, so there is
+                    // nothing to check beyond whether the row is still there
+                    // -- it may have been swept while the tab sat open.
+                    const existing = getDemoSessionId();
+                    if (existing) {
+                        const restored = await loadWorkspaceData(existing);
+                        if (cancelled) return;
+                        if (restored) {
+                            await openWorkspace(existing, 'Sample data', false);
+                            return;
+                        }
+                    }
+
+                    const session = await createDemoSession();
+                    if (cancelled) return;
+                    setDemoSessionId(session.id);
+                    await openWorkspace(session.id, session.name, false);
+                    return;
+                }
+
                 const summaries = await refreshWorkspaces();
                 if (cancelled) return;
 
@@ -416,6 +450,7 @@ export default function HomePage() {
                 onDeleteWorkspace={handleDeleteWorkspace}
                 onCreateWorkspace={handleCreateWorkspace}
                 onShowAllWorkbooks={handleShowOpener}
+                demo={demoMode}
                 onClearData={handleClearData}
                 onExportCSV={() => downloadCSV(data as Record<string, unknown>[], currentFilename)}
                 onSpreadsheetCommand={async (command: string) => ({
@@ -423,7 +458,10 @@ export default function HomePage() {
                     message: `Processed command: "${command}"`
                 })}
                 onDataUpdate={setData}
-                onFileUploadFromSpreadsheet={handleFileUploadFromSpreadsheet}
+                /* Withheld in demo mode. Every upload affordance in the
+                   tree is gated on this prop, so not passing it removes
+                   all of them at once rather than one by one. */
+                onFileUploadFromSpreadsheet={demoMode ? undefined : handleFileUploadFromSpreadsheet}
                 currentFilename={currentFilename}
                 initialSheets={initialSheets}
                 onAdapterReady={handleAdapterReady}

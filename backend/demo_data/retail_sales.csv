@@ -1,0 +1,140 @@
+order_date,region,category,product,units,unit_price,discount_pct,revenue,channel,sales_rep
+2026-01-05,North,Services,Support Plan,2,120.00,0,240.00,Partner,Ana Duarte
+2026-01-06,North,Services,Onboarding,3,250.00,0,750.00,Online,Priya Raman
+2026-01-07,North,Services,Support Plan,2,120.00,5,228.00,Partner,Ana Duarte
+2026-01-07,West,Services,Onboarding,1,250.00,5,237.50,Online,Priya Raman
+2026-01-07,East,Hardware,Widget B,16,65.00,5,988.00,Partner,Chen Wei
+2026-01-08,East,Hardware,Widget A,18,40.00,0,720.00,Direct,Ana Duarte
+2026-01-08,North,Software,Gadget Pro,21,70.00,0,1470.00,Partner,Priya Raman
+2026-01-08,East,Hardware,Bracket Kit,10,18.50,0,185.00,Partner,Ana Duarte
+2026-01-09,North,Services,Support Plan,4,120.00,10,432.00,Online,Ana Duarte
+2026-01-12,North,Hardware,Bracket Kit,24,18.50,5,421.80,Partner,Priya Raman
+2026-01-12,South,Services,Onboarding,4,250.00,10,900.00,Partner,Ben Okafor
+2026-01-13,West,Services,Support Plan,1,120.00,0,120.00,Online,Priya Raman
+2026-01-14,North,Hardware,Widget A,14,40.00,5,532.00,Direct,Priya Raman
+2026-01-14,East,Hardware,Widget B,4,65.00,0,260.00,Direct,Ana Duarte
+2026-01-14,South,Software,Gadget Lite,10,35.00,5,332.50,Partner,Lena Fischer
+2026-01-15,South,Services,Support Plan,2,120.00,0,240.00,Direct,Ben Okafor
+2026-01-16,East,Software,Gadget Pro,19,70.00,0,1330.00,Partner,Chen Wei
+2026-01-16,East,Software,Gadget Pro,24,70.00,5,1596.00,Partner,Ana Duarte
+2026-01-18,North,Hardware,Widget A,23,40.00,0,920.00,Online,Ana Duarte
+2026-01-18,West,Hardware,Widget A,14,40.00,10,504.00,Partner,Marco Ruiz
+2026-01-18,North,Services,Onboarding,1,250.00,0,250.00,Online,Ana Duarte
+2026-01-19,East,Services,Onboarding,3,250.00,0,750.00,Online,Chen Wei
+2026-01-20,North,Hardware,Widget A,2,40.00,5,76.00,Partner,Priya Raman
+2026-01-20,South,Software,Gadget Lite,1,35.00,10,31.50,Direct,Lena Fischer
+2026-01-21,North,Services,Support Plan,4,120.00,5,456.00,Direct,Ana Duarte
+2026-01-22,North,Services,Support Plan,1,120.00,10,108.00,Online,Ana Duarte
+2026-01-22,South,Software,Gadget Pro,19,70.00,10,1197.00,Online,Lena Fischer
+2026-01-22,West,Hardware,Widget B,19,65.00,0,1235.00,Partner,Marco Ruiz
+2026-01-23,East,Software,Gadget Pro,12,70.00,0,840.00,Direct,Ana Duarte
+2026-01-23,South,Software,Gadget Lite,22,35.00,5,731.50,Online,Ben Okafor
+2026-01-24,West,Services,Support Plan,4,120.00,10,432.00,Online,Marco Ruiz
+2026-01-26,East,Software,Gadget Pro,3,70.00,10,189.00,Online,Chen Wei
+2026-01-26,West,Software,Gadget Pro,20,70.00,0,1400.00,Partner,Priya Raman
+2026-01-27,South,Services,Onboarding,4,250.00,0,1000.00,Online,Lena Fischer
+2026-01-27,North,Services,Support Plan,4,120.00,0,480.00,Partner,Priya Raman
+2026-01-28,South,Hardware,Bracket Kit,20,18.50,5,351.50,Online,Lena Fischer
+2026-01-28,West,Hardware,Widget B,12,65.00,0,780.00,Online,Priya Raman
+2026-01-29,West,Software,Gadget Lite,7,35.00,0,245.00,Online,Marco Ruiz
+2026-01-29,North,Software,Gadget Pro,23,70.00,0,1610.00,Partner,Ana Duarte
+2026-01-29,South,Software,Gadget Lite,8,35.00,0,280.00,Partner,Lena Fischer
+2026-01-30,North,Software,Gadget Pro,16,70.00,5,1064.00,Direct,Ana Duarte
+2026-02-01,West,Hardware,Widget B,22,65.00,0,1430.00,Direct,Priya Raman
+2026-02-02,North,Software,Gadget Lite,7,35.00,0,245.00,Partner,Ana Duarte
+2026-02-02,North,Hardware,Widget B,18,65.00,10,1053.00,Partner,Ana Duarte
+2026-02-02,South,Services,Support Plan,2,120.00,0,240.00,Partner,Lena Fischer
+2026-02-03,North,Services,Support Plan,4,120.00,0,480.00,Direct,Ana Duarte
+2026-02-04,South,Software,Gadget Pro,1,70.00,10,63.00,Partner,Lena Fischer
+2026-02-04,North,Software,Gadget Lite,9,35.00,0,315.00,Partner,Ana Duarte
+2026-02-04,North,Hardware,Bracket Kit,15,18.50,0,277.50,Direct,Priya Raman
+2026-02-05,South,Services,Onboarding,4,250.00,0,1000.00,Direct,Lena Fischer
+2026-02-05,East,Software,Gadget Pro,6,70.00,0,420.00,Partner,Chen Wei
+2026-02-06,West,Services,Support Plan,1,120.00,10,108.00,Online,Marco Ruiz
+2026-02-06,North,Hardware,Bracket Kit,3,18.50,0,55.50,Online,Ana Duarte
+2026-02-06,South,Software,Gadget Pro,16,70.00,5,1064.00,Online,Ben Okafor
+2026-02-09,West,Software,Gadget Lite,9,35.00,10,283.50,Direct,Marco Ruiz
+2026-02-10,North,Services,Onboarding,3,250.00,5,712.50,Online,Ana Duarte
+2026-02-11,East,Hardware,Widget A,1,40.00,0,40.00,Online,Chen Wei
+2026-02-11,South,Services,Support Plan,3,120.00,5,342.00,Direct,Ben Okafor
+2026-02-12,North,Services,Onboarding,2,250.00,10,450.00,Partner,Priya Raman
+2026-02-13,South,Hardware,Widget A,24,40.00,0,960.00,Direct,Lena Fischer
+2026-02-13,South,Software,Gadget Pro,24,70.00,0,1680.00,Online,Lena Fischer
+2026-02-16,West,Services,Support Plan,1,120.00,0,120.00,Online,Priya Raman
+2026-02-16,North,Services,Support Plan,4,120.00,0,480.00,Online,Ana Duarte
+2026-02-16,West,Software,Gadget Pro,5,70.00,0,350.00,Partner,Marco Ruiz
+2026-02-17,East,Hardware,Widget A,13,40.00,5,494.00,Direct,Ana Duarte
+2026-02-17,East,Hardware,Widget B,15,65.00,0,975.00,Direct,Ana Duarte
+2026-02-18,North,Hardware,Bracket Kit,11,18.50,0,203.50,Partner,Ana Duarte
+2026-02-18,North,Hardware,Bracket Kit,9,18.50,0,166.50,Direct,Priya Raman
+2026-02-19,West,Services,Support Plan,4,120.00,0,480.00,Online,Priya Raman
+2026-02-19,West,Services,Support Plan,3,120.00,10,324.00,Partner,Marco Ruiz
+2026-02-20,North,Hardware,Widget B,10,65.00,0,650.00,Online,Priya Raman
+2026-02-20,South,Services,Support Plan,3,120.00,0,360.00,Direct,Ben Okafor
+2026-02-23,West,Hardware,Widget A,4,40.00,0,160.00,Partner,Priya Raman
+2026-02-24,North,Services,Support Plan,1,120.00,10,108.00,Partner,Ana Duarte
+2026-02-24,North,Software,Gadget Lite,4,35.00,10,126.00,Direct,Priya Raman
+2026-02-24,West,Hardware,Bracket Kit,23,18.50,5,404.22,Online,Priya Raman
+2026-02-25,South,Services,Onboarding,1,250.00,0,250.00,Online,Ben Okafor
+2026-02-25,West,Hardware,Widget B,18,65.00,0,1170.00,Direct,Marco Ruiz
+2026-02-25,South,Hardware,Widget B,7,65.00,5,432.25,Direct,Ben Okafor
+2026-02-26,East,Software,Gadget Lite,19,35.00,0,665.00,Partner,Ana Duarte
+2026-02-26,South,Hardware,Widget B,18,65.00,0,1170.00,Online,Lena Fischer
+2026-02-27,West,Hardware,Widget A,3,40.00,0,120.00,Partner,Marco Ruiz
+2026-02-27,South,Hardware,Widget B,23,65.00,0,1495.00,Direct,Lena Fischer
+2026-02-27,East,Services,Onboarding,4,250.00,5,950.00,Online,Ana Duarte
+2026-03-01,North,Hardware,Widget B,12,65.00,0,780.00,Online,Ana Duarte
+2026-03-02,South,Software,Gadget Pro,15,70.00,5,997.50,Online,Lena Fischer
+2026-03-02,North,Hardware,Bracket Kit,3,18.50,0,55.50,Online,Ana Duarte
+2026-03-03,North,Software,Gadget Lite,18,35.00,0,630.00,Partner,Ana Duarte
+2026-03-03,North,Services,Support Plan,2,120.00,0,240.00,Partner,Ana Duarte
+2026-03-03,East,Hardware,Bracket Kit,7,18.50,0,129.50,Direct,Ana Duarte
+2026-03-04,West,Software,Gadget Pro,20,70.00,5,1330.00,Online,Marco Ruiz
+2026-03-04,South,Software,Gadget Lite,3,35.00,0,105.00,Direct,Lena Fischer
+2026-03-05,West,Hardware,Widget A,13,40.00,0,520.00,Partner,Priya Raman
+2026-03-06,South,Services,Support Plan,1,120.00,10,108.00,Direct,Lena Fischer
+2026-03-06,West,Software,Gadget Pro,21,70.00,0,1470.00,Partner,Priya Raman
+2026-03-06,West,Hardware,Widget B,13,65.00,0,845.00,Direct,Marco Ruiz
+2026-03-09,South,Software,Gadget Pro,15,70.00,5,997.50,Online,Ben Okafor
+2026-03-10,West,Software,Gadget Lite,3,35.00,0,105.00,Direct,Marco Ruiz
+2026-03-10,North,Hardware,Bracket Kit,22,18.50,5,386.65,Direct,Priya Raman
+2026-03-10,West,Hardware,Bracket Kit,24,18.50,5,421.80,Direct,Priya Raman
+2026-03-11,South,Hardware,Widget B,9,65.00,0,585.00,Online,Ben Okafor
+2026-03-11,North,Services,Support Plan,4,120.00,10,432.00,Partner,Ana Duarte
+2026-03-11,North,Services,Support Plan,1,120.00,5,114.00,Online,Priya Raman
+2026-03-12,East,Hardware,Widget B,12,65.00,0,780.00,Direct,Chen Wei
+2026-03-12,North,Services,Onboarding,1,250.00,0,250.00,Online,Priya Raman
+2026-03-13,West,Hardware,Widget A,9,40.00,5,342.00,Online,Priya Raman
+2026-03-13,North,Hardware,Bracket Kit,1,18.50,10,16.65,Online,Ana Duarte
+2026-03-13,West,Hardware,Widget A,16,40.00,10,576.00,Partner,Priya Raman
+2026-03-15,North,Hardware,Bracket Kit,10,18.50,0,185.00,Direct,Priya Raman
+2026-03-15,East,Services,Support Plan,2,120.00,10,216.00,Direct,Ana Duarte
+2026-03-16,South,Hardware,Widget A,14,40.00,5,532.00,Online,Lena Fischer
+2026-03-17,West,Services,Support Plan,4,120.00,5,456.00,Partner,Priya Raman
+2026-03-18,North,Services,Support Plan,3,120.00,0,360.00,Partner,Priya Raman
+2026-03-19,South,Hardware,Widget B,14,65.00,5,864.50,Online,Lena Fischer
+2026-03-19,North,Hardware,Widget A,1,40.00,10,36.00,Online,Ana Duarte
+2026-03-20,North,Hardware,Bracket Kit,4,18.50,0,74.00,Direct,Ana Duarte
+2026-03-20,North,Software,Gadget Lite,19,35.00,10,598.50,Direct,Ana Duarte
+2026-03-20,North,Hardware,Bracket Kit,12,18.50,0,222.00,Online,Priya Raman
+2026-03-21,North,Software,Gadget Pro,18,70.00,0,1260.00,Direct,Ana Duarte
+2026-03-23,East,Hardware,Bracket Kit,24,18.50,5,421.80,Online,Ana Duarte
+2026-03-23,East,Services,Support Plan,2,120.00,5,228.00,Online,Ana Duarte
+2026-03-23,West,Services,Support Plan,1,120.00,0,120.00,Online,Marco Ruiz
+2026-03-24,West,Software,Gadget Pro,21,70.00,10,1323.00,Online,Priya Raman
+2026-03-24,North,Services,Support Plan,1,120.00,0,120.00,Partner,Ana Duarte
+2026-03-25,South,Software,Gadget Lite,5,35.00,0,175.00,Direct,Lena Fischer
+2026-03-26,North,Hardware,Bracket Kit,21,18.50,0,388.50,Partner,Priya Raman
+2026-03-26,East,Hardware,Widget A,23,40.00,0,920.00,Online,Ana Duarte
+2026-03-27,South,Software,Gadget Lite,16,35.00,0,560.00,Partner,Lena Fischer
+2026-03-27,North,Hardware,Widget B,20,65.00,5,1235.00,Direct,Priya Raman
+2026-03-27,North,Hardware,Bracket Kit,9,18.50,10,149.85,Partner,Ana Duarte
+2026-03-30,North,Services,Onboarding,3,250.00,0,750.00,Direct,Ana Duarte
+2026-03-30,North,Software,Gadget Pro,17,70.00,0,1190.00,Direct,Ana Duarte
+2026-03-31,East,Services,Onboarding,2,250.00,0,500.00,Online,Ana Duarte
+2026-04-01,North,Software,Gadget Lite,4,35.00,0,140.00,Partner,Priya Raman
+2026-04-01,South,Hardware,Widget B,24,65.00,0,1560.00,Online,Lena Fischer
+2026-04-02,North,Hardware,Widget B,15,65.00,10,877.50,Online,Priya Raman
+2026-04-02,North,Hardware,Widget B,24,65.00,10,1404.00,Partner,Priya Raman
+2026-04-02,South,Services,Support Plan,1,120.00,0,120.00,Partner,Ben Okafor
+2026-04-03,North,Hardware,Widget B,13,65.00,0,845.00,Partner,Ana Duarte
