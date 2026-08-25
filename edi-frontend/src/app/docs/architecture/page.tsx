@@ -94,6 +94,48 @@ export default function Architecture() {
                 before the cache is consulted.
             </p>
 
+            <h2>Simple and Complex</h2>
+            <p>
+                The dropdown next to the message box picks which of two routes a question
+                takes. It changes how the answer is produced, not how hard the model
+                tries.
+            </p>
+            <div className="table-scroll">
+                <table>
+                    <thead>
+                        <tr><th style={{ width: '7rem' }}>Mode</th><th>What happens</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Simple</strong></td>
+                            <td>
+                                The steps above, once: the model is asked for one SQL
+                                query, it is run, and the rows come back as prose. One
+                                model call for the SQL and one for the answer.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>Complex</strong></td>
+                            <td>
+                                A LangChain SQL agent instead — the model can look at the
+                                schema, run a query, read the result and decide to run
+                                another. Useful when one query cannot answer the question.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div className="edi-note">
+                <strong>Simple is the default, and usually the right one.</strong> Complex
+                runs a ReAct loop, which means the model has to hold a rigid
+                thought/action/observation format together across several turns. Capable
+                hosted models manage it; smaller local ones tend to break the format and
+                come back with &ldquo;I had trouble with the complex analysis&rdquo;. It is
+                also several model calls rather than two, so it is slower and costs more.
+                Reach for it when a question genuinely needs more than one query, and stay
+                on Simple otherwise.
+            </div>
+
             <h2>What the model is and is not asked to do</h2>
             <p>
                 Every call is a plain completion — <code>invoke(prompt)</code>, read{' '}

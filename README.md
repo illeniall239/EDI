@@ -139,6 +139,21 @@ look like something else:
   This is a property of serverless, not of EDI — a VPS with a disk has neither
   problem and can stay on SQLite.
 
+## Simple and Complex
+
+The dropdown by the message box picks how a question is answered, not how hard
+the model tries:
+
+- **Simple** — one SQL query, run, and the rows written up. Two model calls.
+  The default, and what nearly every question wants.
+- **Complex** — a LangChain SQL agent that can query, read the result, and
+  query again. Worth it when one query cannot answer the question.
+
+Complex runs a ReAct loop, so the model has to keep a strict
+thought/action/observation format across several turns. Capable hosted models
+do; smaller local ones often do not, and fail back with a message saying so.
+It is also more model calls, so it is slower and costs more.
+
 ## Usage limits, if you put this on a public URL
 
 **Off by default.** Running EDI for yourself there is nobody to rate limit,

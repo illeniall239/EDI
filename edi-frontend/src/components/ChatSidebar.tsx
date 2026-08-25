@@ -4962,13 +4962,7 @@ export default function ChatSidebar({
                         value={input}
                         onChange={setInput}
                         onSubmit={(value, mode) => {
-                            // Map the mode to the existing queryMode system
-                            const modeMap: Record<string, 'simple' | 'complex'> = {
-                                'Simple': 'simple',
-                                'Advanced': 'complex',
-                                'Deep Reasoning': 'complex',
-                            };
-                            setQueryMode(modeMap[mode] || 'simple');
+                            setQueryMode(mode === 'Complex' ? 'complex' : 'simple');
                             setInput(value);
                             
                             // Trigger the existing handleSubmit logic
@@ -5006,15 +5000,8 @@ export default function ChatSidebar({
                         disabled={!isDataLoaded}
                         isProcessing={isProcessing}
                         placeholder={isDataLoaded ? "Ask about your data or use voice command..." : "Upload data first..."}
-                        selectedMode={queryMode === 'simple' ? 'Simple' : 'Advanced'}
-                        onModeChange={(mode) => {
-                            const modeMap: Record<string, 'simple' | 'complex'> = {
-                                'Simple': 'simple',
-                                'Advanced': 'complex',
-                                'Deep Reasoning': 'complex',
-                            };
-                            setQueryMode(modeMap[mode] || 'simple');
-                        }}
+                        selectedMode={queryMode === 'complex' ? 'Complex' : 'Simple'}
+                        onModeChange={(mode) => setQueryMode(mode === 'Complex' ? 'complex' : 'simple')}
                         additionalButtons={(
                             <>
                                 {/* Voice Button */}

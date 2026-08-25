@@ -28,16 +28,14 @@ interface AIPromptProps {
     minimal?: boolean;
 }
 
-const AI_MODELS = [
-    "Simple",
-    "Advanced", 
-    "Deep Reasoning",
-];
+// How a question gets answered. There are two paths through the backend and
+// these are them -- "Deep Reasoning" used to sit alongside them and sent the
+// same value as Complex, so it was a third label for the second behaviour.
+const QUERY_MODES = ["Simple", "Complex"] as const;
 
-const MODEL_ICONS: Record<string, React.ReactNode> = {
-    "Simple": <Bot className="w-4 h-4 opacity-75" />,
-    "Advanced": <Bot className="w-4 h-4 opacity-75" />,
-    "Deep Reasoning": <Bot className="w-4 h-4 opacity-75" />,
+const MODE_HINTS: Record<string, string> = {
+    Simple: "One SQL query. Fast, and what most questions need.",
+    Complex: "Lets the model work in steps. Slower, and needs a capable model.",
 };
 
 export default function AIPrompt({
@@ -133,7 +131,7 @@ export default function AIPrompt({
                                                     }}
                                                     className="flex items-center gap-1"
                                                 >
-                                                    {MODEL_ICONS[selectedMode]}
+                                                    <Bot className="w-4 h-4 opacity-75" />
                                                     {selectedMode}
                                                     <ChevronDown className="w-3 h-3 opacity-50" />
                                                 </motion.div>
@@ -142,22 +140,24 @@ export default function AIPrompt({
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent
                                         className={cn(
-                                            "min-w-[10rem]",
+                                            "min-w-[17rem]",
                                             "border-white/10 bg-black/90 backdrop-blur-sm"
                                         )}
                                     >
-                                        {AI_MODELS.map((model) => (
+                                        {QUERY_MODES.map((mode) => (
                                             <DropdownMenuItem
-                                                key={model}
-                                                onSelect={() => onModeChange?.(model)}
-                                                className="flex items-center justify-between gap-2 text-white hover:bg-white/10 focus:bg-white/10"
+                                                key={mode}
+                                                onSelect={() => onModeChange?.(mode)}
+                                                className="flex items-start justify-between gap-3 text-white hover:bg-white/10 focus:bg-white/10"
                                             >
-                                                <div className="flex items-center gap-2">
-                                                    {MODEL_ICONS[model]}
-                                                    <span>{model}</span>
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span>{mode}</span>
+                                                    <span className="text-[11px] leading-snug text-white/45">
+                                                        {MODE_HINTS[mode]}
+                                                    </span>
                                                 </div>
-                                                {selectedMode === model && (
-                                                    <Check className="w-4 h-4 text-blue-400" />
+                                                {selectedMode === mode && (
+                                                    <Check className="mt-0.5 w-4 h-4 shrink-0 text-blue-400" />
                                                 )}
                                             </DropdownMenuItem>
                                         ))}

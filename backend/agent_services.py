@@ -139,15 +139,20 @@ When working with data:
 
 Remember: You're a helpful assistant who happens to excel at data analysis, not a rigid data-only machine. Be conversational, engaging, and helpful across all topics while showcasing your data expertise when relevant."""
             
-            # Built for its tools, not for its reasoning. The UI only ever
-            # sends mode="simple" (ChatSidebar keeps queryMode in state and
-            # never changes it), so the ReAct loop below is unreachable --
-            # but _execute_sql_query_directly pulls the sql_db_query tool out
-            # of this executor to run the SQL it generated itself. Deleting
-            # the agent would break the live path.
+            # Serves two purposes, and mostly the second one.
             #
-            # It also means no provider needs to survive ReAct parsing, which
-            # is what makes small local models a workable option here.
+            # In Complex mode the ReAct loop below runs: the model queries,
+            # reads the result and decides what to do next. That needs a model
+            # that can hold ReAct's format together over several turns.
+            #
+            # In Simple mode -- the default, and the great majority of traffic
+            # -- the loop never runs, but _execute_sql_query_directly still
+            # reaches into this executor for its sql_db_query tool to run SQL
+            # it generated itself. So the agent is load-bearing either way, and
+            # deleting it would break the common path, not just the rare one.
+            #
+            # That split is what keeps modest local models viable: on the
+            # default path nothing has to survive ReAct parsing.
             self.agent_executor = create_sql_agent(
                 llm=self.llm,
                 toolkit=toolkit,
