@@ -38,8 +38,7 @@ export class CommandService {
       const startTime = Date.now();
       
       const requestBody = {
-        question: request.command,
-        is_speech: false // Since we're handling speech locally
+        question: request.command
       };
       
       // Use the configured API endpoint that connects to agent_services.py

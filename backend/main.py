@@ -196,7 +196,6 @@ else:
 class QueryRequest(BaseModel):
     question: str
     chat_id: Optional[str] = None
-    is_speech: bool = False
     mode: str = "simple"
     workspace_id: Optional[str] = None
 
@@ -254,13 +253,11 @@ async def process_query(query: QueryRequest):
     try:
         question = limits.enforce_question_length(query.question)
         chat_id = query.chat_id
-        is_speech = query.is_speech
         mode = query.mode
 
         logger.debug("📝 === EXTRACTED PARAMETERS ===")
         logger.debug(f"   - Question: '{question}'")
         logger.debug(f"   - Chat ID: {chat_id}")
-        logger.debug(f"   - Is Speech: {is_speech}")
         logger.debug(f"   - Mode: {mode}")
         
         if not question:
@@ -348,10 +345,9 @@ async def process_query(query: QueryRequest):
         logger.debug("🚀 === CALLING AGENT SERVICES ===")
         logger.debug("📤 Sending to agent_services.process_query:")
         logger.debug(f"   - question: '{question}'")
-        logger.debug(f"   - is_speech: {is_speech}")
         logger.debug(f"   - mode: {mode}")
 
-        response, visualization = agent_services.process_query(question, is_speech, mode)
+        response, visualization = agent_services.process_query(question, mode)
         
         logger.debug("🎉 === AGENT SERVICES COMPLETED ===")
         logger.debug(f"💬 Response: {response}")

@@ -61,7 +61,6 @@ class CustomSQLDatabaseToolkit(SQLDatabaseToolkit):
 class AgentServices:
     def __init__(self, llm):
         self.llm = llm
-        self.speech_util = None  # speech removed; kept as a no-op for callers
         self.operation_cancelled_flag = False
         
         self.agent_executor = None
@@ -302,23 +301,6 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
     def clear_cancel_flag(self):
         # print("AgentServices: Cancel flag cleared.")
         self.operation_cancelled_flag = False
-
-    def generate_confirmation_message(self, question):
-        prompt = f"""
-        Generate a brief confirmation message (1-2 sentences) for the following user query.
-        The message should:
-        1. Acknowledge that the query was understood (don't always use the same words)
-        2. Indicate that it's being processed
-        3. Be friendly and varied (don't always use the same words)
-        4. Not exceed 15 words
-        5. If there is a "No speech could be recognized" scenario or the user is not saying anything, acknowledge that no input was heard (don't always use the same words), Politely ask the user to repeat their query.
-
-        User query: "{question}"
-
-        Confirmation message:
-        """
-        return content_of(self.llm.invoke(prompt))
-
 
     def generate_pandas_code(self, question, query_category):
         """Generate pandas code using LLM based on query and category."""
@@ -812,7 +794,7 @@ Only output the category name, nothing else.
             logger.error(f"❌ Error processing missing values: {str(e)}")
             return "I had trouble analyzing the missing values in your data. Could you try rephrasing your question or check if your data is properly formatted?"
 
-    def process_non_visualization_query(self, question: str, query_category: str, is_speech: bool = False, mode: str = "simple") -> str:
+    def process_non_visualization_query(self, question: str, query_category: str, mode: str = "simple") -> str:
         """Process non-visualization queries with improved error handling."""
         logger.debug("🔧 === PROCESS NON-VISUALIZATION QUERY ===")
         logger.debug(f"💬 Question: {question}")
@@ -825,14 +807,6 @@ Only output the category name, nothing else.
         # Record user message in chat history
         if hasattr(self, 'chat_history') and self.chat_history:
             self.chat_history.add_user_message(question)
-
-        # Handle speech confirmation if needed
-        if is_speech and self.speech_util:
-            confirmation = self.generate_confirmation_message(question)
-            self.speech_util.text_to_speech(confirmation)
-            logger.debug(confirmation)
-            if self.operation_cancelled_flag:
-                return "I've stopped processing that request as you requested."
 
         # Get current dataframe
         current_df = self.data_handler.get_df() if self.data_handler else None
@@ -1063,7 +1037,7 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
             logger.exception("💥 Full exception details:")
             return "I had some trouble with that request. Could you try asking in a different way? I'm here to help with data analysis and general questions."
 
-    def process_query(self, question: str, is_speech: bool = False, mode: str = "simple") -> Tuple[str, Optional[Dict[str, str]]]:
+    def process_query(self, question: str, mode: str = "simple") -> Tuple[str, Optional[Dict[str, str]]]:
         """Process the user's query and return a response."""
         try:
             if self.operation_cancelled_flag:
@@ -1075,7 +1049,6 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
             # Log the question for debugging
             logger.info("🚀 === PROCESSING QUERY START ===")
             logger.info(f"📝 Query: '{question}'")
-            logger.info(f"🎤 Speech mode: {is_speech}")
             logger.info(f"⚙️ Mode: {mode}")
             
             # Get query category with confidence
@@ -1272,7 +1245,7 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
                 
                 # Handle other types of queries
                 logger.info(f"Processing as {query_category} request")
-                response = self.process_non_visualization_query(question, query_category, is_speech, mode)
+                response = self.process_non_visualization_query(question, query_category, mode)
                 
                 # UNIFIED MEMORY: Always add AI response to memory regardless of category
                 if response and not response.startswith("I encountered an error"):

@@ -91,10 +91,6 @@ interface ChatSidebarProps {
     isExpanded: boolean;
     onToggle: () => void;
     // Voice functionality
-    isListening?: boolean;
-    isProcessingCommand?: boolean;
-    onStartVoiceRecognition?: () => void;
-    onStopVoiceRecognition?: () => void;
     // File upload functionality
     onFileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
     // Backend initialization for workspace loading
@@ -108,10 +104,6 @@ export default function ChatSidebar({
     data,
     isExpanded,
     onToggle,
-    isListening = false,
-    isProcessingCommand = false,
-    onStartVoiceRecognition,
-    onStopVoiceRecognition,
     onFileUpload,
     filename,
     isFromSavedWorkspace = false,
@@ -2150,7 +2142,7 @@ export default function ChatSidebar({
     const processClassificationResult = async (classification: any, query: string) => {
         if (!classification || classification.confidence < 0.8) {
             // Low confidence - route to backend
-            const response = await sendQuery(query, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
+            const response = await sendQuery(query, activeChat?.id || 'default', { mode: queryMode, workspaceId: currentWorkspace?.id });
             handleQueryResponse(response);
             return;
         }
@@ -2209,7 +2201,7 @@ export default function ChatSidebar({
         }
         
         // Fallback to backend if not handled
-        const response = await sendQuery(query, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
+        const response = await sendQuery(query, activeChat?.id || 'default', { mode: queryMode, workspaceId: currentWorkspace?.id });
         handleQueryResponse(response);
     };
 
@@ -2452,7 +2444,7 @@ export default function ChatSidebar({
                         
                     } else if (step.step_type === 'backend') {
                         // Use existing backend query flow
-                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
+                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { mode: queryMode, workspaceId: currentWorkspace?.id });
                         
                         // Handle data updates
                         if (stepResult.data_updated && stepResult.updated_data?.data) {
@@ -2469,7 +2461,7 @@ export default function ChatSidebar({
                         
                     } else if (step.step_type === 'agent') {
                         // Use existing agent flow (if available)
-                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
+                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { mode: queryMode, workspaceId: currentWorkspace?.id });
                         executedSteps.push(step.description);
                         
                     } else if (step.step_type === 'manual_highlight') {
@@ -2489,7 +2481,7 @@ export default function ChatSidebar({
                         
                     } else if (step.step_type === 'chart') {
                         // Use existing chart generation flow (if available)
-                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
+                        stepResult = await sendQuery(step.command, activeChat?.id || 'default', { mode: queryMode, workspaceId: currentWorkspace?.id });
                         executedSteps.push(step.description);
                         
                     } else {
@@ -3295,7 +3287,6 @@ export default function ChatSidebar({
                 
                 // YOUR CASE: "Compare average playtime..." goes here directly!
                 const result = await sendQuery(userMessage, activeChat?.id || 'default', { 
-                    isVoice: false, 
                     mode: queryMode,
                     workspaceId: currentWorkspace?.id
                 });
@@ -3437,7 +3428,7 @@ export default function ChatSidebar({
                 // Handle unified system routing by mapped intent
                 const mappedIntent = (classification as any)?.intent;
                 if (mappedIntent === 'backend') {
-                    response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
+                    response = await sendQuery(userMessage, activeChat?.id || 'default', { mode: queryMode, workspaceId: currentWorkspace?.id });
                     
                     // Handle data updates if present
                     if (response.data_updated && response.updated_data?.data) {
@@ -3490,7 +3481,7 @@ export default function ChatSidebar({
                         }
 
                         // For other data modifications, route to backend
-                        response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
+                        response = await sendQuery(userMessage, activeChat?.id || 'default', { mode: queryMode, workspaceId: currentWorkspace?.id });
                         
                         // Handle data updates immediately (since main dataUpdate dispatch isn't reached)
                         
@@ -4207,7 +4198,7 @@ export default function ChatSidebar({
                         break;
                     
                     case 'general_query':
-                        response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
+                        response = await sendQuery(userMessage, activeChat?.id || 'default', { mode: queryMode, workspaceId: currentWorkspace?.id });
                         break;
 
                     case 'compound_operation':
@@ -4450,7 +4441,7 @@ export default function ChatSidebar({
                 
             } else {
                 // Not a spreadsheet command, use regular query processing
-                response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
+                response = await sendQuery(userMessage, activeChat?.id || 'default', { mode: queryMode, workspaceId: currentWorkspace?.id });
             }
             
             // Handle data updates from the backend
@@ -5032,16 +5023,6 @@ export default function ChatSidebar({
                         overflow: 'hidden'
                     }}
                 >
-                    {/* Voice Status Indicator */}
-                    {isListening && (
-                        <div className="mb-3 p-3 bg-muted/20 border border-border rounded-lg">
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                                <div className="w-2 h-2 bg-destructive rounded-full animate-pulse"></div>
-                                <span className="text-sm font-medium">Listening... Speak now</span>
-                            </div>
-                        </div>
-                    )}
-                    
                     {/* AI Prompt Component */}
                     <AIPrompt
                         value={input}
@@ -5085,31 +5066,11 @@ export default function ChatSidebar({
                         focusToken={promptFocus}
                         disabled={!isDataLoaded}
                         isProcessing={isProcessing}
-                        placeholder={isDataLoaded ? "Ask about your data or use voice command..." : "Upload data first..."}
+                        placeholder={isDataLoaded ? "Ask about your data..." : "Upload data first..."}
                         selectedMode={queryMode === 'complex' ? 'Complex' : 'Simple'}
                         onModeChange={(mode) => setQueryMode(mode === 'Complex' ? 'complex' : 'simple')}
                         additionalButtons={(
                             <>
-                                {/* Voice Button */}
-                                {onStartVoiceRecognition && onStopVoiceRecognition && (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (isListening) {
-                                                onStopVoiceRecognition?.();
-                                            } else {
-                                                onStartVoiceRecognition?.();
-                                            }
-                                        }}
-                                        disabled={isProcessingCommand || !isDataLoaded}
-                                        className="rounded-lg p-2 bg-white/5 hover:bg-white/10 transition-colors text-white/80 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title={isListening ? 'Stop Recording' : 'Voice Command'}
-                                    >
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                        </svg>
-                                    </button>
-                                )}
                                 {/* Reset chat button */}
                                 {messages.length > 0 && (
                                     <button

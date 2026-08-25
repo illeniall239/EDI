@@ -64,7 +64,7 @@ export async function uploadFile(file: File, workspaceId: string = 'default'): P
     return data;
 }
 
-export async function sendQuery(query: string, chatId: string, options?: { isVoice?: boolean, mode?: string, workspaceId?: string }): Promise<QueryResponse> {
+export async function sendQuery(query: string, chatId: string, options?: { mode?: string, workspaceId?: string }): Promise<QueryResponse> {
     
     // Check for duplicate removal keywords for debugging
     const duplicatePatterns = [
@@ -85,7 +85,6 @@ export async function sendQuery(query: string, chatId: string, options?: { isVoi
         body: JSON.stringify({
             question: query,
             chat_id: chatId,
-            is_speech: options?.isVoice || false,
             mode: options?.mode || 'simple',
             workspace_id: options?.workspaceId
         }),

@@ -121,14 +121,12 @@ export default function UniversalSpreadsheet({
   const [currentData, setCurrentData] = useState<any[]>(data);
   const [columnOrder, setColumnOrder] = useState<string[]>([]);
   const [initError, setInitError] = useState<string | null>(null);
-  const isProcessingCommand = false;
 
   // Save state tracking
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   
   // ChatSidebar state
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
-  const [isListening, setIsListening] = useState(false);
   const { currentWorkspace } = useWorkspace();
 
   // Handle Univer resize when sidebar expands/collapses
@@ -305,18 +303,6 @@ export default function UniversalSpreadsheet({
     }
     return currentData;
   }, [currentData]);
-
-  /**
-   * Voice recognition functions
-   */
-  const startVoiceRecognition = useCallback(() => {
-    // TODO: Implement voice recognition
-    setIsListening(true);
-  }, []);
-
-  const stopVoiceRecognition = useCallback(() => {
-    setIsListening(false);
-  }, []);
 
   /**
    * Load data from file upload (CSV/Excel parsed as array)
@@ -593,10 +579,6 @@ export default function UniversalSpreadsheet({
           data={currentData}
           isExpanded={sidebarExpanded}
           onToggle={() => setSidebarExpanded(!sidebarExpanded)}
-          isListening={isListening}
-          isProcessingCommand={isProcessingCommand}
-          onStartVoiceRecognition={startVoiceRecognition}
-          onStopVoiceRecognition={stopVoiceRecognition}
           onFileUpload={onFileUpload}
           filename={filename}
           isFromSavedWorkspace={isFromSavedWorkspace}
