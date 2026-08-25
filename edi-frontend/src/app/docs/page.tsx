@@ -1,0 +1,108 @@
+import Link from 'next/link';
+
+export const metadata = {
+    // The layout supplies the "— EDI.ai Docs" suffix; `absolute` opts this one
+    // page out of it so the landing page is not "EDI.ai Docs — EDI.ai Docs".
+    title: { absolute: 'EDI.ai Docs' },
+    description: 'A spreadsheet you can ask questions, running on any model you bring.',
+};
+
+export default function DocsHome() {
+    return (
+        <>
+            <div className="edi-kicker-doc">Overview</div>
+            <h1>A spreadsheet you can ask questions.</h1>
+            <p className="lede">
+                Upload a CSV or Excel file, then use plain English to filter it, clean it,
+                chart it, or have it explained back to you. EDI brings the interface; you
+                bring the model.
+            </p>
+
+            <video
+                className="mt-8 block w-full rounded-xl"
+                style={{ background: '#08080a', border: '1px solid var(--edi-hairline)' }}
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="none"
+                poster="/edi-demo-poster.jpg"
+                aria-label="Uploading a spreadsheet, asking it questions in plain English, and generating a formula"
+            >
+                <source src="/edi-demo.webm" type="video/webm" />
+                <source src="/edi-demo.mp4" type="video/mp4" />
+            </video>
+
+            <h2>What it does</h2>
+            <p>
+                A question typed into the sidebar becomes read-only SQL, run against your
+                sheet, and the result comes back as prose — or as a chart, when the answer
+                is shaped like one. The Formula Assistant works the other way round:
+                describe a calculation and it writes the spreadsheet formula, using the
+                actual cell ranges of your data.
+            </p>
+            <p>
+                Nothing is written to disk while it runs, and charts are returned as data
+                rather than images, which is what lets the whole thing work on serverless
+                functions.
+            </p>
+
+            <h2>You bring the model</h2>
+            <p>
+                EDI is a harness. It talks to Google, OpenAI, Anthropic, Groq, a local
+                model through <strong>Ollama</strong>, or anything speaking the
+                OpenAI-compatible wire format — LM Studio, vLLM, OpenRouter, llama.cpp.
+                Pick one, and the quality of the answers follows from that choice rather
+                than from anything in this repo.
+            </p>
+            <div className="edi-note">
+                <strong>That cuts both ways.</strong> A weak model does not error — it
+                answers confidently and wrongly. Before trusting a model you have not used
+                here, run <code>python backend/check_model.py</code>, which tests the four
+                things this app actually asks of one. See{' '}
+                <Link href="/docs/models">Choosing a model</Link>.
+            </div>
+
+            <h2>Running it with no accounts</h2>
+            <p>
+                With nothing configured, EDI keeps workspaces in a local SQLite file and
+                looks for a model on <code>localhost:11434</code>, where Ollama listens.
+                No API key, no database signup, no cloud anything:
+            </p>
+            <pre><code>{`git clone https://github.com/illeniall239/EDI.git
+cd EDI
+pip install -r backend/requirements.txt
+pip install langchain-ollama==0.3.3
+
+ollama serve
+EDI_LLM_PROVIDER=ollama uvicorn main:app --app-dir backend --port 8000`}</code></pre>
+            <p>
+                The <Link href="/docs/quickstart">Quickstart</Link> covers the frontend and
+                the hosted path as well.
+            </p>
+
+            <h2>Where to go next</h2>
+            <ul>
+                <li>
+                    <Link href="/docs/quickstart">Quickstart</Link> — clone to running, locally
+                    or deployed.
+                </li>
+                <li>
+                    <Link href="/docs/models">Choosing a model</Link> — the provider matrix,
+                    and how to tell whether yours is good enough.
+                </li>
+                <li>
+                    <Link href="/docs/self-hosting">Self-hosting</Link> — storage, deployment,
+                    and the usage limits.
+                </li>
+                <li>
+                    <Link href="/docs/architecture">How it works</Link> — what happens between
+                    a question and an answer.
+                </li>
+                <li>
+                    <Link href="/docs/api">HTTP API</Link> — the endpoints.
+                </li>
+            </ul>
+        </>
+    );
+}

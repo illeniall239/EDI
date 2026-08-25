@@ -1,0 +1,196 @@
+import Link from 'next/link';
+
+export const metadata = {
+    title: 'Choosing a model',
+    description: 'The provider matrix, and how to tell whether your model is good enough.',
+};
+
+export default function Models() {
+    return (
+        <>
+            <div className="edi-kicker-doc">Configure</div>
+            <h1>Choosing a model</h1>
+            <p className="lede">
+                EDI is a harness. It supplies the spreadsheet, the prompts and the plumbing;
+                the model is yours to pick, and the answers you get are a property of that
+                choice rather than of this code.
+            </p>
+
+            <h2>Providers</h2>
+            <div className="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>EDI_LLM_PROVIDER</th>
+                            <th>Install</th>
+                            <th>Default model</th>
+                            <th>Key</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>google</code></td>
+                            <td><code>langchain-google-genai</code></td>
+                            <td><code>gemini-2.5-flash</code></td>
+                            <td><code>GOOGLE_API_KEY</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>openai</code></td>
+                            <td><code>langchain-openai</code></td>
+                            <td><code>gpt-4o-mini</code></td>
+                            <td><code>OPENAI_API_KEY</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>anthropic</code></td>
+                            <td><code>langchain-anthropic</code></td>
+                            <td><code>claude-sonnet-5</code></td>
+                            <td><code>ANTHROPIC_API_KEY</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>groq</code></td>
+                            <td><code>langchain-groq</code></td>
+                            <td><code>llama-3.3-70b-versatile</code></td>
+                            <td><code>GROQ_API_KEY</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>ollama</code></td>
+                            <td><code>langchain-ollama</code></td>
+                            <td><code>qwen2.5-coder:7b</code></td>
+                            <td>none</td>
+                        </tr>
+                        <tr>
+                            <td><code>openai-compatible</code></td>
+                            <td><code>langchain-openai</code></td>
+                            <td>you name one</td>
+                            <td>optional</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>
+                <code>openai-compatible</code> is one entry for the long tail — OpenRouter,
+                LM Studio, vLLM, Together, llama.cpp&apos;s server. They all speak the OpenAI
+                wire format, so pointing at a different <code>EDI_LLM_BASE_URL</code> is the
+                whole integration. A local server with no auth needs no key.
+            </p>
+
+            <h2>Configuring</h2>
+            <pre><code>{`EDI_LLM_PROVIDER=ollama
+EDI_LLM_MODEL=llama3.1:8b
+EDI_LLM_BASE_URL=http://localhost:11434   # ollama / openai-compatible
+EDI_LLM_API_KEY=...                       # or the provider's usual name
+EDI_LLM_MAX_TOKENS=8192`}</code></pre>
+
+            <p>
+                Only <code>EDI_LLM_PROVIDER</code> and a key are usually needed; every
+                provider carries a default model. Leave the provider unset and EDI behaves
+                exactly as it did before it had a registry: Gemini, via{' '}
+                <code>GOOGLE_API_KEY</code>.
+            </p>
+
+            <p>
+                Install only the provider you use — the imports in{' '}
+                <code>backend/llm_providers.py</code> are lazy, so an uninstalled one costs
+                nothing:
+            </p>
+            <pre><code>{`pip install langchain-ollama==0.3.3`}</code></pre>
+
+            <div className="edi-note">
+                <strong>Pin to the 0.3.x line.</strong> The 1.x releases of the{' '}
+                <code>langchain-*</code> packages moved modules that{' '}
+                <code>langchain 0.3.19</code> still imports. An unpinned{' '}
+                <code>pip install langchain-ollama</code> pulls <code>langchain-core</code>{' '}
+                up to 1.x and the backend stops importing entirely, with a{' '}
+                <code>ModuleNotFoundError</code> that does not obviously point back here.
+            </div>
+
+            <h2>What the harness asks of a model</h2>
+            <p>
+                Four things, in the order they are hit. A model that cannot do the earlier
+                ones never reaches the later ones:
+            </p>
+            <ol>
+                <li>
+                    <strong>Follow a system message.</strong> Every call is a plain
+                    completion — there is no tool calling and no structured-output binding
+                    anywhere in this app.
+                </li>
+                <li>
+                    <strong>Return strict JSON on request.</strong> Structured replies are
+                    produced by asking for JSON and parsing what comes back. Fences are
+                    stripped and a stray object is recovered from surrounding prose, but a
+                    model that answers in paragraphs will not get far.
+                </li>
+                <li>
+                    <strong>Route the question.</strong> Before any SQL is written, EDI
+                    decides whether your message is about the data or is ordinary
+                    conversation. Get that wrong and even a model that writes flawless SQL
+                    never gets asked for any — it replies that it does not have the
+                    information.
+                </li>
+                <li>
+                    <strong>Write SQL.</strong> The load-bearing one, and the one where a
+                    weak model hurts most: bad SQL does not raise an error, it returns a
+                    confident wrong number.
+                </li>
+            </ol>
+
+            <h2>Testing yours</h2>
+            <p>
+                Rather than trusting a recommendation, measure the model you actually have:
+            </p>
+            <pre><code>{`python backend/check_model.py`}</code></pre>
+            <p>It reads the same environment the app does, and reports on each of the four:</p>
+            <pre><code>{`  provider   ollama
+  model      qwen2.5-coder:7b
+  endpoint   http://localhost:11434
+
+  PASS  reachable      2.1s  OK
+  PASS  strict JSON    0.5s  {"intent": "filter", "confidence": 0.9}
+  PASS  SQL            0.5s  SELECT SUM(revenue) ... -> 1500.5
+  PASS  routing        0.4s  3/3 routed correctly`}</code></pre>
+
+            <p>
+                The SQL check runs the query it gets back against a small fixture and
+                compares the number, rather than eyeballing whether the SQL looks plausible.
+            </p>
+
+            <div className="edi-note">
+                <strong>A pass is a floor, not a guarantee.</strong> These prompts are short
+                and unambiguous; the app&apos;s real ones are much longer and carry
+                conversation history. A model can clear every check and still lose the
+                thread in use — we have seen exactly that. Treat a failure as decisive and a
+                pass as &ldquo;worth trying&rdquo;.
+            </div>
+
+            <h2>Picking well</h2>
+            <ul>
+                <li>
+                    <strong>Hosted models are the safe default.</strong> If you want it to
+                    just work, use a current model from any provider above.
+                </li>
+                <li>
+                    <strong>Local models vary enormously.</strong> Instruction- and
+                    code-tuned models do far better here than chat- or roleplay-tuned ones
+                    of the same size, because three of the four demands above are
+                    format-following rather than conversation.
+                </li>
+                <li>
+                    <strong>Bigger helps most at routing.</strong> That step is where small
+                    models most often fail in a way that looks like the app being broken.
+                </li>
+                <li>
+                    <strong>Everything is one call.</strong> There is no agent loop and no
+                    retry storm, so a slower local model costs you latency, not multiplied
+                    tokens.
+                </li>
+            </ul>
+
+            <p>
+                <Link href="/docs/architecture">How it works</Link> traces exactly where each
+                of these calls happens.
+            </p>
+        </>
+    );
+}

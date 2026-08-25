@@ -4,111 +4,109 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Architecture
 
-EDI.ai is a full-stack AI-powered data analysis platform with a Python FastAPI backend and Next.js frontend. The application enables users to upload datasets, perform intelligent analysis through natural language queries, and generate visualizations and reports.
+EDI.ai is a spreadsheet you can ask questions: a Python FastAPI backend and a
+Next.js frontend. Upload a CSV or Excel file, then use plain English to filter
+it, clean it, chart it, or have it explained back.
 
-### Key Components
+It is a **harness, not a model**. The model is chosen by whoever runs it —
+Google, OpenAI, Anthropic, Groq, a local model through Ollama, or any
+OpenAI-compatible endpoint. Answer quality follows from that choice, so avoid
+writing anything that assumes a specific provider or model.
 
-**Backend Services** (`backend/main.py`):
-- FastAPI server handling data processing, AI queries, and file operations
-- Integrated with Google Gemini 2.0 Flash model for natural language processing
-- AgentServices orchestrating LangChain agents for data analysis
-- DataHandler managing SQLite databases and pandas operations
-- ReportGenerator creating automated PDF reports
-- Speech utilities for voice interaction
+### Key components
+
+**Backend** (`backend/`):
+- `main.py` — every FastAPI route, plus the demo-limits middleware
+- `llm_providers.py` — the provider table; adding a provider is adding a row
+- `settings.py` — resolves provider, model and store from the environment
+- `check_model.py` — tests whether the configured model can do the job
+- `agent_services.py` — SQL generation, chart specs, conversation memory
+- `data_handler.py` — file parsing into pandas and an in-memory SQLite database
+- `stores/` — workspace persistence: `sqlite_store.py` (local file) or
+  `supabase_store.py` (Postgres), chosen in `stores/__init__.py`
+- `limits.py` — usage limits for a public deployment
+- `report_generator.py` — PDF reports
 
 **Frontend** (`edi-frontend/`):
-- Next.js 15 application with TypeScript
-- Supabase integration for authentication and data persistence
-- UniverseJS spreadsheet component for data visualization
-- React components for file upload, chat interface, and workspace management
+- Next.js 16, React 19, Tailwind 4, TypeScript
+- Univer for the spreadsheet, Recharts for charts
+- `src/app/page.tsx` — the whole app, one route
+- `src/app/docs/` — the documentation site
+- `src/utils/api.ts` — every backend call
 
-**Data Flow**:
-1. Files uploaded through frontend → processed by DataHandler → stored in temporary SQLite databases
-2. User queries → AgentServices → LangChain SQL agents → generate responses and visualizations
-3. Results displayed in frontend with optional chart generation and PDF reporting
+**Data flow**: upload → parsed by `data_handler` into an in-memory SQLite
+database → question classified → model asked for read-only SQL → SQL run →
+rows returned to the model for prose and, when it fits, a chart spec the client
+renders.
 
-## Development Commands
+The backend is **stateless**: it re-reads the workspace from the store on every
+request that touches data, because serverless instances share nothing.
 
-### Backend (Python)
+## Development commands
+
+### Backend
+
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
+pip install langchain-ollama==0.3.3          # only the provider you use
 
-# Start FastAPI server
-python backend/main.py
-# Or with uvicorn directly:
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --reload --port 8000 --app-dir backend
 
-# Run linting (if configured)
-ruff check .
+ruff check backend                            # must be clean; CI enforces it
+python backend/check_model.py                 # test the configured model
 ```
 
-### Frontend (Next.js)
+### Frontend
+
 ```bash
 cd edi-frontend
-
-# Install dependencies
 npm install
-
-# Development server with Turbopack
-npm run dev
-
-# Build for production
+npm run dev          # Turbopack
 npm run build
-
-# Start production server
-npm run start
-
-# Lint code
-npm run lint
+npm run lint         # NOT clean: 9 pre-existing React-hooks errors
 ```
 
-## Environment Configuration
+## Environment configuration
 
-Required environment variables in `.env` file:
-- `GOOGLE_API_KEY`: Google Gemini API key for LLM functionality
-- `AZURE_API_KEY`: Azure Speech Services key
-- `AZURE_REGION`: Azure service region
+Nothing is required. With no configuration, workspaces go in a local SQLite
+file and the model is looked for on `localhost:11434` (Ollama). See
+`sample.env` for the full surface. The ones that matter:
 
-The application gracefully degrades when API keys are missing, providing fallback functionality.
+- `EDI_LLM_PROVIDER` — `google` (default) | `openai` | `anthropic` | `groq` |
+  `ollama` | `openai-compatible`
+- `EDI_LLM_MODEL`, `EDI_LLM_API_KEY`, `EDI_LLM_BASE_URL` — or the provider's
+  conventional key name (`GOOGLE_API_KEY`, `OPENAI_API_KEY`, …)
+- `EDI_STORE` — `sqlite` | `supabase`. Guessed from
+  `SUPABASE_SERVICE_ROLE_KEY` when unset
+- `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — for the Supabase store
+- `EDI_LIMITS_ENABLED=0` — turn the usage caps off locally
+- `BACKEND_ORIGIN` — goes in `edi-frontend/.env.local`, proxies `/api/*` in dev
 
-## Core Modules
+`GET /api/health` reports what was actually resolved. Reach for it first when
+something is misconfigured.
 
-**agent_services.py**: Central orchestrator managing LangChain agents, including:
-- SQL query agent for database operations
-- Chart generation agent for data visualization
-- Data transformation agents for cleaning and processing
+## Conventions worth keeping
 
-**data_handler.py**: Database and file management:
-- Supports CSV, Excel, and other tabular data formats
-- Creates temporary SQLite databases for each dataset
-- Provides data consistency checking and validation
+- **Never put a secret in a `NEXT_PUBLIC_` variable.** Next inlines them into
+  the browser bundle, so every visitor can read them. If the frontend needs
+  something from a model, add a backend endpoint.
+- **Anything that spends a model call** belongs in `_METERED_PREFIXES` or
+  `_METERED_SUFFIXES` in `limits.py`. Anything that does not, does not.
+- **Keep provider imports lazy** in `llm_providers.py` so nobody installs an
+  SDK they do not use.
+- **Stay on the 0.3.x line** of every `langchain-*` package. The 1.x releases
+  moved modules `langchain 0.3.19` still imports, and an unpinned install
+  breaks the backend entirely.
+- Comments here record decisions and measurements. If you change behaviour a
+  comment explains, update the comment in the same commit.
 
-**settings.py**: Configuration management with Google Gemini LLM initialization
+## File structure notes
 
-## Key Features to Understand
-
-1. **Workspace System**: Each uploaded dataset creates a workspace with persistent state
-2. **Agent-Based Processing**: Natural language queries are processed by specialized LangChain agents
-3. **Dynamic Visualization**: Charts and graphs generated based on query context
-4. **Report Generation**: Automated PDF reports with data insights
-5. **Speech Integration**: Voice input/output capabilities via Azure Speech Services
-
-## File Structure Notes
-
-- `backend/static/visualizations/`: Generated chart images
-- `backend/generated_reports/`: PDF reports
-- `backend/temp_db_*.db`: Temporary SQLite databases for uploaded datasets
-- `edi-frontend/src/components/`: Reusable React components
-- `edi-frontend/src/app/`: Next.js app router pages
+- `backend/generated_reports/` — PDF reports (gitignored)
+- `.edi-data/` — the local workspace store (gitignored)
+- `supabase/migrations/` — three migrations; the baseline creates the tables
 
 ## Testing
 
-No formal test suite is currently implemented. Manual testing through the web interface is the primary validation method.
-
-## Common Issues
-
-- LLM initialization failures require valid `GOOGLE_API_KEY`
-- File upload size limits may need adjustment for large datasets
-- Temporary database files accumulate and may need periodic cleanup
-- Chart generation depends on matplotlib and requires proper font configuration
+There is no test suite and no test runner. `ruff check backend` and
+`npm run build` are what CI runs. Changes are verified by running the app.

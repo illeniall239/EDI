@@ -68,53 +68,6 @@
   animation: marquee 30s linear infinite;
 }
 
-.dark {
-  --background: #000000;
-  --foreground: #ffffff;
-  --card: #090909;
-  --card-foreground: #ffffff;
-  --popover: #121212;
-  --popover-foreground: #ffffff;
-  --primary: #ffffff;
-  --primary-foreground: #000000;
-  --secondary: #222222;
-  --secondary-foreground: #ffffff;
-  --muted: #1d1d1d;
-  --muted-foreground: #a4a4a4;
-  --accent: #333333;
-  --accent-foreground: #ffffff;
-  --destructive: #ff5b5b;
-  --destructive-foreground: #000000;
-  --border: #242424;
-  --input: #333333;
-  --ring: #a4a4a4;
-  --chart-1: #ffae04;
-  --chart-2: #2671f4;
-  --chart-3: #747474;
-  --chart-4: #525252;
-  --chart-5: #e4e4e4;
-  --sidebar: #121212;
-  --sidebar-foreground: #ffffff;
-  --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #000000;
-  --sidebar-accent: #333333;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #333333;
-  --sidebar-ring: #a4a4a4;
-  --font-sans: Geist, sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: Geist Mono, monospace;
-  --radius: 0.5rem;
-  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
-  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
-  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
-  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
-}
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -308,157 +261,6 @@ body {
   background-clip: text;
   color: transparent;
   animation: gradientMove 6s ease infinite;
-}
-
-/* Luckysheet specific styles */
-#luckysheet-container {
-  font-family: Arial, sans-serif;
-}
-
-/* Ensure Luckysheet toolbar is visible */
-.luckysheet-wa-editor {
-  z-index: 1000 !important;
-  /* Main editor should be on top */
-  color: #000000 !important;
-  background-color: #ffffff !important;
-  border: none !important;
-  border-radius: 4px !important;
-}
-
-/* Fix cell input text color in edit mode */
-.luckysheet-wa-editor input,
-.luckysheet-wa-editor textarea,
-.luckysheet-cell-input,
-.luckysheet-input-box,
-.luckysheet-formula-input,
-[class*="luckysheet"][class*="input"],
-[class*="luckysheet"][class*="editor"] input,
-[class*="luckysheet"][class*="editor"] textarea {
-  color: #000000 !important;
-  background-color: #ffffff !important;
-  border: 1px solid #cccccc !important;
-}
-
-/* Fix overlapping input boxes in edit mode */
-.luckysheet-wa-editor~.luckysheet-wa-editor,
-.luckysheet-wa-editor+input,
-.luckysheet-wa-editor+textarea {
-  display: none !important;
-  /* Hide duplicate editors */
-}
-
-/* Ensure the formula bar input is properly styled and positioned */
-.luckysheet-wa-formulaInput,
-.luckysheet-formula-functionrange-select,
-.luckysheet-formula-help-c input {
-  z-index: 999 !important;
-  background-color: #ffffff !important;
-  color: #000000 !important;
-  border: 1px solid #d1d5db !important;
-}
-
-/* Fix the in-cell editor specifically */
-.luckysheet-cell-selected .luckysheet-wa-editor {
-  position: absolute !important;
-  z-index: 1001 !important;
-  min-height: 20px !important;
-  min-width: 50px !important;
-  border: none !important;
-  background: #ffffff !important;
-  color: #000000 !important;
-  font-size: 12px !important;
-  padding: 2px 4px !important;
-}
-
-/* Hide any background/shadow input elements */
-.luckysheet-input-box-index,
-.luckysheet-wa-editor-backup,
-[class*="luckysheet"][class*="shadow"],
-[class*="luckysheet"][class*="bg"][class*="input"] {
-  display: none !important;
-}
-
-/* Fix pivot table column menu text visibility */
-.luckysheet-cols-menu,
-.luckysheet-cols-menu *,
-.luckysheet-cols-menu div,
-.luckysheet-cols-menu span {
-  color: #000000 !important;
-  background-color: #ffffff !important;
-}
-
-/* Ensure all luckysheet text inputs are visible */
-#luckysheet-container input,
-#luckysheet-container textarea,
-#luckysheet-container [contenteditable="true"] {
-  color: #000000 !important;
-  background-color: #ffffff !important;
-}
-
-/* Fix any focus states that might be causing the issue */
-.luckysheet-wa-editor:focus,
-.luckysheet-wa-editor input:focus,
-.luckysheet-wa-editor textarea:focus,
-.luckysheet-cell-input:focus,
-.luckysheet-input-box:focus,
-.luckysheet-formula-input:focus {
-  color: #000000 !important;
-  background-color: #ffffff !important;
-  outline: 2px solid #3b82f6 !important;
-}
-
-/* Fix any potential z-index conflicts */
-.luckysheet-modal {
-  z-index: 9999 !important;
-}
-
-.luckysheet-tooltip {
-  z-index: 9998 !important;
-}
-
-/* Ensure proper sizing */
-#luckysheet-container .luckysheet-grid-container {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-/* Hide all Luckysheet logos and branding */
-.luckysheet-wa-logo,
-.luckysheet-logo,
-.luckysheet-wa-logo img,
-.luckysheet-logo img,
-.luckysheet-wa-logo-img,
-.luckysheet-logo-img,
-.luckysheet-wa-logo-text,
-.luckysheet-logo-text,
-.luckysheet-wa-logo-container,
-.luckysheet-logo-container,
-.luckysheet-wa-logo-link,
-.luckysheet-logo-link,
-.luckysheet-wa-logo-area,
-.luckysheet-logo-area,
-.luckysheet-wa-logo-box,
-.luckysheet-logo-box,
-[class*="luckysheet"][class*="logo"],
-[id*="luckysheet"][id*="logo"] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  width: 0 !important;
-  height: 0 !important;
-  overflow: hidden !important;
-  position: absolute !important;
-  left: -9999px !important;
-}
-
-/* Hide any text or images containing "Luckysheet" */
-img[src*="luckysheet" i],
-img[alt*="luckysheet" i],
-img[title*="luckysheet" i],
-[title*="luckysheet" i],
-[alt*="luckysheet" i] {
-  display: none !important;
-  visibility: hidden !important;
 }
 
 /* Hide UnicornStudio branding and "Made with" text */
@@ -911,4 +713,176 @@ body.modal-open .visualization-modal-overlay * {
   color: rgba(255, 255, 255, 0.45);
   margin: 13px 0 5px;
   font-weight: 500;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Docs
+   ------------------------------------------------------------------
+   Same material as the sidebar: dark ground, hairline rules, one warm
+   signal colour. Reading-width prose, because documentation is the one
+   surface here that is read rather than operated.
+   ══════════════════════════════════════════════════════════════════ */
+
+.edi-docs-shell {
+  background:
+    radial-gradient(90% 40% at 12% -8%, rgba(255, 174, 4, 0.07), transparent 60%),
+    radial-gradient(70% 35% at 100% 0%, rgba(120, 170, 255, 0.05), transparent 58%),
+    linear-gradient(180deg, #0d0d10 0%, #08080a 60%);
+  min-height: 100vh;
+}
+
+/* Sidebar navigation */
+.edi-docs-nav a {
+  display: block;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.62);
+  border-left: 2px solid transparent;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+.edi-docs-nav a:hover {
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.035);
+}
+.edi-docs-nav a[data-active='true'] {
+  color: #fff;
+  border-left-color: var(--edi-signal);
+  background: rgba(255, 174, 4, 0.06);
+}
+
+/* Prose */
+.edi-doc {
+  max-width: 46rem;
+  font-size: 15px;
+  line-height: 1.72;
+  color: rgba(255, 255, 255, 0.76);
+}
+.edi-doc > * + * { margin-top: 1.1em; }
+
+.edi-doc h1 {
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+  font-size: clamp(30px, 4vw, 40px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin-bottom: 0.15em;
+}
+.edi-doc h2 {
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+  font-size: 21px;
+  letter-spacing: -0.01em;
+  color: #fff;
+  margin-top: 2.4em;
+  padding-top: 1.1em;
+  border-top: 1px solid var(--edi-hairline);
+}
+.edi-doc h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
+  margin-top: 1.9em;
+}
+
+.edi-doc .lede {
+  font-size: 17px;
+  line-height: 1.62;
+  color: rgba(255, 255, 255, 0.62);
+  margin-top: 0.5em;
+}
+
+.edi-doc a {
+  color: var(--edi-signal);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(255, 174, 4, 0.35);
+}
+.edi-doc a:hover { text-decoration-color: var(--edi-signal); }
+
+.edi-doc strong { color: #fff; font-weight: 600; }
+
+.edi-doc code {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: 0.87em;
+  color: #ffd479;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--edi-hairline-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.edi-doc pre {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.028);
+  border: 1px solid var(--edi-hairline);
+  border-radius: 10px;
+  padding: 14px 16px;
+  overflow-x: auto;   /* long commands scroll here, not the page */
+}
+.edi-doc pre code {
+  background: none; border: 0; padding: 0; color: inherit;
+  font-size: inherit; white-space: pre;
+}
+
+.edi-doc ul, .edi-doc ol { padding-left: 1.15em; }
+.edi-doc li + li { margin-top: 0.4em; }
+.edi-doc ul > li { list-style: none; position: relative; }
+.edi-doc ul > li::before {
+  content: '';
+  position: absolute;
+  left: -0.95em; top: 0.72em;
+  width: 4px; height: 4px;
+  background: var(--edi-signal-dim);
+}
+.edi-doc ol > li { list-style: decimal; }
+.edi-doc ol > li::marker { color: rgba(255,255,255,0.4); font-variant-numeric: tabular-nums; }
+
+/* Tables scroll inside their own box rather than widening the page. */
+.edi-doc .table-scroll { overflow-x: auto; }
+.edi-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.edi-doc th {
+  text-align: left;
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.42);
+  font-weight: 400;
+  padding: 0 14px 8px 0;
+  border-bottom: 1px solid var(--edi-hairline);
+  white-space: nowrap;
+}
+.edi-doc td {
+  padding: 9px 14px 9px 0;
+  border-bottom: 1px solid var(--edi-hairline-soft);
+  vertical-align: top;
+}
+.edi-doc td code { white-space: nowrap; }
+
+/* An aside that matters -- used sparingly, for the things that cost
+   people an afternoon when they are not said. */
+.edi-note {
+  border-left: 2px solid var(--edi-signal);
+  background: rgba(255, 174, 4, 0.045);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 16px;
+  font-size: 14px;
+}
+.edi-note strong { color: var(--edi-signal); }
+
+.edi-kicker-doc {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.38);
 }
