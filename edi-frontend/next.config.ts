@@ -14,6 +14,14 @@ const nextConfig: NextConfig = {
   // /api/ call silently hitting Next instead of the backend. Proxying here
   // makes development same-origin too, so there is one code path rather than
   // two.
+  experimental: {
+    // The proxy below gives up after 30s by default, and a question against a
+    // local model can take longer than that -- qwen3:4b answered in 98s on a
+    // laptop. What the user saw was "Sorry, I encountered an error" with the
+    // backend still working on it, which reads as a broken app rather than a
+    // slow model. Ten minutes is past the point where anyone is still waiting.
+    proxyTimeout: 600_000,
+  },
   async rewrites() {
     const backend = process.env.BACKEND_ORIGIN;
     if (!backend) return [];
