@@ -116,7 +116,9 @@ export default function SpreadsheetNavbar({
         <div className="flex justify-between items-center h-12">
           {/* Left section - Logo */}
           <div className="flex-shrink-0">
-            <span className="text-xl font-bold text-white font-pixelify">EDI.ai</span>
+            <span className="text-[17px] font-semibold tracking-tight text-white">
+              EDI<span style={{ color: 'var(--edi-signal)' }}>.ai</span>
+            </span>
           </div>
 
           {/* Right section - Workspace Selector and User Profile */}

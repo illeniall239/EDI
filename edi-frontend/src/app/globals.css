@@ -49,10 +49,6 @@
   --spacing: 0.25rem;
 }
 
-.font-pixelify {
-  font-family: var(--font-pixelify), sans-serif;
-}
-
 /* Marquee Animation */
 @keyframes marquee {
   0% {
