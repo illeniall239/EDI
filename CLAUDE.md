@@ -25,7 +25,6 @@ writing anything that assumes a specific provider or model.
 - `stores/` — workspace persistence: `sqlite_store.py` (local file) or
   `supabase_store.py` (Postgres), chosen in `stores/__init__.py`
 - `limits.py` — usage limits; off unless `EDI_LIMITS_ENABLED=1`
-- `report_generator.py` — PDF reports
 
 **Frontend** (`edi-frontend/`):
 - Next.js 16, React 19, Tailwind 4, TypeScript
@@ -105,7 +104,6 @@ something is misconfigured.
 
 ## File structure notes
 
-- `backend/generated_reports/` — PDF reports (gitignored)
 - `.edi-data/` — the local workspace store (gitignored)
 - `supabase/migrations/` — one migration holding the whole schema
 

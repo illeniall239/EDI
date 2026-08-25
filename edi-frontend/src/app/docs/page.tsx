@@ -37,9 +37,9 @@ export default function DocsHome() {
             <p>
                 A question typed into the sidebar becomes read-only SQL, run against your
                 sheet, and the result comes back as prose — or as a chart, when the answer
-                is shaped like one. The Formula Assistant works the other way round:
-                describe a calculation and it writes the spreadsheet formula, using the
-                actual cell ranges of your data.
+                is shaped like one. Asking it to filter, sort, clean or reformat the sheet
+                works the same way: the chat is the whole interface, and everything the app
+                does goes through it.
             </p>
             <p>
                 Nothing is written to disk while it runs, and charts are returned as data

@@ -1,18 +1,15 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
 import os
 import json
-import uuid
-import time
 import re
 from typing import Optional, Dict, Any, List
 import pandas as pd
 import numpy as np
 import logging
-import tempfile
 from difflib import SequenceMatcher
 
 # Load environment variables from .env file
@@ -28,7 +25,6 @@ except Exception as e:
 # Import our existing modules
 from data_handler import DataHandler
 from agent_services import AgentServices
-from report_generator import ReportGenerator
 from query_orchestrator import get_orchestrator
 import workspace_store
 from intelligent_analysis import IntelligentAnalyzer
@@ -109,25 +105,6 @@ if _cors_origins:
 
 # Scratch directories for generated artefacts.
 #
-# On an ordinary server this is the backend directory. Some hosts mount the
-# code read-only -- serverless platforms generally do, leaving only a temp
-# directory writable -- and writing there would raise at import and take the
-# process down, so fall back rather than assume. The test is whether the
-# directory is writable, which is true of any host without having to know
-# which one it is.
-#
-# Where that fallback applies, the temp directory is per-instance and does not
-# survive between requests. Fine for something read back within the same
-# request; anything a later request needs must come back in the response or be
-# stored externally.
-_WRITABLE_ROOT = (
-    os.path.dirname(__file__)
-    if os.access(os.path.dirname(__file__), os.W_OK)
-    else tempfile.gettempdir()
-)
-REPORTS_DIR = os.path.join(_WRITABLE_ROOT, "generated_reports")
-os.makedirs(REPORTS_DIR, exist_ok=True)
-
 # INFO by default: DEBUG logs the whole request payload on every call, which is
 # useful when developing and noise (and a privacy question) in a deployment.
 # Set EDI_LOG_LEVEL=DEBUG to get it back.
@@ -206,20 +183,14 @@ def persist(workspace_id):
 if settings.LLM is None:
     logger.error("LLM is not configured. See /api/health for what is missing.")
     agent_services = None
-    report_generator = None
 else:
     try:
         agent_services = AgentServices(llm=settings.LLM)
         agent_services.initialize_agents(data_handler)
-        report_generator = ReportGenerator(
-            data_handler=data_handler,
-            agent_services_instance=agent_services
-        )
     except Exception as e:
         logger.error(f"Failed to initialize LLM services: {str(e)}")
         logger.error("See /api/health for the resolved provider and model")
         agent_services = None
-        report_generator = None
 
 # --- Request/Response Models ---
 class QueryRequest(BaseModel):
@@ -227,10 +198,6 @@ class QueryRequest(BaseModel):
     chat_id: Optional[str] = None
     is_speech: bool = False
     mode: str = "simple"
-    workspace_id: Optional[str] = None
-
-class ReportRequest(BaseModel):
-    format: str = "pdf"
     workspace_id: Optional[str] = None
 
 class ExtractColumnsRequest(BaseModel):
@@ -539,57 +506,6 @@ async def process_query(query: QueryRequest):
         logger.debug(f"📚 Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/generate-report")
-async def generate_report(report_request: ReportRequest, background_tasks: BackgroundTasks):
-    hydrate(report_request.workspace_id)
-    try:
-        if data_handler.get_df() is None:
-            raise HTTPException(status_code=400, detail="I need some data to generate a report. Please upload a dataset first, then I can create an analysis report for you.")
-        
-        agent_services.clear_cancel_flag()
-        
-        # Generate a unique report ID
-        report_id = str(uuid.uuid4())
-        report_filename = os.path.join(REPORTS_DIR, f"report_{report_id}.pdf")
-        
-        # Custom progress callback for API
-        def progress_callback(progress, description=None):
-            # This would be used for WebSockets in a more advanced implementation
-            logger.debug(f"Report generation progress: {progress:.2f} - {description}")
-        
-        # Generate report in background
-        background_tasks.add_task(
-            report_generator.generate_report,
-            report_filename,
-            progress_callback
-        )
-        
-        # Return the report ID that can be used to check status or download
-        return {"report_id": report_id, "status": "generating"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/download-report/{report_id}")
-async def download_report(report_id: str, check: bool = False, request: Request = None):
-    report_filename = os.path.join(REPORTS_DIR, f"report_{report_id}.pdf")
-    
-    # Check if this is just a status check (either from query param or header)
-    is_status_check = check or (request and request.headers.get("X-Check-Only") == "true")
-    
-    if not os.path.exists(report_filename):
-        raise HTTPException(status_code=404, detail="I couldn't find that report. It might still be generating or there was an issue creating it. Please try generating a new report.")
-    
-    # If this is just a status check, return a simple confirmation response instead of the file
-    if is_status_check:
-        return {"status": "ready", "report_id": report_id}
-    
-    # Otherwise return the actual file
-    return FileResponse(
-        path=report_filename,
-        filename=f"EDI_Report_{time.strftime('%Y%m%d_%H%M%S')}.pdf",
-        media_type="application/pdf"
-    )
-
 @app.post("/api/cancel-operation")
 async def cancel_operation():
     try:
@@ -778,7 +694,6 @@ async def health_check():
     services_status = {
         "data_handler": "available" if data_handler else "unavailable",
         "agent_services": "available" if agent_services else "unavailable",
-        "report_generator": "available" if report_generator else "unavailable",
     }
 
     # Check LLM status
@@ -812,77 +727,6 @@ async def health_check():
         # discovered from a bill.
         "limits": limits.status()
     }
-
-class FormulaRequest(BaseModel):
-    prompt: str
-
-
-@app.post("/api/generate-formula")
-async def generate_formula(request: FormulaRequest):
-    """
-    Turn a description of a calculation into a spreadsheet formula.
-
-    The client sends its description already stitched together with the sheet's
-    real column letters and data ranges, so the model can point at actual cells
-    rather than guessing at whole columns.
-    """
-    prompt = limits.enforce_question_length(request.prompt)
-    if not prompt.strip():
-        raise HTTPException(status_code=400, detail="Describe the calculation you want.")
-    if settings.LLM is None:
-        raise HTTPException(
-            status_code=503,
-            detail="The formula assistant needs a chat model to be configured."
-        )
-
-    system_lines = [
-        "You write spreadsheet formulas. Reply with JSON only: ",
-        '{"formula": "=...", "explanation": "one short sentence"}.',
-        "Rules:",
-        "- The formula must start with '='.",
-        "- Use the exact cell ranges given to you. Never use whole-column references like E:E.",
-        "- Never include the header row in a calculation.",
-        "- Use only functions that work in both Excel and Google Sheets.",
-        "- Do not wrap the JSON in markdown code fences.",
-    ]
-
-    try:
-        reply = settings.LLM.invoke([
-            ("system", "\n".join(system_lines)),
-            ("human", prompt),
-        ])
-        text = (content_of(reply) or "").strip()
-    except Exception as exc:
-        logger.error("Formula generation failed: %s", exc)
-        raise HTTPException(
-            status_code=502,
-            detail="The formula assistant could not reach the model. Please try again."
-        )
-
-    # Asked not to fence the JSON, the model still sometimes does.
-    text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
-
-    formula = ""
-    explanation = ""
-    try:
-        payload = json.loads(text)
-        formula = str(payload.get("formula", "")).strip()
-        explanation = str(payload.get("explanation", "")).strip()
-    except json.JSONDecodeError:
-        # Not valid JSON. Take the first thing that looks like a formula rather
-        # than failing outright, since the formula is the part that matters.
-        match = re.search(r"=[^\r\n\"]+", text)
-        if match:
-            formula = match.group(0).strip()
-
-    if not formula.startswith("="):
-        raise HTTPException(
-            status_code=502,
-            detail="The model did not return a usable formula. Try rewording it."
-        )
-
-    return {"success": True, "formula": formula, "explanation": explanation}
-
 
 # The intents and target types the classifier is allowed to return. Kept in
 # step with CommandClassification in

@@ -225,7 +225,6 @@ backend/
   agent_services.py     LangChain agents, SQL generation, chart specs
   data_handler.py       file parsing, in-memory SQLite
   stores/               workspace persistence (Postgres or a local file)
-  report_generator.py   PDF reports
 edi-frontend/
   src/app/page.tsx      the entire app, one route
   src/app/docs/         the documentation site
@@ -250,7 +249,6 @@ The rest:
 | [FastAPI](https://fastapi.tiangolo.com), [Uvicorn](https://www.uvicorn.org) | the backend (MIT, BSD-3) |
 | [LangChain](https://www.langchain.com) | one interface across the model providers (MIT) |
 | [pandas](https://pandas.pydata.org) | parsing and everything done to the data (BSD-3) |
-| [ReportLab](https://www.reportlab.com) | PDF reports (BSD) |
 | [Supabase](https://supabase.com) or SQLite | where workspaces live |
 
 And the model, which is yours to pick.

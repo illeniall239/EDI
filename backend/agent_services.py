@@ -1,6 +1,5 @@
 import uuid
 import os
-import matplotlib.pyplot as plt
 import json
 import pandas as pd
 import re
@@ -26,7 +25,6 @@ try:
 except Exception:
     LANGCHAIN_MEMORY_AVAILABLE = False
 
-import seaborn as sns
 import numpy as np # Often needed with pandas and plotting
 from typing import Tuple, Optional, Dict, Any
 from sqlalchemy import text as sa_text
@@ -468,12 +466,10 @@ except Exception as e:
             safe_globals = {
                 'pd': pd,
                 'np': np,
-                'plt': plt,
                 'df': df_copy_for_execution,
                 'uuid': uuid,
                 'os': os,
                 'print': print,
-                'sns': sns,
                 '__builtins__': {
                     'print': print, 'len': len, 'range': range, 'dict': dict, 'list': list,
                     'set': set, 'str': str, 'int': int, 'float': float, 'bool': bool,

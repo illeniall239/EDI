@@ -111,8 +111,6 @@ _METERED_PREFIXES = (
     "/api/query",
     "/api/orchestrate",
     "/api/extract-columns",
-    "/api/generate-report",
-    "/api/generate-formula",
     "/api/classify-command",
 )
 

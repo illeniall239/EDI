@@ -16,11 +16,9 @@ const CORE: Row[] = [
 ];
 
 const MODEL: Row[] = [
-    { method: 'POST', path: '/api/generate-formula', note: 'Describe a calculation, get a spreadsheet formula bound to real cell ranges.', metered: true },
     { method: 'POST', path: '/api/classify-command', note: 'Classify a spreadsheet command. Returns only a validated classification object.', metered: true },
     { method: 'POST', path: '/api/orchestrate', note: 'Decompose a compound request into steps.', metered: true },
     { method: 'POST', path: '/api/extract-columns', note: 'Pull structured columns out of free text.', metered: true },
-    { method: 'POST', path: '/api/generate-report', note: 'Build a PDF report.', metered: true },
 ];
 
 const WORKSPACE: Row[] = [
@@ -39,7 +37,6 @@ const SHEET: Row[] = [
     { method: 'POST', path: '/api/workspace/{id}/quick-data-entry', note: 'Generate rows to fill a sheet.', metered: true },
     { method: 'POST', path: '/api/cancel-operation', note: 'Cancel an in-flight operation.' },
     { method: 'POST', path: '/api/reset-state', note: 'Clear server-side state.' },
-    { method: 'GET', path: '/api/download-report/{id}', note: 'Download a generated report.' },
 ];
 
 function Table({ rows }: { rows: Row[] }) {

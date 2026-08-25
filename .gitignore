@@ -28,10 +28,7 @@ out/
 # Database files
 *.db
 
-# Generated output. These patterns were once scoped to backend/, but the same
-# files also land at the repo root -- which is how a dozen PDFs ended up
-# committed. Nothing reads any of it back.
-generated_reports/
+# Generated output. Nothing reads any of it back.
 data_exports/
 
 # Local media. Large, and not used by the app.

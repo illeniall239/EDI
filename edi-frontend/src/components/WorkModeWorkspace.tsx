@@ -25,13 +25,10 @@ interface WorkModeWorkspaceProps {
   workspaces: Workspace[];
   data: any[];
   isCreatingSheet: boolean;
-  isGeneratingReport: boolean;
   onWorkspaceChange: (workspace: Workspace) => void;
   onRenameWorkspace: (id: string, name: string) => void;
   onDeleteWorkspace: (id: string) => void;
   onFileUpload: (files: FileList) => void;
-  onGenerateQualityReport: () => void;
-  onGenerateReport: () => void;
   onExtractColumns: () => void;
   onClearData: () => void;
   onSpreadsheetCommand: (command: string) => Promise<any>;
@@ -48,13 +45,10 @@ export default function WorkModeWorkspace({
   workspaces,
   data,
   isCreatingSheet,
-  isGeneratingReport,
   onWorkspaceChange,
   onRenameWorkspace,
   onDeleteWorkspace,
   onFileUpload,
-  onGenerateQualityReport,
-  onGenerateReport,
   onExtractColumns: _onExtractColumns,
   onClearData,
   onSpreadsheetCommand,
@@ -76,11 +70,6 @@ export default function WorkModeWorkspace({
     // Listen for parent state changes via custom events or props
     // For now, dialogs are controlled by navbar which calls setShow... functions
   }, []);
-
-  const handleShowFormulaAssistant = () => {
-    // Dispatch event for UniversalSpreadsheet to handle
-    window.dispatchEvent(new Event('openFormulaAssistant'));
-  };
 
   // Handle column extraction
   const handleColumnExtraction = async (selectedColumns: string[], sheetName?: string) => {
@@ -133,16 +122,12 @@ export default function WorkModeWorkspace({
         onRenameWorkspace={onRenameWorkspace}
         onDeleteWorkspace={onDeleteWorkspace}
         onFileUpload={onFileUpload}
-        onGenerateQualityReport={onGenerateQualityReport}
-        onGenerateReport={onGenerateReport}
         onExtractColumns={() => {
           setShowColumnDialog(true);
           setShowColumnExtraction(true);
         }}
         onClearData={onClearData}
         data={data}
-        isGeneratingReport={isGeneratingReport}
-        onShowFormulaAssistant={handleShowFormulaAssistant}
         setShowColumnExtraction={(show) => {
           setShowColumnDialog(show);
           setShowColumnExtraction(show);

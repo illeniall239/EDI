@@ -2,12 +2,12 @@
  * UniversalSpreadsheet Component
  * 
  * The spreadsheet. Univer under the hood, wrapped in the file menu, the
- * formula assistant and the auto-save the rest of the app talks to.
+ * and the auto-save the rest of the app talks to.
  */
 
 'use client';
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import 'reflect-metadata';
 
 // Univer styles
@@ -58,12 +58,10 @@ import '@univerjs/sheets-conditional-formatting-ui/lib/index.css';
 import '@univerjs/sheets-hyper-link-ui/lib/index.css';
 import '@univerjs/sheets-drawing-ui/lib/index.css';
 
-import { API_ENDPOINTS } from '@/config';
 import { UniverConverter } from '@/utils/univerConverter';
 import { UniverAdapter, createUniverAdapter } from '@/utils/univerAdapter';
 import ChatSidebar from '@/components/ChatSidebar';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
-import { Calculator, BarChart3 } from 'lucide-react';
 
 interface UniversalSpreadsheetProps {
   data?: Array<any>;
@@ -78,33 +76,6 @@ interface UniversalSpreadsheetProps {
   hideSidebar?: boolean;
   initialSheets?: any[]; // Univer workbook snapshot
   onAdapterReady?: (adapter: UniverAdapter | null) => void; // Callback to expose adapter to parent
-}
-
-/**
- * Column names and data-row count, for either shape the sheet's data can hold.
- *
- * Straight from an upload it is objects keyed by column. Once the spreadsheet
- * has taken ownership it is the 2D form the sheet works in -- `[headers,
- * ...rows]`. Reading `Object.keys(data[0])` on that second shape yields "0",
- * "1", "2" and counts the header as a data row, which is how the formula
- * dialog came to offer columns named 0-5 over the range A2:A122 for a file
- * with 120 rows.
- */
-function describeGrid(rows?: any[]): { headers: string[]; rowCount: number } {
-    if (!rows || rows.length === 0) return { headers: [], rowCount: 0 };
-
-    const first = rows[0];
-    if (Array.isArray(first)) {
-        const headerRow = rows.length > 1 && first.every((cell) => typeof cell === 'string');
-        return {
-            headers: headerRow
-                ? first.map(String)
-                : first.map((_, i) => String.fromCharCode(65 + i)),
-            rowCount: headerRow ? rows.length - 1 : rows.length
-        };
-    }
-
-    return { headers: Object.keys(first), rowCount: rows.length };
 }
 
 export default function UniversalSpreadsheet({
@@ -159,20 +130,6 @@ export default function UniversalSpreadsheet({
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const { currentWorkspace } = useWorkspace();
-
-  // Formula Dialog state
-  const [showFormulaDialog, setShowFormulaDialog] = useState(false);
-  const [formulaInput, setFormulaInput] = useState('');
-  const [formulaDialogPos, setFormulaDialogPos] = useState<{top: number, left: number} | null>(null);
-  const [formulaLoading, setFormulaLoading] = useState(false);
-  const [generatedFormula, setGeneratedFormula] = useState<string | null>(null);
-  const [formulaExplanation, setFormulaExplanation] = useState<string | null>(null);
-  const [formulaError, setFormulaError] = useState<string | null>(null);
-  const [formulaCell, setFormulaCell] = useState<{row: number, col: number}>({row: 0, col: 0});
-  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
-  const [isDraggingFormula, setIsDraggingFormula] = useState(false);
-  const [formulaDragOffset, setFormulaDragOffset] = useState<{x: number, y: number}>({x: 0, y: 0});
-  const formulaModalRef = useRef<HTMLDivElement>(null);
 
   // Handle Univer resize when sidebar expands/collapses
   useEffect(() => {
@@ -360,177 +317,6 @@ export default function UniversalSpreadsheet({
   const stopVoiceRecognition = useCallback(() => {
     setIsListening(false);
   }, []);
-
-  // Formula Dialog helper functions
-  const columnLetter = (index: number) => String.fromCharCode(65 + index);
-  
-  const allColumns = useMemo(() => describeGrid(currentData).headers, [currentData]);
-
-  const getDataRangeInfo = useCallback(() => {
-    if (!currentData || currentData.length === 0) return null;
-
-    const { headers, rowCount } = describeGrid(currentData);
-    if (headers.length === 0 || rowCount === 0) return null;
-
-    const dataStartRow = 2; // Row 1 is headers
-    const lastRow = rowCount + 1;
-
-    const columnRanges = headers.map((header, idx) => {
-      const colLetter = columnLetter(idx);
-      const range = `${colLetter}${dataStartRow}:${colLetter}${lastRow}`;
-      return { range, dataCount: rowCount, hasData: rowCount > 0 };
-    });
-
-    const summary = `${rowCount} rows × ${headers.length} columns (${columnLetter(0)}${dataStartRow}:${columnLetter(headers.length - 1)}${lastRow})`;
-
-    return { columnRanges, dataStartRow, lastRow, summary };
-  }, [currentData]);
-
-  // Formula Dialog handlers
-  const handleFormulaCancel = useCallback(() => {
-    setShowFormulaDialog(false);
-    setFormulaInput('');
-    setGeneratedFormula(null); setFormulaExplanation(null);
-    setFormulaError(null);
-    setSelectedColumns([]);
-  }, []);
-
-  const handleFormulaSubmit = useCallback(async () => {
-    if (!formulaInput.trim() && selectedColumns.length === 0) {
-      setFormulaError('Please enter a description or select columns');
-      return;
-    }
-
-    setFormulaLoading(true);
-    setFormulaError(null);
-
-    try {
-      // Build enhanced prompt with data context
-      const dataRangeInfo = getDataRangeInfo();
-      let prompt = formulaInput;
-
-      // Add selected columns info
-      if (selectedColumns.length > 0) {
-        const columnsWithLetters = selectedColumns.map(col => {
-          const idx = allColumns.indexOf(col);
-          if (idx !== -1 && dataRangeInfo) {
-            const rangeInfo = dataRangeInfo.columnRanges[idx];
-            return `${col} (${columnLetter(idx)}, data range: ${rangeInfo.range})`;
-          }
-          return idx !== -1 ? `${col} (${columnLetter(idx)})` : col;
-        });
-        prompt += ` (columns: ${columnsWithLetters.join(', ')})`;
-      }
-
-      // Add data range context.
-      //
-      // Each line has to name the column, because the column name is the only
-      // thing connecting the user's words ("revenue for the South region") to a
-      // cell range. This previously recovered the name by taking the range
-      // back apart -- "A2:A121" -> "A" -> allColumns.indexOf("A") -> -1 --
-      // and every line came out as "@: A2:A121", leaving the model to guess
-      // which column was which. It guessed wrong, and produced formulas that
-      // pointed at the wrong columns while looking perfectly plausible.
-      if (dataRangeInfo) {
-        const columnDetails = dataRangeInfo.columnRanges
-          .map((col, idx) => `${allColumns[idx]} (${columnLetter(idx)}): ${col.range} [${col.dataCount} data rows]`)
-          .join('\n  - ');
-
-        prompt += `\n\nIMPORTANT DATA CONTEXT:\n- ${dataRangeInfo.summary}\n- Column data ranges:\n  - ${columnDetails}\n- ALWAYS use specific ranges instead of entire columns\n- Header is in row 1, actual data starts from row ${dataRangeInfo.dataStartRow}\n- Do not include the header row in calculations`;
-      }
-
-      const fullPrompt = `Write a spreadsheet formula for: ${prompt} (for cell ${columnLetter(formulaCell.col)}${formulaCell.row + 1})`;
-
-      const response = await fetch(API_ENDPOINTS.generateFormula, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: fullPrompt })
-      });
-
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.formula) {
-        throw new Error(result.detail || 'Could not generate a formula. Try rewording it.');
-      }
-
-      setGeneratedFormula(result.formula);
-      setFormulaExplanation(result.explanation || null);
-    } catch (error) {
-      console.error('Error generating formula:', error);
-      setFormulaError(error instanceof Error ? error.message : 'Failed to generate formula');
-    } finally {
-      setFormulaLoading(false);
-    }
-  }, [formulaInput, selectedColumns, formulaCell, getDataRangeInfo, allColumns]);
-
-  const handleFormulaRegenerate = useCallback(() => {
-    setGeneratedFormula(null); setFormulaExplanation(null);
-    handleFormulaSubmit();
-  }, [handleFormulaSubmit]);
-
-  const handleFormulaAccept = useCallback(() => {
-    if (!generatedFormula || !univerAdapterRef.current?.isReady()) return;
-
-    const success = univerAdapterRef.current.setFormula(
-      formulaCell.row,
-      formulaCell.col,
-      generatedFormula
-    );
-
-    if (success) {
-      handleFormulaCancel();
-    } else {
-      setFormulaError('Failed to insert formula');
-    }
-  }, [generatedFormula, formulaCell, handleFormulaCancel]);
-
-  // Formula drag handlers
-  const handleFormulaDragStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (!formulaModalRef.current) return;
-    
-    const rect = formulaModalRef.current.getBoundingClientRect();
-    const offset = {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    };
-    
-    setFormulaDragOffset(offset);
-    setIsDraggingFormula(true);
-    
-    if (!formulaDialogPos) {
-      setFormulaDialogPos({
-        left: rect.left,
-        top: rect.top
-      });
-    }
-  }, [formulaDialogPos]);
-
-  const handleFormulaDrag = useCallback((e: MouseEvent) => {
-    if (!isDraggingFormula) return;
-    
-    setFormulaDialogPos({
-      left: e.clientX - formulaDragOffset.x,
-      top: e.clientY - formulaDragOffset.y
-    });
-  }, [isDraggingFormula, formulaDragOffset]);
-
-  const handleFormulaDragEnd = useCallback(() => {
-    setIsDraggingFormula(false);
-  }, []);
-
-  useEffect(() => {
-    if (isDraggingFormula) {
-      window.addEventListener('mousemove', handleFormulaDrag);
-      window.addEventListener('mouseup', handleFormulaDragEnd);
-      
-      return () => {
-        window.removeEventListener('mousemove', handleFormulaDrag);
-        window.removeEventListener('mouseup', handleFormulaDragEnd);
-      };
-    }
-  }, [isDraggingFormula, handleFormulaDrag, handleFormulaDragEnd]);
 
   /**
    * Load data from file upload (CSV/Excel parsed as array)
@@ -798,35 +584,6 @@ export default function UniversalSpreadsheet({
     };
   }, [currentData, univerInitialized, onDataUpdate]);
 
-  // Listen for formulaAssistant event to open dialog
-  useEffect(() => {
-    const handleFormulaAssistantOpen = () => {
-
-      // Get the current cell selection from Univer
-      let currentCell = { row: 0, col: 0 }; // Default to A1
-      if (univerAdapterRef.current?.isReady()) {
-        const selection = univerAdapterRef.current.getCurrentSelection();
-        if (selection) {
-          currentCell = selection;
-        }
-      }
-
-      setFormulaCell(currentCell);
-      setFormulaDialogPos(null); // Center dialog
-      setShowFormulaDialog(true);
-      setFormulaInput('');
-      setGeneratedFormula(null); setFormulaExplanation(null);
-      setFormulaError(null);
-      setSelectedColumns([]);
-    };
-
-    window.addEventListener('openFormulaAssistant', handleFormulaAssistantOpen);
-
-    return () => {
-      window.removeEventListener('openFormulaAssistant', handleFormulaAssistantOpen);
-    };
-  }, []);
-
   // Listen for addNewSheet event (from column extraction)
   useEffect(() => {
     const handleAddNewSheet = (event: CustomEvent) => {
@@ -996,174 +753,6 @@ export default function UniversalSpreadsheet({
       </div>
       </div>
 
-      {/* Formula Assistant Dialog */}
-      {showFormulaDialog && (
-        <div
-          ref={formulaModalRef}
-          className="fixed z-[9999] bg-card border border-border rounded-2xl shadow-2xl p-8 min-w-[380px] max-w-[95vw] max-h-[90vh] overflow-y-auto font-sans text-foreground flex flex-col"
-          style={{
-            top: formulaDialogPos?.top && formulaDialogPos.top < window.innerHeight - 500 ? formulaDialogPos.top : '50%',
-            left: formulaDialogPos?.left && formulaDialogPos.left < window.innerWidth - 500 ? formulaDialogPos.left : '50%',
-            transform: formulaDialogPos ? 'none' : 'translate(-50%, -50%)',
-            cursor: isDraggingFormula ? 'grabbing' : 'default',
-          }}
-        >
-          {/* Close Button */}
-          <button
-            onClick={handleFormulaCancel}
-            className="absolute top-[18px] right-6 bg-secondary/50 border border-border rounded-lg w-8 h-8 text-lg text-muted-foreground cursor-pointer font-bold z-[2] flex items-center justify-center transition-all duration-200 hover:bg-secondary/80 hover:text-foreground"
-            aria-label="Close"
-            type="button"
-          >
-            ×
-          </button>
-          <div className="mb-6 select-none">
-            <div 
-              className="text-2xl font-bold text-foreground mb-2 tracking-wide py-2 flex items-center gap-2"
-              style={{ 
-                cursor: isDraggingFormula ? 'grabbing' : 'grab',
-              }}
-              onMouseDown={handleFormulaDragStart}
-            >
-              <Calculator className="w-6 h-6" />
-              Natural Language Formula
-            </div>
-            <div className="text-sm text-muted-foreground mb-[18px]">Describe your calculation or select columns to generate a spreadsheet formula.</div>
-            
-            {/* Data Context Info */}
-            {currentData && currentData.length > 0 && (() => {
-              const dataRangeInfo = getDataRangeInfo();
-              return dataRangeInfo ? (
-                <div className="bg-muted/60 border border-border rounded-md p-2.5 mb-[18px] text-xs leading-relaxed">
-                  <div className="font-semibold text-primary mb-1 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4" />
-                    Data Context
-                  </div>
-                  <div className="text-muted-foreground">
-                    {dataRangeInfo.summary}<br/>
-                    Formulas will use precise ranges instead of entire columns for better performance.
-                  </div>
-                </div>
-              ) : null;
-            })()}
-            
-            {/* Column selection with checkboxes */}
-            <div className="mb-[18px]">
-              <label className="font-semibold mb-1.5 block text-foreground text-sm">Select column(s):</label>
-              <div className="flex flex-col gap-2 mb-1.5 max-h-[180px] overflow-y-auto bg-muted/50 rounded-md border border-border p-2.5">
-                {allColumns.map((col, idx) => {
-                  const checked = selectedColumns.includes(col);
-                  const dataRangeInfo = getDataRangeInfo();
-                  const columnRange = dataRangeInfo?.columnRanges[idx];
-                  const rangeText = columnRange?.hasData 
-                    ? `${columnRange.range} [${columnRange.dataCount} rows]`
-                    : `${columnLetter(idx)}${dataRangeInfo?.dataStartRow || 2} [no data]`;
-                  
-                  return (
-                    <label 
-                      key={col} 
-                      className={`flex flex-col gap-0.5 ${checked ? 'font-bold text-primary bg-primary/10' : 'font-medium text-muted-foreground'} rounded cursor-pointer p-1.5 transition-all duration-200`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={e => {
-                            if (e.target.checked) {
-                              setSelectedColumns([...selectedColumns, col]);
-                                if (selectedColumns.length === 0 && !formulaInput && columnRange?.hasData) {
-                                  setFormulaInput(`sum all values in ${col} (${columnRange.range})`);
-                              }
-                            } else {
-                              setSelectedColumns(selectedColumns.filter(c => c !== col));
-                            }
-                          }}
-                          className="w-4 h-4 accent-primary"
-                          aria-label={`Select column ${col}`}
-                        />
-                        <span className="text-sm">{`${col} (${columnLetter(idx)})`}</span>
-                      </div>
-                      <div className={`text-xs ml-6 font-mono ${checked ? 'text-primary/70' : 'text-muted-foreground/70'}`}>
-                        {rangeText}
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-            <input
-              type="text"
-              value={formulaInput}
-              onChange={e => { setFormulaInput(e.target.value); setGeneratedFormula(null); setFormulaExplanation(null); setFormulaError(null); }}
-              placeholder="e.g. sum all values above"
-              className="w-full p-3 text-base rounded-md border border-border text-foreground bg-input mb-3 mt-0.5 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-              autoFocus
-              disabled={formulaLoading || !!generatedFormula}
-            />
-            {formulaError && <div className="text-destructive mb-2.5 font-medium">{formulaError}</div>}
-            {formulaLoading && <div className="mb-2.5 text-muted-foreground">Generating formula...</div>}
-                          {generatedFormula && !formulaLoading && (
-                <>
-                  <div className="mb-2 font-semibold text-foreground">Generated Formula:</div>
-                  <input
-                    type="text"
-                    value={generatedFormula}
-                    onChange={e => setGeneratedFormula(e.target.value)}
-                    className="w-full p-2.5 text-sm rounded-md border border-border text-foreground bg-input mb-2 font-mono focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                  {/* What the formula does, in a sentence. A formula pasted into
-                      a cell without explanation is something to be trusted or
-                      not; with one it can be checked. */}
-                  {formulaExplanation && (
-                    <div className="mb-2.5 text-xs leading-relaxed text-muted-foreground">
-                      {formulaExplanation}
-                    </div>
-                  )}
-                </>
-              )}
-          </div>
-          <div className="flex gap-3 justify-end mt-2">
-            <button 
-              type="button" 
-              onClick={handleFormulaCancel} 
-              disabled={formulaLoading} 
-              className="px-5 py-2.5 rounded-md border border-border bg-secondary text-secondary-foreground font-semibold text-sm shadow-sm transition-all duration-200 cursor-pointer hover:bg-secondary/80 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            {!generatedFormula && (
-              <button 
-                type="button" 
-                onClick={handleFormulaSubmit} 
-                disabled={formulaLoading || (!formulaInput.trim() && selectedColumns.length === 0)} 
-                className="px-5 py-2.5 rounded-md border-none bg-primary text-primary-foreground font-bold text-sm shadow-lg transition-colors duration-200 cursor-pointer hover:bg-primary/90 disabled:opacity-50"
-              >
-                Generate
-              </button>
-            )}
-            {generatedFormula && !formulaLoading && (
-              <>
-                <button 
-                  type="button" 
-                  onClick={handleFormulaRegenerate} 
-                  disabled={formulaLoading || (!formulaInput.trim() && selectedColumns.length === 0)} 
-                  className="px-5 py-2.5 rounded-md border border-border bg-background text-foreground font-bold text-sm shadow-lg transition-colors duration-200 cursor-pointer hover:bg-accent disabled:opacity-50"
-                >
-                  Regenerate
-                </button>
-                <button 
-                  type="button" 
-                  onClick={handleFormulaAccept} 
-                  disabled={formulaLoading || !generatedFormula} 
-                  className="px-5 py-2.5 rounded-md border-none bg-primary text-primary-foreground font-bold text-sm shadow-lg transition-colors duration-200 cursor-pointer hover:bg-primary/90 disabled:opacity-50"
-                >
-                  Accept
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -14,8 +14,6 @@ export const API_BASE_URL = '';
 export const API_ENDPOINTS = {
     upload: `${API_BASE_URL}/api/upload`,
     query: `${API_BASE_URL}/api/query`,
-    generateReport: `${API_BASE_URL}/api/generate-report`,
-    generateFormula: `${API_BASE_URL}/api/generate-formula`,
     classifyCommand: `${API_BASE_URL}/api/classify-command`,
     cancelOperation: `${API_BASE_URL}/api/cancel-operation`,
     resetState: `${API_BASE_URL}/api/reset-state`,

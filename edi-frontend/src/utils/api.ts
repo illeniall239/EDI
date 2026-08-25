@@ -111,35 +111,6 @@ export async function sendQuery(query: string, chatId: string, options?: { isVoi
     return data;
 }
 
-export async function generateReport(options?: { format?: 'pdf' | 'html' }): Promise<{ report_id: string, status: string }> {
-    const response = await fetch(API_ENDPOINTS.generateReport, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ format: options?.format || 'pdf' }),
-    });
-
-    if (!response.ok) {
-        throw new Error('Failed to generate report');
-    }
-
-    return await response.json();
-}
-
-export async function downloadReport(reportId: string): Promise<Blob> {
-    const downloadUrl = `${API_ENDPOINTS.generateReport.split('/api/')[0]}/api/download-report/${reportId}`;
-    const response = await fetch(downloadUrl, {
-        method: 'GET',
-    });
-
-    if (!response.ok) {
-        throw new Error('Failed to download report');
-    }
-
-    return response.blob();
-}
-
 export async function cancelOperation(operationId?: string): Promise<void> {
     const response = await fetch(API_ENDPOINTS.cancelOperation, {
         method: 'POST',
@@ -265,38 +236,6 @@ export async function initializeBackendWithData(data: unknown[], filename?: stri
         return {
             success: false,
             message: error instanceof Error ? error.message : 'Failed to initialize backend'
-        };
-    }
-}
-
-export async function checkReportStatus(reportId: string): Promise<{ status: 'generating' | 'ready' | 'error', error?: string }> {
-    try {
-        // Use a regular GET request with a special query parameter to check if the file exists
-        // without actually downloading the full file
-        const downloadUrl = `${API_ENDPOINTS.generateReport.split('/api/')[0]}/api/download-report/${reportId}?check=true`;
-        const response = await fetch(downloadUrl, { 
-            method: 'GET',
-            headers: {
-                'X-Check-Only': 'true' // Add a custom header to indicate this is just a check
-            }
-        });
-        
-        if (response.ok) {
-            return { status: 'ready' };
-        } else if (response.status === 404) {
-            // 404 means the report is still generating
-            return { status: 'generating' };
-        } else {
-            // Any other error
-            return { 
-                status: 'error', 
-                error: `Error checking report status: ${response.status} ${response.statusText}` 
-            };
-        }
-    } catch (error) {
-        return { 
-            status: 'error', 
-            error: error instanceof Error ? error.message : 'Unknown error checking report status'
         };
     }
 }

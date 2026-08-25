@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { BarChart3, FileText, File, ChevronDown, Upload, Download, ChevronRight, Trash2, Settings, Columns3, Calculator, Menu, Edit, Table, FileSpreadsheet } from 'lucide-react';
+import { File, ChevronDown, Upload, Download, ChevronRight, Trash2, Settings, Columns3, Menu, Edit, Table, FileSpreadsheet } from 'lucide-react';
 import ConfirmationDialog from './ConfirmationDialog';
 
 interface Workspace {
@@ -21,17 +21,13 @@ interface SpreadsheetNavbarProps {
   
   // Data Operations
   onFileUpload?: (files: FileList) => void;
-  onGenerateQualityReport: () => void;
-  onGenerateReport: () => void;
   onExtractColumns: () => void;
   onClearData?: () => void;
   onExportCSV?: () => void;
   onExportExcel?: () => void;
   data: any[];
-  isGeneratingReport: boolean;
   
   // Tools
-  onShowFormulaAssistant: () => void;
   
   // States for dialogs
   setShowColumnExtraction: (show: boolean) => void;
@@ -45,15 +41,11 @@ export default function SpreadsheetNavbar({
   onRenameWorkspace,
   onDeleteWorkspace,
   onFileUpload,
-  onGenerateQualityReport,
-  onGenerateReport,
   onExtractColumns: _onExtractColumns,
   onClearData,
   onExportCSV,
   onExportExcel,
   data,
-  isGeneratingReport,
-  onShowFormulaAssistant,
   setShowColumnExtraction,
 }: SpreadsheetNavbarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -258,40 +250,6 @@ export default function SpreadsheetNavbar({
 
                 {toolsDropdownOpen && (
                   <div className="absolute top-full left-0 mt-2 w-56 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50">
-                    {(
-                    <button
-                      onClick={() => {
-                        onGenerateQualityReport();
-                        setToolsDropdownOpen(false);
-                      }}
-                      disabled={isGeneratingReport}
-                      className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground disabled:opacity-50"
-                    >
-                      {isGeneratingReport ? (
-                        <div className="w-4 h-4 border border-muted-foreground border-t-transparent rounded-full animate-spin"></div>
-                      ) : (
-                        <BarChart3 className="w-4 h-4" />
-                      )}
-                      {isGeneratingReport ? 'Analyzing...' : 'Quality Report'}
-                    </button>)}
-
-                    {(
-                    <button
-                      onClick={() => {
-                        onGenerateReport();
-                        setToolsDropdownOpen(false);
-                      }}
-                      disabled={isGeneratingReport}
-                      className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground disabled:opacity-50"
-                    >
-                      {isGeneratingReport ? (
-                        <div className="w-4 h-4 border border-muted-foreground border-t-transparent rounded-full animate-spin"></div>
-                      ) : (
-                        <FileText className="w-4 h-4" />
-                      )}
-                      {isGeneratingReport ? 'Generating...' : 'Insight Report (PDF)'}
-                    </button>)}
-
                     {data.length > 0 && (
                       <button
                         onClick={() => {
@@ -304,18 +262,6 @@ export default function SpreadsheetNavbar({
                         Extract Columns
                       </button>
                     )}
-
-                    <button
-                      onClick={() => {
-                        onShowFormulaAssistant();
-                        setToolsDropdownOpen(false);
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
-                    >
-                      <Calculator className="w-4 h-4" />
-                      Formula Assistant
-                    </button>
-
 
                   </div>
                 )}
