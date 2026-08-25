@@ -50,7 +50,7 @@ export default function SelfHosting() {
             </p>
 
             <div className="edi-note">
-                <strong>SQLite will not work on serverless.</strong> Vercel Functions have a
+                <strong>SQLite will not work on serverless.</strong> Vercel Functions, as one example, have a
                 read-only filesystem apart from <code>/tmp</code>, which does not survive
                 between invocations, and two consecutive requests are not guaranteed to reach
                 the same instance. Whichever instance handled your upload is rarely the one
@@ -89,11 +89,48 @@ export default function SelfHosting() {
 
             <h2>Deploying</h2>
             <p>
-                <code>vercel.json</code> declares both halves as services of one project:
-                Next.js from <code>edi-frontend/</code>, FastAPI from <code>backend/</code>,
-                with <code>/api/*</code> routed to Python and everything else to Next. They
-                end up on one domain, so the browser only makes same-origin requests and
-                there is no CORS to configure.
+                Two processes — a Python ASGI app and a Next.js app — so host them the way
+                you host those. Nothing in this project is written for a particular
+                platform. What it needs from wherever you put it is three things:
+            </p>
+            <ul>
+                <li>
+                    <strong>Somewhere to keep workspaces.</strong> A disk is enough. Postgres
+                    becomes necessary only when the backend has no persistent disk, or runs
+                    as more than one instance.
+                </li>
+                <li>
+                    <strong>A route from the browser to the API.</strong> Simplest is one
+                    origin: a reverse proxy sending <code>/api/*</code> to the Python process
+                    and everything else to Next. Then CORS never enters into it.
+                </li>
+                <li>
+                    <strong>A model</strong> — a provider key, or an Ollama the backend can
+                    reach.
+                </li>
+            </ul>
+            <pre><code>{`uvicorn main:app --host 127.0.0.1 --port 8000 --app-dir backend
+cd edi-frontend && npm run build && npm start`}</code></pre>
+
+            <h3>Separate domains</h3>
+            <p>
+                If the frontend and the API are not on one origin, name the origins the
+                browser will be on:
+            </p>
+            <pre><code>{`EDI_CORS_ORIGINS=https://edi.example.com,https://staging.example.com`}</code></pre>
+            <p>
+                A wildcard is refused rather than accepted with a warning. It used to be the
+                default here, and what it meant in practice was that any page on the
+                internet could call this API from a visitor&apos;s browser — including the
+                endpoints that spend model calls.
+            </p>
+
+            <h3>Vercel, as one worked example</h3>
+            <p>
+                <code>vercel.json</code> is in the repository because it is what the demo
+                runs on. Only Vercel reads it, so it costs nothing if you deploy elsewhere —
+                and it is worth copying the shape: both halves as services of one project,{' '}
+                <code>/api/*</code> to Python, everything else to Next, one domain, no CORS.
             </p>
 
             <div className="edi-note">
@@ -178,9 +215,10 @@ export default function SelfHosting() {
             <h2>Other limits worth knowing</h2>
             <ul>
                 <li>
-                    Vercel caps a request or response body at <strong>4.5 MB</strong>, which is
-                    why the upload limit is 4 MB. Larger files need the backend hosted
-                    somewhere without that cap.
+                    The 4 MB upload limit is set for the demo, where Vercel caps a request
+                    or response body at 4.5 MB. It is a default, not a constraint of the
+                    project: raise <code>EDI_MAX_UPLOAD_BYTES</code> on a host without that
+                    cap.
                 </li>
                 <li>
                     Anyone who knows a workspace UUID can open it. They are unguessable, but

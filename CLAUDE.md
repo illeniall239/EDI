@@ -81,6 +81,8 @@ file and the model is looked for on `localhost:11434` (Ollama). See
   `SUPABASE_SERVICE_ROLE_KEY` when unset
 - `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — for the Supabase store
 - `EDI_LIMITS_ENABLED=0` — turn the usage caps off locally
+- `EDI_CORS_ORIGINS` — only when the browser and the API are on different
+  origins. Unset means no CORS middleware at all; a wildcard is refused
 - `BACKEND_ORIGIN` — goes in `edi-frontend/.env.local`, proxies `/api/*` in dev
 
 `GET /api/health` reports what was actually resolved. Reach for it first when

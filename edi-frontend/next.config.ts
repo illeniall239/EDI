@@ -2,17 +2,18 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // A stale nested .git makes Turbopack guess the wrong workspace root. Pin it
-  // to this directory, which is what Vercel builds as the frontend service.
+  // to this directory, which is the frontend.
   turbopack: {
     root: __dirname,
   },
-  // In production the frontend and backend are two services of one Vercel
-  // project behind a single domain, and vercel.json routes /api/* to Python.
-  // Locally they are two processes on two ports, which used to mean absolute
-  // cross-origin URLs baked into the browser bundle -- and therefore CORS, a
-  // localhost-vs-127.0.0.1 origin mismatch, and any relative /api/ call
-  // silently hitting Next instead of the backend. Proxying here instead makes
-  // development same-origin too, so the client can always use plain /api/*.
+  // The client calls plain /api/* and expects to reach the backend on whatever
+  // origin it was served from. In a deployment that is a proxy's job. Locally
+  // the two halves are separate processes on separate ports, which used to
+  // mean absolute cross-origin URLs baked into the browser bundle -- and with
+  // them CORS, a localhost-vs-127.0.0.1 origin mismatch, and any relative
+  // /api/ call silently hitting Next instead of the backend. Proxying here
+  // makes development same-origin too, so there is one code path rather than
+  // two.
   async rewrites() {
     const backend = process.env.BACKEND_ORIGIN;
     if (!backend) return [];

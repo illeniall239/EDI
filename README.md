@@ -93,25 +93,51 @@ one domain, so `BACKEND_ORIGIN` is left unset there.
 
 ## Deploying
 
-`vercel.json` declares both halves as services of a single Vercel project:
-Next.js from `edi-frontend/` and the FastAPI app from `backend/`, with `/api/*`
-routed to Python and everything else to Next. Frontend and backend end up on
-one domain, so the browser only ever makes same-origin requests and there is no
-CORS to configure.
+Two processes: a Python ASGI app and a Next.js app. Host them however you
+host those. Nothing here is written for a particular platform.
 
-One project setting matters, and getting it wrong fails in a way that looks
-like something else:
+What the app needs from wherever you put it:
+
+- **Somewhere to keep workspaces.** A disk is enough — `EDI_STORE=sqlite`
+  writes to `EDI_DATA_DIR`. Postgres via Supabase is the alternative, and
+  becomes necessary when the backend has no persistent disk or runs as more
+  than one instance.
+- **A route from the browser to the API.** Simplest is one origin: put a
+  reverse proxy in front and send `/api/*` to the Python process, everything
+  else to Next. Then there is no CORS to think about. If you would rather run
+  them on separate domains, name the frontend's origin in `EDI_CORS_ORIGINS`
+  — the API refuses a wildcard, because that would let any page on the
+  internet call it.
+- **A model.** A key for a hosted provider, or an Ollama the backend can
+  reach. See [Choosing a model](https://github.com/illeniall239/EDI#the-model).
+
+A plain server is two commands and a proxy:
+
+```bash
+uvicorn main:app --host 127.0.0.1 --port 8000 --app-dir backend
+cd edi-frontend && npm run build && npm start      # BACKEND_ORIGIN unset if proxied
+```
+
+### Vercel, as one worked example
+
+`vercel.json` is in the repository because it is what the demo runs on. It is
+read only by Vercel and ignored everywhere else, so it costs nothing if you
+deploy elsewhere — and it is a reasonable thing to copy if you want the same
+shape: both halves as services of one project, `/api/*` to Python, everything
+else to Next, one domain, no CORS.
+
+Two things about that platform specifically, both of which fail in ways that
+look like something else:
 
 - **Root Directory must be the repository root**, not `edi-frontend/`. Vercel
-  only reads `vercel.json` from the root directory it is given. Pointed at the
-  subdirectory it silently ignores this file, serves the frontend alone, and
-  every `/api/*` call lands on Next's 404 page.
-
-Set a model key (`GOOGLE_API_KEY`, or `EDI_LLM_PROVIDER` plus the matching key
-for another provider), `NEXT_PUBLIC_SUPABASE_URL`, and
-`SUPABASE_SERVICE_ROLE_KEY` in the project's environment variables. Supabase is
-required here rather than optional: serverless has a read-only filesystem and
-no two requests are guaranteed to share an instance.
+  only reads `vercel.json` from the directory it is given. Pointed at the
+  subdirectory it ignores the file, serves the frontend alone, and every
+  `/api/*` call lands on Next's 404 page.
+- **Supabase is required rather than optional**, because the filesystem is
+  read-only apart from `/tmp`, that does not survive between invocations, and
+  two consecutive requests are not guaranteed to reach the same instance.
+  This is a property of serverless, not of EDI — a VPS with a disk has neither
+  problem and can stay on SQLite.
 
 ## Usage limits
 

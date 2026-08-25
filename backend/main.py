@@ -73,28 +73,56 @@ async def apply_demo_limits(request: Request, call_next):
     return await call_next(request)
 
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for deployed apps - configure specific domains in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"]  # Allow exposure of custom headers
-)
+# CORS is off unless you ask for it.
+#
+# The normal arrangement puts the browser and this API on one origin: a
+# reverse proxy, or a platform that routes /api/* here, or `next dev` proxying
+# through BACKEND_ORIGIN. Same-origin requests are not subject to CORS at all,
+# so nothing needs configuring and nothing is exposed.
+#
+# Hosting the two halves on separate domains is a supported arrangement, but
+# it has to be stated: list the origins the browser will be on.
+#
+#     EDI_CORS_ORIGINS=https://edi.example.com,https://staging.example.com
+#
+# This used to be allow_origins=["*"] with allow_credentials=True, which reads
+# as "convenient default" and behaves as "any page on the internet may make
+# credentialed requests to this API". A wildcard is refused here for that
+# reason: an allowlist or nothing.
+_cors_origins = [o.strip() for o in os.environ.get("EDI_CORS_ORIGINS", "").split(",") if o.strip()]
+
+if "*" in _cors_origins:
+    raise RuntimeError(
+        "EDI_CORS_ORIGINS=* is not accepted. Name the origins the browser will "
+        "be on, or leave it unset and serve both halves from one origin."
+    )
+
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Scratch directories for generated artefacts.
 #
-# Serverless instances get a read-only filesystem apart from /tmp, so writing
-# under the project directory raises at import time and takes down the whole
-# function. /tmp is per-instance and does not survive between invocations,
-# which is fine for artefacts that are read back within the same request, but
-# means anything a later request needs must be returned in the response or
-# stored externally rather than left on disk.
+# On an ordinary server this is the backend directory. Some hosts mount the
+# code read-only -- serverless platforms generally do, leaving only a temp
+# directory writable -- and writing there would raise at import and take the
+# process down, so fall back rather than assume. The test is whether the
+# directory is writable, which is true of any host without having to know
+# which one it is.
+#
+# Where that fallback applies, the temp directory is per-instance and does not
+# survive between requests. Fine for something read back within the same
+# request; anything a later request needs must come back in the response or be
+# stored externally.
 _WRITABLE_ROOT = (
-    tempfile.gettempdir()
-    if os.environ.get("VERCEL") or not os.access(os.path.dirname(__file__), os.W_OK)
-    else os.path.dirname(__file__)
+    os.path.dirname(__file__)
+    if os.access(os.path.dirname(__file__), os.W_OK)
+    else tempfile.gettempdir()
 )
 REPORTS_DIR = os.path.join(_WRITABLE_ROOT, "generated_reports")
 os.makedirs(REPORTS_DIR, exist_ok=True)

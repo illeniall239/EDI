@@ -87,9 +87,10 @@ export default function Api() {
             <div className="edi-kicker-doc">Reference</div>
             <h1>HTTP API</h1>
             <p className="lede">
-                Everything the frontend calls. All same-origin under <code>/api/</code>,
-                which <code>vercel.json</code> routes to the Python service in production and{' '}
-                <code>next.config.ts</code> proxies in development.
+                Everything the frontend calls, all same-origin under <code>/api/</code>.
+                Getting those requests to the Python service is the deployment's job — a
+                reverse proxy, or a platform's routing rules; in development{' '}
+                <code>next.config.ts</code> proxies them to <code>BACKEND_ORIGIN</code>.
             </p>
 
             <div className="edi-note">
@@ -145,12 +146,12 @@ export default function Api() {
             </p>
 
             <div className="edi-note">
-                <strong>There is no OpenAPI schema worth linking.</strong> FastAPI generates
-                one at <code>/openapi.json</code>, and it works locally, but{' '}
-                <code>vercel.json</code> routes only <code>/api/*</code> to Python — so{' '}
-                <code>/docs</code> and <code>/openapi.json</code> reach Next.js in
-                production and 404. Add rewrites for them if you want them public, and
-                consider whether you do.
+                <strong>FastAPI's own schema is not routed.</strong> It generates one at{' '}
+                <code>/openapi.json</code>, with interactive docs at <code>/docs</code>, and
+                both work when you run the backend directly. Behind a proxy that forwards
+                only <code>/api/*</code> they reach the frontend instead and 404. Forward
+                them too if you want them public — and consider whether you do, since they
+                describe every endpoint to anyone who asks.
             </div>
 
             <p>

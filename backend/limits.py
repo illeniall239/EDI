@@ -111,9 +111,11 @@ def _client_key(request):
     """
     Best-effort identity for a caller.
 
-    x-vercel-forwarded-for is set by the platform and cannot be forged by the
-    client; the other headers can be, so they are only consulted when running
-    somewhere else. Even then a forged header shifts which bucket a request is
+    The headers are tried most-trustworthy first. x-vercel-forwarded-for is
+    set by that platform and cannot be forged by the client, so it wins where
+    it exists; the others can be forged, and are what is available behind an
+    ordinary reverse proxy. If you run behind a proxy that sets its own
+    trusted header, add it to the front of this list. Even then a forged header shifts which bucket a request is
     counted in, it does not create budget -- the global cap is what makes that
     survivable, and it is why this deliberately does not key on workspace_id,
     which the client picks for itself and can regenerate at will.
@@ -306,9 +308,11 @@ def enforce_upload_size(size):
     """
     Bound an upload.
 
-    Vercel rejects bodies over 4.5MB before they reach this process, so on that
-    platform this is a second line that produces a message explaining the limit
-    instead of a platform error page. Everywhere else it is the only line.
+    Some hosts cap the request body before it reaches this process -- Vercel
+    at 4.5MB, which is why the default here is 4MB. Where that happens this is
+    a second line that produces an explanation rather than a platform error
+    page; everywhere else it is the only line, and EDI_MAX_UPLOAD_BYTES is
+    yours to raise.
     """
     if not ENABLED or size is None:
         return

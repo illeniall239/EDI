@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 export const metadata = {
     title: 'Quickstart',
-    description: 'Clone to running, locally with no accounts or deployed to Vercel.',
+    description: 'Clone to running, locally with no accounts, or deployed.',
 };
 
 export default function Quickstart() {
@@ -93,27 +93,23 @@ npm run dev`}</code></pre>
 
             <h2>Deployed</h2>
             <p>
-                One Vercel project holds both halves, so the browser only ever makes
-                same-origin requests and there is no CORS to configure.
+                Two long-running processes and a way for the browser to reach both. On a
+                server with a disk that is the same two commands as above plus a reverse
+                proxy sending <code>/api/*</code> to the backend and everything else to
+                Next — one origin, so no CORS, and <code>EDI_STORE</code> can stay on
+                SQLite.
             </p>
-            <ol>
-                <li>Create a Supabase project and run the migrations with <code>supabase db push</code>.</li>
-                <li>Import the repo into Vercel.</li>
-                <li>
-                    Set <code>NEXT_PUBLIC_SUPABASE_URL</code>,{' '}
-                    <code>SUPABASE_SERVICE_ROLE_KEY</code>, and a model key such as{' '}
-                    <code>GOOGLE_API_KEY</code>.
-                </li>
-            </ol>
-
-            <div className="edi-note">
-                <strong>Root Directory must be the repository root</strong>, not{' '}
-                <code>edi-frontend/</code>. Vercel only reads <code>vercel.json</code> from
-                the root directory it is given. Pointed at the subdirectory it silently
-                ignores the file, serves the frontend alone, and every <code>/api/*</code>{' '}
-                call lands on Next&apos;s 404 page — which looks like a broken app rather
-                than a wrong setting.
-            </div>
+            <p>
+                On a platform without a persistent disk — serverless, or anything running
+                more than one instance — add a Supabase project and run{' '}
+                <code>supabase db push</code>, because the workspace has to live somewhere
+                every instance can see. Set a model key and{' '}
+                <code>SUPABASE_SERVICE_ROLE_KEY</code> in the environment.
+            </p>
+            <p>
+                <Link href="/docs/self-hosting">Self-hosting</Link> goes through both,
+                including the Vercel configuration the demo runs on.
+            </p>
 
             <p>
                 <Link href="/docs/self-hosting">Self-hosting</Link> covers storage, the

@@ -1,7 +1,8 @@
-// Always same-origin. In production the frontend and backend are two services
-// of one Vercel project behind a single domain; in development next.config.ts
-// proxies /api/* to BACKEND_ORIGIN. Either way the browser calls /api/... on
-// the host it was served from.
+// Always same-origin: the browser calls /api/... on the host it was served
+// from. Getting it there is the deployment's job -- a reverse proxy, or a
+// platform that routes /api/* to the Python service -- and in development
+// next.config.ts proxies to BACKEND_ORIGIN. Hosting the two halves on separate
+// domains works too; that is what EDI_CORS_ORIGINS is for.
 //
 // This deliberately reads no NEXT_PUBLIC_ variable. Those are inlined into the
 // bundle at build time, so one left over in a project's settings keeps
@@ -36,6 +37,7 @@ export const SUPPORTED_FILE_TYPES = [
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 ];
 
-// Vercel Functions cap a request body at 4.5MB, so anything larger is
-// rejected by the platform before it reaches the backend.
-export const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB, under the 4.5MB limit 
+// Matches EDI_MAX_UPLOAD_BYTES on the backend. 4MB is the demo's setting,
+// chosen to stay under the 4.5MB body cap Vercel Functions impose; a host
+// without that cap can raise both.
+export const MAX_FILE_SIZE = 4 * 1024 * 1024; 

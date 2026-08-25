@@ -1,7 +1,7 @@
 """
 Workspace storage in Supabase Postgres.
 
-This is the backend the hosted deployment runs on. Vercel Functions have a
+This is the backend the hosted deployment runs on. Serverless platforms -- Vercel Functions, for one -- have a
 read-only filesystem apart from /tmp, which does not survive between
 invocations, and two consecutive requests are not guaranteed to reach the same
 instance -- so the dataset cannot live in a module-level DataHandler. It lives
