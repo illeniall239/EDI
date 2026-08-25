@@ -62,7 +62,9 @@ export default function Architecture() {
                     series, rows.
                 </li>
                 <li>
-                    <strong>Render.</strong> The client draws the chart with Recharts.
+                    <strong>Render.</strong> The client draws the chart with Recharts. Any
+                    edit to the sheet itself goes through <a href="https://univer.ai">Univer</a>,
+                    which is the spreadsheet this is all built around.
                 </li>
             </ol>
 

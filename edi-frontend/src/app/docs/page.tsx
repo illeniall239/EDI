@@ -81,6 +81,25 @@ EDI_LLM_PROVIDER=ollama uvicorn main:app --app-dir backend --port 8000`}</code><
                 the hosted path as well.
             </p>
 
+            <h2>Built on Univer</h2>
+            <p>
+                The spreadsheet is <a href="https://univer.ai">Univer</a>, an open-source
+                office suite under Apache-2.0. EDI is a harness around it rather than a
+                spreadsheet of its own: every cell, formula, filter and sort you touch is
+                Univer&apos;s work. What this project adds is the part that answers
+                questions about what is in those cells — and the adapter that lets a model
+                edit the sheet the way you would, through the same API.
+            </p>
+            <p>
+                Alongside it: <a href="https://nextjs.org">Next.js</a> and{' '}
+                <a href="https://react.dev">React</a> for the interface,{' '}
+                <a href="https://recharts.org">Recharts</a> for the charts,{' '}
+                <a href="https://fastapi.tiangolo.com">FastAPI</a> and{' '}
+                <a href="https://pandas.pydata.org">pandas</a> on the server, and{' '}
+                <a href="https://www.langchain.com">LangChain</a> for one interface across
+                the model providers.
+            </p>
+
             <h2>Where to go next</h2>
             <ul>
                 <li>

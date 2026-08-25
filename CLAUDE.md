@@ -29,7 +29,8 @@ writing anything that assumes a specific provider or model.
 
 **Frontend** (`edi-frontend/`):
 - Next.js 16, React 19, Tailwind 4, TypeScript
-- Univer for the spreadsheet, Recharts for charts
+- Univer (Apache-2.0) for the spreadsheet — this is a harness around it,
+  not a spreadsheet of its own — and Recharts for charts
 - `src/app/page.tsx` — the whole app, one route
 - `src/app/docs/` — the documentation site
 - `src/utils/api.ts` — every backend call

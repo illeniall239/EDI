@@ -180,11 +180,27 @@ edi-frontend/
   src/utils/api.ts      every backend call
 ```
 
-## Stack
+## Built on
 
-Next.js 16 · React 19 · Tailwind 4 · Univer (spreadsheet) · Recharts ·
-FastAPI · LangChain · pandas · SQLite or Supabase Postgres · the model of your
-choosing
+**The spreadsheet is [Univer](https://univer.ai)** (Apache-2.0). EDI is a
+harness around it, not a spreadsheet of its own — every cell, formula, filter
+and sort you interact with is Univer's work. What this project adds is the
+part that answers questions about what is in those cells, and the plumbing
+that lets a model edit the sheet the way you would.
+
+The rest:
+
+| | |
+|---|---|
+| [Next.js](https://nextjs.org), [React](https://react.dev), [Tailwind](https://tailwindcss.com) | the frontend (MIT) |
+| [Recharts](https://recharts.org) | charts, drawn from the spec the backend returns (MIT) |
+| [FastAPI](https://fastapi.tiangolo.com), [Uvicorn](https://www.uvicorn.org) | the backend (MIT, BSD-3) |
+| [LangChain](https://www.langchain.com) | one interface across the model providers (MIT) |
+| [pandas](https://pandas.pydata.org) | parsing and everything done to the data (BSD-3) |
+| [ReportLab](https://www.reportlab.com) | PDF reports (BSD) |
+| [Supabase](https://supabase.com) or SQLite | where workspaces live |
+
+And the model, which is yours to pick.
 
 ## Licence
 
