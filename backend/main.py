@@ -200,10 +200,6 @@ class QueryRequest(BaseModel):
     mode: str = "simple"
     workspace_id: Optional[str] = None
 
-class ExtractColumnsRequest(BaseModel):
-    selected_columns: List[str]
-    sheet_name: Optional[str] = None
-
 class CompoundQueryRequest(BaseModel):
     query: str
     workspace_id: str
@@ -839,46 +835,6 @@ async def classify_command(request: ClassifyCommandRequest):
         },
     }
 
-
-@app.get("/api/columns")
-async def get_columns_for_extraction():
-    """
-    Get available columns with metadata for the extraction dialog.
-    """
-    logger.debug("📋 === API ENDPOINT /api/columns CALLED ===")
-    
-    try:
-        columns_info = agent_services.get_available_columns_for_extraction()
-        logger.debug(f"✅ Retrieved columns info: {columns_info}")
-        return columns_info
-    except Exception as e:
-        logger.error(f"❌ Error getting columns: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/extract-columns")
-async def extract_columns(extract_request: ExtractColumnsRequest):
-    """
-    Extract selected columns and create new Luckysheet data.
-    """
-    logger.debug("🔧 === API ENDPOINT /api/extract-columns CALLED ===")
-    logger.debug(f"📥 Extract request: {extract_request}")
-    
-    try:
-        if not extract_request.selected_columns:
-            raise HTTPException(status_code=400, detail="No columns selected for extraction")
-        
-        # Call the extraction method
-        extraction_result = agent_services.extract_selected_columns(
-            selected_columns=extract_request.selected_columns,
-            new_sheet_name=extract_request.sheet_name
-        )
-        
-        logger.debug(f"✅ Extraction result: {extraction_result}")
-        return extraction_result
-        
-    except Exception as e:
-        logger.error(f"❌ Error extracting columns: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/orchestrate")
 async def orchestrate_compound_query(request: CompoundQueryRequest):

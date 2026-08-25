@@ -1,11 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import dynamic from 'next/dynamic';
 import SpreadsheetNavbar from '@/components/SpreadsheetNavbar';
-import ColumnExtractionDialog from '@/components/ColumnExtractionDialog';
 import { Workspace } from '@/types';
-import { API_BASE_URL } from '@/config';
 
 // Univer touches window on the way up, so it cannot be server-rendered.
 const UniversalSpreadsheet = dynamic(() => import('@/components/UniversalSpreadsheet'), {
@@ -29,12 +27,10 @@ interface WorkModeWorkspaceProps {
   onRenameWorkspace: (id: string, name: string) => void;
   onDeleteWorkspace: (id: string) => void;
   onFileUpload: (files: FileList) => void;
-  onExtractColumns: () => void;
   onClearData: () => void;
   onSpreadsheetCommand: (command: string) => Promise<any>;
   onDataUpdate: (data: any[]) => void;
   onFileUploadFromSpreadsheet: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  setShowColumnExtraction: (show: boolean) => void;
   currentFilename?: string;
   initialSheets?: any[];
   onAdapterReady?: (adapter: any) => void;
@@ -49,68 +45,23 @@ export default function WorkModeWorkspace({
   onRenameWorkspace,
   onDeleteWorkspace,
   onFileUpload,
-  onExtractColumns: _onExtractColumns,
   onClearData,
   onSpreadsheetCommand,
   onDataUpdate,
   onFileUploadFromSpreadsheet,
-  setShowColumnExtraction,
   currentFilename,
   initialSheets,
   onAdapterReady
 }: WorkModeWorkspaceProps) {
 
   // Local state for dialogs
-  const [showColumnDialog, setShowColumnDialog] = useState(false);
 
-  void _onExtractColumns;
 
   // Sync with parent state
   React.useEffect(() => {
     // Listen for parent state changes via custom events or props
     // For now, dialogs are controlled by navbar which calls setShow... functions
   }, []);
-
-  // Handle column extraction
-  const handleColumnExtraction = async (selectedColumns: string[], sheetName?: string) => {
-    try {
-
-      // Call backend API to extract columns (creates new sheet data)
-      const response = await fetch(`${API_BASE_URL}/api/extract-columns`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          selected_columns: selectedColumns,
-          sheet_name: sheetName
-        })
-      });
-
-      const result = await response.json();
-
-      if (result.success && result.sheet_data) {
-        // Dispatch event for UniversalSpreadsheet to add new sheet
-        const addSheetEvent = new CustomEvent('addNewSheet', {
-          detail: {
-            sheetData: result.sheet_data,
-            sheetName: result.sheet_name || sheetName || `Extracted_${selectedColumns.length}cols`,
-            selectedColumns
-          }
-        });
-        window.dispatchEvent(addSheetEvent);
-
-      } else {
-        throw new Error(result.error || 'Failed to extract columns');
-      }
-
-      // Close dialog
-      setShowColumnDialog(false);
-      setShowColumnExtraction(false);
-    } catch (error) {
-      console.error('❌ Error extracting columns:', error);
-      alert(`Error extracting columns: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      throw error;
-    }
-  };
 
   return (
     <div className="h-screen bg-background overflow-hidden">
@@ -122,16 +73,8 @@ export default function WorkModeWorkspace({
         onRenameWorkspace={onRenameWorkspace}
         onDeleteWorkspace={onDeleteWorkspace}
         onFileUpload={onFileUpload}
-        onExtractColumns={() => {
-          setShowColumnDialog(true);
-          setShowColumnExtraction(true);
-        }}
         onClearData={onClearData}
         data={data}
-        setShowColumnExtraction={(show) => {
-          setShowColumnDialog(show);
-          setShowColumnExtraction(show);
-        }}
       />
 
       {/* Main Content Area - add top padding for fixed navbar */}
@@ -164,15 +107,6 @@ export default function WorkModeWorkspace({
         </div>
       </div>
 
-      {/* Column Extraction Dialog */}
-      <ColumnExtractionDialog
-        isOpen={showColumnDialog}
-        onClose={() => {
-          setShowColumnDialog(false);
-          setShowColumnExtraction(false);
-        }}
-        onExtract={handleColumnExtraction}
-      />
     </div>
   );
 }

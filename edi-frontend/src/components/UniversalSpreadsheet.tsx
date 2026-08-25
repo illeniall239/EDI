@@ -584,64 +584,6 @@ export default function UniversalSpreadsheet({
     };
   }, [currentData, univerInitialized, onDataUpdate]);
 
-  // Listen for addNewSheet event (from column extraction)
-  useEffect(() => {
-    const handleAddNewSheet = (event: CustomEvent) => {
-
-      const { sheetData, sheetName } = event.detail;
-
-      if (!univerAdapterRef.current?.isReady()) {
-        console.error('[Univer] Cannot add sheet - adapter not ready');
-        return;
-      }
-
-      try {
-        // Convert backend sheet_data (celldata format) to 2D array
-        if (sheetData && sheetData.celldata) {
-          const celldata = sheetData.celldata;
-
-          // Get dimensions
-          const maxRow = Math.max(...celldata.map((cell: any) => cell.r)) + 1;
-          const maxCol = Math.max(...celldata.map((cell: any) => cell.c)) + 1;
-
-          // Initialize 2D array
-          const dataArray: any[][] = [];
-          for (let r = 0; r < maxRow; r++) {
-            dataArray[r] = new Array(maxCol).fill('');
-          }
-
-          // Fill in the data from celldata
-          celldata.forEach((cell: any) => {
-            if (cell.v && cell.v.v !== undefined) {
-              dataArray[cell.r][cell.c] = cell.v.v;
-            }
-          });
-
-
-          // Add the sheet using UniverAdapter
-          const success = univerAdapterRef.current.addSheet(sheetName, dataArray);
-
-          if (success) {
-          } else {
-            console.error(`❌ [Univer] Failed to add sheet: ${sheetName}`);
-            alert('Failed to create new sheet. Please try again.');
-          }
-        } else {
-          console.error('[Univer] Invalid sheet data received');
-        }
-      } catch (error) {
-        console.error('[Univer] Error adding new sheet:', error);
-        alert(`Error creating new sheet: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    };
-
-    window.addEventListener('addNewSheet', handleAddNewSheet as EventListener);
-
-    return () => {
-      window.removeEventListener('addNewSheet', handleAddNewSheet as EventListener);
-    };
-  }, []);
-
   return (
     <div className="h-full w-full relative bg-background">
       {/* Chat Sidebar */}

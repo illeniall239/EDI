@@ -226,7 +226,6 @@ export default function HomePage() {
                 onRenameWorkspace={noop}
                 onDeleteWorkspace={noop}
                 onFileUpload={handleFileUploadFromNavbar}
-                onExtractColumns={noop}
                 onClearData={handleClearData}
                 onSpreadsheetCommand={async (command: string) => ({
                     success: true,
@@ -234,7 +233,6 @@ export default function HomePage() {
                 })}
                 onDataUpdate={setData}
                 onFileUploadFromSpreadsheet={handleFileUploadFromSpreadsheet}
-                setShowColumnExtraction={noop}
                 currentFilename={currentFilename}
                 initialSheets={initialSheets}
                 onAdapterReady={handleAdapterReady}

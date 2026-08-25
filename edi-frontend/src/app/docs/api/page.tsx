@@ -12,13 +12,11 @@ const CORE: Row[] = [
     { method: 'POST', path: '/api/upload', note: 'Upload a CSV or Excel file.' },
     { method: 'POST', path: '/api/query', note: 'Ask a question about the data. The main one.', metered: true },
     { method: 'POST', path: '/api/initialize-data', note: 'Load rows into a workspace without a file upload.' },
-    { method: 'GET', path: '/api/columns', note: 'Column names of the loaded dataset.' },
 ];
 
 const MODEL: Row[] = [
     { method: 'POST', path: '/api/classify-command', note: 'Classify a spreadsheet command. Returns only a validated classification object.', metered: true },
     { method: 'POST', path: '/api/orchestrate', note: 'Decompose a compound request into steps.', metered: true },
-    { method: 'POST', path: '/api/extract-columns', note: 'Pull structured columns out of free text.', metered: true },
 ];
 
 const WORKSPACE: Row[] = [

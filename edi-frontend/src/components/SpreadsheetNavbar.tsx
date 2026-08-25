@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { File, ChevronDown, Upload, Download, ChevronRight, Trash2, Settings, Columns3, Menu, Edit, Table, FileSpreadsheet } from 'lucide-react';
+import { File, ChevronDown, Upload, Download, ChevronRight, Trash2, Menu, Edit, Table, FileSpreadsheet } from 'lucide-react';
 import ConfirmationDialog from './ConfirmationDialog';
 
 interface Workspace {
@@ -21,7 +21,6 @@ interface SpreadsheetNavbarProps {
   
   // Data Operations
   onFileUpload?: (files: FileList) => void;
-  onExtractColumns: () => void;
   onClearData?: () => void;
   onExportCSV?: () => void;
   onExportExcel?: () => void;
@@ -30,7 +29,6 @@ interface SpreadsheetNavbarProps {
   // Tools
   
   // States for dialogs
-  setShowColumnExtraction: (show: boolean) => void;
   // Mode determines which controls are visible
 }
 
@@ -41,16 +39,13 @@ export default function SpreadsheetNavbar({
   onRenameWorkspace,
   onDeleteWorkspace,
   onFileUpload,
-  onExtractColumns: _onExtractColumns,
   onClearData,
   onExportCSV,
   onExportExcel,
   data,
-  setShowColumnExtraction,
 }: SpreadsheetNavbarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [fileDropdownOpen, setFileDropdownOpen] = useState(false);
-  const [toolsDropdownOpen, setToolsDropdownOpen] = useState(false);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -58,11 +53,9 @@ export default function SpreadsheetNavbar({
   const [editLoading, setEditLoading] = useState(false);
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
 
-  void _onExtractColumns;
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileDropdownRef = useRef<HTMLDivElement>(null);
-  const toolsDropdownRef = useRef<HTMLDivElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   
 
@@ -79,7 +72,6 @@ export default function SpreadsheetNavbar({
       if (isClickInsideSpreadsheet) {
         setDropdownOpen(false);
         setFileDropdownOpen(false);
-        setToolsDropdownOpen(false);
         setExportDropdownOpen(false);
         return;
       }
@@ -90,9 +82,6 @@ export default function SpreadsheetNavbar({
       }
       if (fileDropdownRef.current && !fileDropdownRef.current.contains(target)) {
         setFileDropdownOpen(false);
-      }
-      if (toolsDropdownRef.current && !toolsDropdownRef.current.contains(target)) {
-        setToolsDropdownOpen(false);
       }
       if (exportDropdownRef.current && !exportDropdownRef.current.contains(target)) {
         setExportDropdownOpen(false);
@@ -236,38 +225,6 @@ export default function SpreadsheetNavbar({
                   </div>
                 )}
               </div>
-
-              {/* Tools Menu */}
-              <div className="relative" ref={toolsDropdownRef}>
-                <button
-                  onClick={() => setToolsDropdownOpen(!toolsDropdownOpen)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-white/10 transition-all text-sm text-white hover:text-white"
-                >
-                  <Settings className="w-4 h-4" />
-                  Tools
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </button>
-
-                {toolsDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-2 w-56 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50">
-                    {data.length > 0 && (
-                      <button
-                        onClick={() => {
-                          setShowColumnExtraction(true);
-                          setToolsDropdownOpen(false);
-                        }}
-                        className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
-                      >
-                        <Columns3 className="w-4 h-4" />
-                        Extract Columns
-                      </button>
-                    )}
-
-                  </div>
-                )}
-              </div>
-
-
 
             </div>
 

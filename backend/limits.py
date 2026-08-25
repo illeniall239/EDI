@@ -110,7 +110,6 @@ def log_status():
 _METERED_PREFIXES = (
     "/api/query",
     "/api/orchestrate",
-    "/api/extract-columns",
     "/api/classify-command",
 )
 
