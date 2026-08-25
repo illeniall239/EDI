@@ -1398,7 +1398,7 @@ Rules:
         lowered = re.sub(r'\s+', ' ', sql.lower())
         if not lowered.startswith("select") and not lowered.startswith("with"):
             return None, "Only read-only chart queries are allowed."
-        if re.search(r'(insert|update|delete|drop|alter|create|replace|attach|pragma)', lowered):
+        if re.search(r'\b(insert|update|delete|drop|alter|create|replace|attach|pragma)\b', lowered):
             return None, "Only read-only chart queries are allowed."
 
         try:

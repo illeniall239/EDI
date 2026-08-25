@@ -8,6 +8,14 @@ target-version = "py311"
 line-length = 120
 
 [lint]
+# Stated explicitly rather than inherited. Ruff's implicit default is whatever
+# the installed version says it is, and CI installs ruff unpinned -- so leaving
+# this out meant a new ruff release could fail the build on code nobody had
+# touched. It did: 0.9.8 reported nothing here and 0.16.4 reported 356 things.
+# These four groups are pycodestyle errors and pyflakes, which is what this
+# project has been kept clean against.
+select = ["E4", "E7", "E9", "F"]
+
 # E701/E702 object to `if x: return` and `a = 1; b = 2`. That is a formatting
 # opinion rather than a defect, and this codebase uses the compact form in
 # enough places that enforcing it would mean a large diff that changes no
