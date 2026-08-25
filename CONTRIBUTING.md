@@ -36,19 +36,17 @@ cd edi-frontend && npm run lint && npm run build
 ```
 
 **There are no tests.** Not "the suite is small" — there is no test suite and no
-test runner configured. Adding one to a 180 KB `agent_services.py` is its own
+test runner configured. Adding one to a 146 KB `agent_services.py` is its own
 project, and a worthwhile contribution if you want one. Until then, changes are
 verified by running the thing.
 
 `ruff check backend` is clean and CI enforces it, so a failure there is
 something you introduced.
 
-`npm run lint` is **not** clean: it reports 9 errors and a warning, all
-React-hooks complaints in pre-existing components (`ChatSidebar`,
-`UniversalSpreadsheet`, `ThemeContext` and a few others). CI therefore builds
-the frontend but does not lint it. Fixing those is welcome as its own PR —
-please don't fold it into a behaviour change, because a diff that does both is
-much harder to review.
+`npm run lint` is clean too, and CI runs it. It includes the React Compiler
+rules, which are stricter than most projects are used to — setting state from
+an effect, or reading a ref during render, is an error rather than a warning.
+If one fires, the fix is usually to derive the value instead of storing it.
 
 ## House style
 

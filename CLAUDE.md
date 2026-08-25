@@ -63,7 +63,7 @@ cd edi-frontend
 npm install
 npm run dev          # Turbopack
 npm run build
-npm run lint         # NOT clean: 9 pre-existing React-hooks errors
+npm run lint         # must be clean; CI enforces it
 ```
 
 ## Environment configuration
