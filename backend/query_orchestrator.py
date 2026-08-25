@@ -15,6 +15,8 @@ from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
 import re
 
+from llm_text import content_of
+
 logger = logging.getLogger(__name__)
 
 
@@ -213,7 +215,7 @@ class QueryOrchestrator:
 
             # Use LangChain invoke pattern
             response = self.model.invoke([HumanMessage(content=decomposition_prompt)])
-            response_text = response.content.strip()
+            response_text = content_of(response)
             
             # Extract JSON from response
             json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
