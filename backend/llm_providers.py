@@ -208,6 +208,18 @@ def describe(config: Config) -> str:
     return ""
 
 
+# Model families that do their reasoning inside the completion and will not
+# take a temperature. Matched loosely on the name, since providers version
+# them (o3-mini, o4-mini-2025-04-16, gpt-5-mini).
+_REASONING_PREFIXES = ("o1", "o1-", "o3", "o4", "gpt-5")
+
+
+def _is_reasoning_model(model):
+    """Best-effort: does this model refuse temperature and max_tokens?"""
+    name = (model or "").lower().rsplit("/", 1)[-1]
+    return any(name == p or name.startswith(p + "-") for p in _REASONING_PREFIXES)
+
+
 def build(config: Config, temperature: float = 0.4):
     """
     Construct the LangChain chat model described by `config`.
@@ -229,11 +241,22 @@ def build(config: Config, temperature: float = 0.4):
             f"Install it with: pip install {spec.package}"
         ) from exc
 
-    kwargs = {
-        "model": config.model,
-        "temperature": temperature,
-        spec.max_tokens_kwarg: config.max_tokens,
-    }
+    kwargs = {"model": config.model}
+
+    # Reasoning models reject both of the knobs below. OpenAI's o-series and
+    # gpt-5 accept only the default temperature and refuse `max_tokens`
+    # outright, wanting `max_completion_tokens` instead -- so sending either
+    # fails the request rather than being ignored.
+    #
+    # This is a name check, which is a guess, but the failure it prevents is a
+    # hard 400 on every single call. A model it does not recognise still works
+    # if the endpoint tolerates the arguments, which is the common case.
+    if _is_reasoning_model(config.model):
+        kwargs["max_completion_tokens" if spec.max_tokens_kwarg == "max_tokens"
+               else spec.max_tokens_kwarg] = config.max_tokens
+    else:
+        kwargs["temperature"] = temperature
+        kwargs[spec.max_tokens_kwarg] = config.max_tokens
     if spec.key_kwarg:
         kwargs[spec.key_kwarg] = config.api_key or "not-needed"
     if spec.base_url_kwarg and config.base_url:

@@ -136,6 +136,38 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
                 </li>
             </ol>
 
+            <h2>Reasoning models</h2>
+            <p>
+                Models that work out loud — DeepSeek-R1, QwQ, Qwen3 in thinking mode,
+                OpenAI&apos;s o-series — are supported, with two things handled for you.
+            </p>
+            <p>
+                <strong>The thinking is removed before anything reads the reply.</strong>{' '}
+                Local reasoning models return their working inside the message, wrapped in{' '}
+                <code>&lt;think&gt;</code> tags, and Ollama and most OpenAI-compatible
+                servers pass it straight through. Nothing downstream expects that: the
+                chart path calls <code>JSON.parse</code> on the reply, and the read-only
+                SQL check tests that the query starts with <code>SELECT</code> rather than{' '}
+                <code>&lt;think&gt;</code>. Every reply is now read through one helper that
+                strips it, so the working never reaches a parser or your screen.
+            </p>
+            <p>
+                <strong>Unsupported parameters are dropped.</strong> OpenAI&apos;s o-series
+                and gpt-5 reject a custom <code>temperature</code>, and want{' '}
+                <code>max_completion_tokens</code> where other models want{' '}
+                <code>max_tokens</code> — sending the wrong one fails the request outright
+                rather than being ignored. Those models are recognised by name and sent
+                what they accept.
+            </p>
+            <div className="edi-note">
+                <strong>They are slower, and rarely worth it here.</strong> The work this
+                app asks of a model is short and well-specified: write one SQL query,
+                return one JSON object, answer with one word. Thinking tokens are billed
+                and waited on without changing those answers much. An instruction- or
+                code-tuned model of the same size is usually the better choice; reach for
+                reasoning when questions genuinely need several steps.
+            </div>
+
             <h2>Testing yours</h2>
             <p>
                 Rather than trusting a recommendation, measure the model you actually have:

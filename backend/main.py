@@ -35,6 +35,7 @@ from intelligent_analysis import IntelligentAnalyzer
 from smart_formatter import SmartFormatter
 import limits
 import settings
+from llm_text import content_of
 
 app = FastAPI()
 
@@ -850,7 +851,7 @@ async def generate_formula(request: FormulaRequest):
             ("system", "\n".join(system_lines)),
             ("human", prompt),
         ])
-        text = (reply.content or "").strip()
+        text = (content_of(reply) or "").strip()
     except Exception as exc:
         logger.error("Formula generation failed: %s", exc)
         raise HTTPException(
@@ -939,7 +940,7 @@ async def classify_command(request: ClassifyCommandRequest):
             ("system", "You are a spreadsheet command classifier. Return ONLY JSON matching the schema."),
             ("human", prompt),
         ])
-        text = (reply.content or "").strip()
+        text = (content_of(reply) or "").strip()
     except Exception as exc:
         logger.error("Command classification failed: %s", exc)
         raise HTTPException(status_code=502, detail="Could not reach the model.")
@@ -1448,7 +1449,7 @@ Important:
         response = llm.invoke(prompt)
 
         # Parse JSON response
-        content = response.content if hasattr(response, 'content') else str(response)
+        content = content_of(response) if hasattr(response, 'content') else str(response)
 
         # Extract JSON array
         json_match = re.search(r'\[\s*\[.*?\]\s*\]', content, re.DOTALL)

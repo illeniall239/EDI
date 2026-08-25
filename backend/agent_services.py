@@ -32,6 +32,7 @@ from typing import Tuple, Optional, Dict, Any
 from sqlalchemy import text as sa_text
 
 import sys
+from llm_text import content_of
 
 # The log messages carry emoji; a Windows console defaults to a codepage that
 # cannot encode them, and the resulting UnicodeEncodeError takes down the
@@ -318,7 +319,7 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
 
         Confirmation message:
         """
-        return self.llm.invoke(prompt).content.strip()
+        return content_of(self.llm.invoke(prompt))
 
 
     def generate_pandas_code(self, question, query_category):
@@ -378,7 +379,7 @@ except Exception as e:
             try:
                 if self.operation_cancelled_flag: 
                     return None, "I've stopped processing that request as you requested."
-                response = self.llm.invoke(prompt).content.strip()
+                response = content_of(self.llm.invoke(prompt))
                 if self.operation_cancelled_flag: 
                     return None, "I've stopped processing that request as you requested."
 
@@ -540,7 +541,7 @@ except Exception as e:
         
         try:
             response = self.llm.invoke(missing_values_check_prompt)
-            if response.content.strip().upper() == "YES":
+            if content_of(response).upper() == "YES":
                 return "MISSING_VALUES"
         except Exception as e:
             logger.error(f"LLM missing values detection failed: {str(e)}")
@@ -592,9 +593,9 @@ Only output the category name, nothing else.
             logger.info(f"🤖 LLM Prompt: {llm_prompt}")
             
             llm_response = self.llm.invoke(llm_prompt)
-            logger.info(f"🤖 LLM Raw response: '{llm_response.content}'")
+            logger.info(f"🤖 LLM Raw response: '{content_of(llm_response)}'")
             
-            category = llm_response.content.strip().upper()
+            category = content_of(llm_response).upper()
             logger.info(f"🤖 LLM Parsed category: '{category}'")
             
             if category in valid_categories:
@@ -767,7 +768,7 @@ Only output the category name, nothing else.
             """
             
             response = self.llm.invoke(llm_prompt)
-            llm_response = response.content.strip()
+            llm_response = content_of(response)
             
             # Check if LLM returned an action code
             if llm_response.startswith("ACTION:"):
@@ -890,7 +891,7 @@ Answer with exactly one word, DATA or HISTORY, and nothing else."""
 
                     route = "DATA"
                     try:
-                        reply = self.llm.invoke(route_prompt).content.strip().upper()
+                        reply = content_of(self.llm.invoke(route_prompt)).upper()
                         # Only a clear, unambiguous HISTORY diverts away from the
                         # data. A reply mentioning both, or neither, is a data
                         # question as far as this is concerned.
@@ -913,7 +914,7 @@ Answer with exactly one word, DATA or HISTORY, and nothing else."""
 Answer using only the conversation above. Address the user directly. If the
 conversation does not contain the answer, say so plainly and briefly."""
                         try:
-                            answer = self.llm.invoke(answer_prompt).content.strip()
+                            answer = content_of(self.llm.invoke(answer_prompt))
                             if answer:
                                 logger.debug("Query answered from conversation context")
                                 return answer
@@ -970,7 +971,7 @@ conversation does not contain the answer, say so plainly and briefly."""
 
                 data_science_prompt = f"As an expert in data science, answer the following question concisely, focusing on key concepts and practical advice. If the question is too broad, provide a high-level overview and suggest ways to narrow it down. Do not exceed 4-5 sentences. Question: {question}"
                 response_content = self.llm.invoke(data_science_prompt)
-                response = response_content.content.strip()
+                response = content_of(response_content)
 
                 if self.operation_cancelled_flag:
                     return "I've stopped processing that request as you requested."
@@ -1056,7 +1057,7 @@ IMPORTANT:
 
 Keep responses conversational, human-like, SHORT, and context-aware."""
                 response_content = self.llm.invoke(conversation_prompt)
-                response = response_content.content.strip()
+                response = content_of(response_content)
                 
                 # Note: AI response will be added to memory by unified system in process_query
                 return response
@@ -1374,7 +1375,7 @@ Rules:
 - Return raw JSON. No markdown code fences, no commentary.
 """
         try:
-            raw = self.llm.invoke(prompt).content.strip()
+            raw = content_of(self.llm.invoke(prompt))
         except Exception as e:
             logger.exception("Chart spec generation failed")
             return None, f"Could not generate a chart: {str(e)}"
@@ -1536,7 +1537,7 @@ Rules:
             Return ONLY the exact column name, nothing else.
             """
             
-            column_name_response = self.llm.invoke(extract_prompt).content.strip()
+            column_name_response = content_of(self.llm.invoke(extract_prompt))
             # Clean up potential quotes or extra text
             column_name = column_name_response.replace('"', '').replace("'", '').strip()
             
@@ -1602,7 +1603,7 @@ Rules:
                 """
                 
                 try:
-                    translation_response = self.llm.invoke(translation_prompt).content.strip()
+                    translation_response = content_of(self.llm.invoke(translation_prompt))
                     
                     # Parse the response to get translations
                     translation_lines = translation_response.split('\n')
@@ -1687,7 +1688,7 @@ Rules:
             try:
                 # Parse the JSON response - handle markdown code blocks
                 import json
-                response_content = analysis_response.content.strip()
+                response_content = content_of(analysis_response)
                 
                 # Remove markdown code block formatting if present
                 response_content = re.sub(r'^```(?:json)?\s*', '', response_content, flags=re.IGNORECASE | re.MULTILINE)
@@ -1808,7 +1809,7 @@ Rules:
                     """
                     
                     try:
-                        translation_response = self.llm.invoke(translation_prompt).content.strip()
+                        translation_response = content_of(self.llm.invoke(translation_prompt))
                         
                         # Parse the response to get translations
                         translation_lines = translation_response.split('\n')
@@ -1985,7 +1986,7 @@ Rules:
             try:
                 # Parse the JSON response - handle markdown code blocks
                 import json
-                response_content = analysis_response.content.strip()
+                response_content = content_of(analysis_response)
                 
                 # Remove markdown code block formatting if present
                 response_content = re.sub(r'^```(?:json)?\s*', '', response_content, flags=re.IGNORECASE | re.MULTILINE)
@@ -2018,7 +2019,7 @@ Rules:
                 
             except (json.JSONDecodeError, Exception) as e:
                 logger.error(f"❌ Failed to parse LLM response as JSON: {str(e)}")
-                logger.error(f"Response content: {analysis_response.content}")
+                logger.error(f"Response content: {content_of(analysis_response)}")
                 
                 # Extract column information manually and initialize variables
                 subset_columns = None
@@ -2241,7 +2242,7 @@ Rules:
             """
             # Get SQL query from LLM
             sql_response = self.llm.invoke(sql_prompt)
-            sql_query = sql_response.content.strip()
+            sql_query = content_of(sql_response)
             # --- Remove markdown code block formatting if present ---
             sql_query = re.sub(r'^```(?:sql)?\s*', '', sql_query, flags=re.IGNORECASE | re.MULTILINE)
             sql_query = re.sub(r'```$', '', sql_query, flags=re.MULTILINE)
@@ -2396,7 +2397,7 @@ Rules:
             
             # Get summary from LLM
             summary_response = self.llm.invoke(result_summary_prompt)
-            result_summary = summary_response.content.strip()
+            result_summary = content_of(summary_response)
             
             # Step 5: Combine table and summary into final response
             final_response = f"""
@@ -2480,7 +2481,7 @@ Rules:
             - If the result is empty or zero, say so clearly.
             """
             
-            formatted_response = self.llm.invoke(format_prompt).content.strip()
+            formatted_response = content_of(self.llm.invoke(format_prompt))
             logger.debug(f"✅ Formatted response: {formatted_response}")
             
             return formatted_response
@@ -2523,7 +2524,7 @@ Rules:
         """
         
         try:
-            enhanced_response = self.llm.invoke(enhanced_prompt).content.strip()
+            enhanced_response = content_of(self.llm.invoke(enhanced_prompt))
             # Convert any literal \n characters to actual newlines for proper markdown rendering
             enhanced_response = enhanced_response.replace('\\n', '\n')
             return enhanced_response
@@ -2577,7 +2578,7 @@ Rules:
             
             try:
                 import json
-                response_content = analysis_response.content.strip()
+                response_content = content_of(analysis_response)
                 # Remove markdown code blocks if present
                 response_content = response_content.replace('```json', '').replace('```', '').strip()
                 analysis = json.loads(response_content)
@@ -3075,7 +3076,7 @@ class DataCleaningAgent:
             """
             
             response = self.llm.invoke(prompt)
-            result_text = response.content.strip()
+            result_text = content_of(response)
             
             # Parse JSON response with robust markdown cleaning
             try:
