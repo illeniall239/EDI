@@ -1,11 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query, Request, Path
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 import os
-import sys
 import json
 import uuid
 import time
@@ -33,7 +31,6 @@ from agent_services import AgentServices
 from report_generator import ReportGenerator
 from query_orchestrator import get_orchestrator
 import workspace_store
-from workspace_ai_processor import create_ai_processor
 from intelligent_analysis import IntelligentAnalyzer
 from smart_formatter import SmartFormatter
 import limits
@@ -99,20 +96,17 @@ _WRITABLE_ROOT = (
     if os.environ.get("VERCEL") or not os.access(os.path.dirname(__file__), os.W_OK)
     else os.path.dirname(__file__)
 )
-CHARTS_DIR = os.path.join(_WRITABLE_ROOT, "static", "visualizations")
 REPORTS_DIR = os.path.join(_WRITABLE_ROOT, "generated_reports")
-os.makedirs(CHARTS_DIR, exist_ok=True)
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
-# Configure logging first
-logging.basicConfig(level=logging.DEBUG)
+# INFO by default: DEBUG logs the whole request payload on every call, which is
+# useful when developing and noise (and a privacy question) in a deployment.
+# Set EDI_LOG_LEVEL=DEBUG to get it back.
+logging.basicConfig(
+    level=os.environ.get("EDI_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)-8s %(name)s  %(message)s",
+)
 logger = logging.getLogger(__name__)
-
-# Mount static directory for serving visualizations
-# Serves anything written to CHARTS_DIR within the same instance. Charts are
-# returned as data for the client to render, so this is a fallback rather than
-# the primary path -- files here do not outlive the instance.
-app.mount("/static", StaticFiles(directory=os.path.join(_WRITABLE_ROOT, "static")), name="static")
 
 # Initialize our services
 data_handler = DataHandler()
@@ -167,26 +161,6 @@ def hydrate(workspace_id):
     return handler
 
 
-def _shape_visualization(visualization, question):
-    """
-    Normalise what AgentServices returned into the response payload.
-
-    Charts are now returned as a spec the client renders, so the payload
-    carries data rather than a file path. The legacy image branch stays for
-    anything still producing a file, but note that a path only resolves on the
-    instance that wrote it -- on serverless the file does not outlive the
-    invocation.
-    """
-    if visualization.get("type") == "chart_spec":
-        return visualization
-
-    return {
-        "type": visualization.get("type"),
-        "path": f"/static/visualizations/{visualization.get('filename', '')}",
-        "original_query": visualization.get("original_query", question),
-    }
-
-
 def persist(workspace_id):
     """Write the current DataFrame back to the workspace row after a mutation."""
     if not workspace_id:
@@ -198,12 +172,12 @@ def persist(workspace_id):
 
 # Check if LLM is properly configured
 if settings.LLM is None:
-    logger.error("LLM is not properly configured. Please check your GOOGLE_API_KEY environment variable.")
+    logger.error("LLM is not configured. See /api/health for what is missing.")
     agent_services = None
     report_generator = None
 else:
     try:
-        agent_services = AgentServices(llm=settings.LLM, charts_dir=CHARTS_DIR)
+        agent_services = AgentServices(llm=settings.LLM)
         agent_services.initialize_agents(data_handler)
         report_generator = ReportGenerator(
             data_handler=data_handler,
@@ -211,127 +185,31 @@ else:
         )
     except Exception as e:
         logger.error(f"Failed to initialize LLM services: {str(e)}")
-        logger.error("Please check your GOOGLE_API_KEY and ensure it's valid")
+        logger.error("See /api/health for the resolved provider and model")
         agent_services = None
         report_generator = None
 
 # --- Request/Response Models ---
 class QueryRequest(BaseModel):
     question: str
-    chat_id: Optional[str] = None  # NEW: Chat ID for context management
+    chat_id: Optional[str] = None
     is_speech: bool = False
+    mode: str = "simple"
     workspace_id: Optional[str] = None
-    workspace_type: Optional[str] = "work"  # NEW: Workspace type for AI context
 
 class ReportRequest(BaseModel):
     format: str = "pdf"
-    workspace_id: Optional[str] = None
-
-class CancelRequest(BaseModel):
-    operation_id: Optional[str] = None
-
-class ResetRequest(BaseModel):
     workspace_id: Optional[str] = None
 
 class ExtractColumnsRequest(BaseModel):
     selected_columns: List[str]
     sheet_name: Optional[str] = None
 
-class SyntheticDatasetRequest(BaseModel):
-    description: str
-    rows: Optional[int] = 100
-    columns: Optional[int] = None
-    column_specs: Optional[Dict[str, str]] = None
-
 class CompoundQueryRequest(BaseModel):
     query: str
     workspace_id: str
     chat_id: Optional[str] = None
-    workspace_type: Optional[str] = "work"  # NEW: Workspace type for AI context
     preview_only: bool = False  # If true, return execution plan without executing
-
-def create_fallback_dataset(description: str, rows: int) -> Dict:
-    """Create a simple fallback dataset when LLM parsing fails"""
-    import random
-    from datetime import datetime, timedelta
-    
-    # Analyze description to determine dataset type
-    desc_lower = description.lower()
-    
-    if 'sales' in desc_lower or 'revenue' in desc_lower:
-        # Sales dataset
-        products = ['Laptop', 'Mouse', 'Keyboard', 'Monitor', 'Headphones', 'Tablet', 'Phone', 'Speaker', 'Camera', 'Printer']
-        customers = ['John Smith', 'Sarah Johnson', 'Mike Brown', 'Lisa Davis', 'Tom Wilson', 'Amy Chen', 'David Lee', 'Emma Taylor']
-        
-        data = []
-        for i in range(rows):
-            data.append({
-                'Product': random.choice(products),
-                'Customer': random.choice(customers),
-                'Quantity': random.randint(1, 10),
-                'Price': round(random.uniform(10, 1000), 2),
-                'Date': (datetime.now() - timedelta(days=random.randint(0, 365))).strftime('%Y-%m-%d')
-            })
-        columns = ['Product', 'Customer', 'Quantity', 'Price', 'Date']
-        
-    elif 'employee' in desc_lower or 'staff' in desc_lower:
-        # Employee dataset
-        names = ['Alice Johnson', 'Bob Smith', 'Carol Davis', 'David Wilson', 'Eva Brown', 'Frank Lee', 'Grace Chen', 'Henry Taylor']
-        departments = ['Engineering', 'Marketing', 'Sales', 'HR', 'Finance', 'Operations']
-        
-        data = []
-        for i in range(rows):
-            data.append({
-                'Name': random.choice(names),
-                'Department': random.choice(departments),
-                'Salary': random.randint(40000, 120000),
-                'Experience': random.randint(1, 15),
-                'Hire_Date': (datetime.now() - timedelta(days=random.randint(30, 3650))).strftime('%Y-%m-%d')
-            })
-        columns = ['Name', 'Department', 'Salary', 'Experience', 'Hire_Date']
-        
-    elif 'student' in desc_lower or 'grade' in desc_lower or 'school' in desc_lower:
-        # Student grades dataset (what the user was trying to generate)
-        names = ['Alice Smith', 'Bob Johnson', 'Charlie Brown', 'David Lee', 'Emily Davis', 'Frank Wilson', 'Grace Rodriguez', 'Henry Garcia', 'Ivy Martinez', 'Jack Anderson']
-        subjects = ['Math', 'Science', 'English', 'History', 'Art', 'PE', 'Chemistry', 'Biology', 'Physics']
-        semesters = ['Fall 2023', 'Spring 2024', 'Fall 2024', 'Spring 2023']
-        
-        data = []
-        for i in range(rows):
-            data.append({
-                'Name': random.choice(names),
-                'Subject': random.choice(subjects),
-                'Grade': random.randint(65, 100),
-                'Semester': random.choice(semesters)
-            })
-        columns = ['Name', 'Subject', 'Grade', 'Semester']
-        
-    else:
-        # Generic dataset
-        data = []
-        for i in range(rows):
-            data.append({
-                'ID': i + 1,
-                'Name': f'Item {i + 1}',
-                'Category': random.choice(['A', 'B', 'C', 'D']),
-                'Value': round(random.uniform(1, 100), 2),
-                'Status': random.choice(['Active', 'Inactive', 'Pending'])
-            })
-        columns = ['ID', 'Name', 'Category', 'Value', 'Status']
-    
-    # Update the data handler with the new dataset
-    df = pd.DataFrame(data)
-    data_handler.update_df_and_db(df)
-    agent_services.initialize_agents(data_handler)
-    
-    return {
-        "success": True,
-        "message": f"Generated fallback dataset with {len(data)} rows and {len(columns)} columns",
-        "data": data,
-        "columns": columns,
-        "rows": len(data),
-        "dataset_name": f"Fallback {description}"
-    }
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
@@ -371,33 +249,27 @@ async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
         # what to do about them; the catch-all below would replace it with a
         # generic one and hide the reason.
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="I had trouble processing your file. Please make sure it's a valid data file (CSV, Excel, etc.) and try again.")
 
 @app.post("/api/query")
-async def process_query(query: Dict[str, Any]):
-    hydrate(query.get("workspace_id"))
-    print("🌐 === API ENDPOINT /api/query CALLED ===")
-    print(f"📥 Incoming request data: {query}")
-    print(f"🔍 Request type: {type(query)}")
-    print(f"🗂️ Request keys: {list(query.keys()) if isinstance(query, dict) else 'Not a dict'}")
-    
-    try:
-        question = limits.enforce_question_length(query.get("question"))
-        chat_id = query.get("chat_id")  # NEW: Extract chat_id
-        is_speech = query.get("is_speech", False)
-        mode = query.get("mode", "simple")  # NEW: Extract mode, default to simple
-        workspace_type = query.get("workspace_type", "work")  # NEW: Extract workspace type
+async def process_query(query: QueryRequest):
+    hydrate(query.workspace_id)
 
-        print(f"📝 === EXTRACTED PARAMETERS ===")
-        print(f"   - Question: '{question}'")
-        print(f"   - Chat ID: {chat_id}")
-        print(f"   - Is Speech: {is_speech}")
-        print(f"   - Mode: {mode}")
-        print(f"   - Workspace Type: {workspace_type}")
+    try:
+        question = limits.enforce_question_length(query.question)
+        chat_id = query.chat_id
+        is_speech = query.is_speech
+        mode = query.mode
+
+        logger.debug("📝 === EXTRACTED PARAMETERS ===")
+        logger.debug(f"   - Question: '{question}'")
+        logger.debug(f"   - Chat ID: {chat_id}")
+        logger.debug(f"   - Is Speech: {is_speech}")
+        logger.debug(f"   - Mode: {mode}")
         
         if not question:
-            print("❌ No question provided in request")
+            logger.debug("❌ No question provided in request")
             raise HTTPException(status_code=400, detail="I'm ready to help! What would you like to know or do with your data?")
         
         # Check for duplicate removal patterns first for more reliable detection
@@ -409,13 +281,13 @@ async def process_query(query: Dict[str, Any]):
         
         is_duplicate_removal = any(keyword in question.lower() for keyword in duplicate_keywords)
         if is_duplicate_removal:
-            print("🧹 === DUPLICATE REMOVAL DETECTED IN API ENDPOINT ===")
-            print(f"💬 Query: {question}")
-            print(f"🔍 Matched keywords: {[k for k in duplicate_keywords if k in question.lower()]}")
+            logger.debug("🧹 === DUPLICATE REMOVAL DETECTED IN API ENDPOINT ===")
+            logger.debug(f"💬 Query: {question}")
+            logger.debug(f"🔍 Matched keywords: {[k for k in duplicate_keywords if k in question.lower()]}")
             # Capture initial data shape for comparison
             initial_df = data_handler.get_df()
             initial_shape = initial_df.shape if initial_df is not None else None
-            print(f"📊 Initial data shape: {initial_shape}")
+            logger.debug(f"📊 Initial data shape: {initial_shape}")
 
         # Check for junk detection patterns for reliable refresh detection  
         junk_keywords = [
@@ -425,20 +297,20 @@ async def process_query(query: Dict[str, Any]):
         ]
         
         is_junk_detection = any(keyword in question.lower() for keyword in junk_keywords)
-        print(f"🔍 Junk detection check: {is_junk_detection}")
+        logger.debug(f"🔍 Junk detection check: {is_junk_detection}")
         if is_junk_detection:
-            print("🧹 === JUNK DETECTION DETECTED IN API ENDPOINT ===")
-            print(f"💬 Query: {question}")
-            print(f"🔍 Matched keywords: {[k for k in junk_keywords if k in question.lower()]}")
+            logger.debug("🧹 === JUNK DETECTION DETECTED IN API ENDPOINT ===")
+            logger.debug(f"💬 Query: {question}")
+            logger.debug(f"🔍 Matched keywords: {[k for k in junk_keywords if k in question.lower()]}")
             # Capture initial columns for comparison
             initial_df = data_handler.get_df()
             initial_columns = list(initial_df.columns) if initial_df is not None else []
-            print(f"📊 Initial columns count: {len(initial_columns)}")
-            print(f"📊 Initial columns: {initial_columns}")
-            print("🧹 Initial columns captured for junk detection")
+            logger.debug(f"📊 Initial columns count: {len(initial_columns)}")
+            logger.debug(f"📊 Initial columns: {initial_columns}")
+            logger.debug("🧹 Initial columns captured for junk detection")
         
-        print("🔄 === CALLING AGENT SERVICES ===")
-        print(f"🤖 Agent services instance: {agent_services}")
+        logger.debug("🔄 === CALLING AGENT SERVICES ===")
+        logger.debug(f"🤖 Agent services instance: {agent_services}")
         
         # Check if agent_services is properly initialized
         if agent_services is None:
@@ -447,95 +319,70 @@ async def process_query(query: Dict[str, Any]):
                 detail="I'm having trouble accessing my AI capabilities right now. Please try again in a moment or contact support if the issue persists."
             )
         
-        print(f"🗃️ Data handler has data: {data_handler.get_df() is not None}")
+        logger.debug(f"🗃️ Data handler has data: {data_handler.get_df() is not None}")
         if data_handler.get_df() is not None:
             df = data_handler.get_df()
-            print(f"📊 Data shape: {df.shape}")
-            print(f"🏷️ Data columns: {df.columns.tolist()}")
+            logger.debug(f"📊 Data shape: {df.shape}")
+            logger.debug(f"🏷️ Data columns: {df.columns.tolist()}")
         
         # Ensure AgentServices is always linked to an active DataHandler (covers direct page refresh w/ saved data)
-        print(f"🔍 DEBUG - agent_services.data_handler is None: {agent_services.data_handler is None}")
-        print(f"🔍 DEBUG - data_handler is None: {data_handler is None}")
+        logger.debug(f"🔍 DEBUG - agent_services.data_handler is None: {agent_services.data_handler is None}")
+        logger.debug(f"🔍 DEBUG - data_handler is None: {data_handler is None}")
         if data_handler is not None:
             df = data_handler.get_df()
-            print(f"🔍 DEBUG - data_handler.get_df() is None: {df is None}")
+            logger.debug(f"🔍 DEBUG - data_handler.get_df() is None: {df is None}")
             if df is not None:
-                print(f"🔍 DEBUG - DataFrame shape: {df.shape}")
+                logger.debug(f"🔍 DEBUG - DataFrame shape: {df.shape}")
             db_obj = data_handler.get_db_sqlalchemy_object()
-            print(f"🔍 DEBUG - data_handler.get_db_sqlalchemy_object() is None: {db_obj is None}")
+            logger.debug(f"🔍 DEBUG - data_handler.get_db_sqlalchemy_object() is None: {db_obj is None}")
         
         if agent_services.data_handler is None:
-            print("🔄 Initializing agents with data handler")
+            logger.debug("🔄 Initializing agents with data handler")
             agent_services.initialize_agents(data_handler)
         else:
-            print("✅ AgentServices already has data handler")
+            logger.debug("✅ AgentServices already has data handler")
         
         # NEW: Switch to the specific chat context if provided
         if chat_id:
-            print(f"🔄 Switching to chat context: {chat_id}")
+            logger.debug(f"🔄 Switching to chat context: {chat_id}")
             agent_services.switch_chat_context(chat_id)
         else:
-            print("⚠️ No chat_id provided, using default context")
+            logger.debug("⚠️ No chat_id provided, using default context")
         
-        # NEW: Apply workspace-type-aware AI processing
-        ai_processor = create_ai_processor(workspace_type)
-        context = {
-            "workspace_type": workspace_type,
-            "chat_id": chat_id,
-            "is_speech": is_speech,
-            "mode": mode
-        }
 
-        # Pre-process query based on workspace type
-        processing_result = await ai_processor.process_query(question, context)
-
-        # Handle Learn Mode redirects and teaching responses
-        if workspace_type == "learn" and processing_result.get("response_type") in ["socratic_redirect", "prerequisite_redirect"]:
-            print(f"📚 === LEARN MODE REDIRECT ===")
-            print(f"🔄 Redirect type: {processing_result.get('response_type')}")
-            return {
-                "response": processing_result.get("response", ""),
-                "type": processing_result.get("response_type"),
-                "guiding_questions": processing_result.get("guiding_questions", []),
-                "suggested_concept": processing_result.get("suggested_concept"),
-                "requires_teaching": True,
-                "workspace_type": workspace_type
-            }
-
-        print("🚀 === CALLING AGENT SERVICES ===")
-        print(f"📤 Sending to agent_services.process_query:")
-        print(f"   - question: '{question}'")
-        print(f"   - is_speech: {is_speech}")
-        print(f"   - mode: {mode}")
-        print(f"   - workspace_type: {workspace_type}")
+        logger.debug("🚀 === CALLING AGENT SERVICES ===")
+        logger.debug("📤 Sending to agent_services.process_query:")
+        logger.debug(f"   - question: '{question}'")
+        logger.debug(f"   - is_speech: {is_speech}")
+        logger.debug(f"   - mode: {mode}")
 
         response, visualization = agent_services.process_query(question, is_speech, mode)
         
-        print("🎉 === AGENT SERVICES COMPLETED ===")
-        print(f"💬 Response: {response}")
-        print(f"🎨 Visualization: {visualization}")
-        print(f"📄 Response type: {type(response)}")
-        print(f"🖼️ Visualization type: {type(visualization)}")
+        logger.debug("🎉 === AGENT SERVICES COMPLETED ===")
+        logger.debug(f"💬 Response: {response}")
+        logger.debug(f"🎨 Visualization: {visualization}")
+        logger.debug(f"📄 Response type: {type(response)}")
+        logger.debug(f"🖼️ Visualization type: {type(visualization)}")
         
         # Check if response is a JSON clarification
-        print("🔍 === CHECKING RESPONSE TYPE ===")
+        logger.debug("🔍 === CHECKING RESPONSE TYPE ===")
         if isinstance(response, str) and response.strip().startswith('{'):
-            print("🤔 Response looks like JSON - might be a clarification request")
+            logger.debug("🤔 Response looks like JSON - might be a clarification request")
             try:
                 import json
                 json_response = json.loads(response)
                 if json_response.get('type') == 'clarification':
-                    print("✅ CONFIRMED: This is a clarification response!")
-                    print(f"🔍 Clarification details: {json_response}")
+                    logger.debug("✅ CONFIRMED: This is a clarification response!")
+                    logger.debug(f"🔍 Clarification details: {json_response}")
                 else:
-                    print("ℹ️ JSON response but not clarification type")
+                    logger.debug("ℹ️ JSON response but not clarification type")
             except json.JSONDecodeError:
-                print("⚠️ Failed to parse response as JSON")
+                logger.error("⚠️ Failed to parse response as JSON")
         else:
-            print("📝 Response is regular text, not JSON")
+            logger.debug("📝 Response is regular text, not JSON")
         
         response_data = {"response": response}
-        print(f"📦 Base response data: {response_data}")
+        logger.debug(f"📦 Base response data: {response_data}")
 
         # NOTE: Luckysheet parsing removed - all spreadsheet operations now use Univer frontend
         
@@ -544,60 +391,60 @@ async def process_query(query: Dict[str, Any]):
         
         # For duplicate removal, explicitly compare shapes before and after processing
         if is_duplicate_removal:
-            print("🧹 === CHECKING DUPLICATE REMOVAL RESULTS ===")
+            logger.debug("🧹 === CHECKING DUPLICATE REMOVAL RESULTS ===")
             updated_df = data_handler.get_df()
             updated_shape = updated_df.shape if updated_df is not None else None
-            print(f"📊 Updated data shape: {updated_shape}")
+            logger.debug(f"📊 Updated data shape: {updated_shape}")
             
             if initial_shape and updated_shape and initial_shape[0] > updated_shape[0]:
-                print(f"✅ Duplicate removal confirmed! Rows before: {initial_shape[0]}, rows after: {updated_shape[0]}")
-                print(f"🧹 Removed {initial_shape[0] - updated_shape[0]} rows")
+                logger.debug(f"✅ Duplicate removal confirmed! Rows before: {initial_shape[0]}, rows after: {updated_shape[0]}")
+                logger.debug(f"🧹 Removed {initial_shape[0] - updated_shape[0]} rows")
                 data_modified = True
             else:
-                print("⚠️ No rows were removed or shape comparison failed")
+                logger.error("⚠️ No rows were removed or shape comparison failed")
                 
                 # Even if no rows were removed, check if the response indicates DATA_MODIFIED
                 if response and isinstance(response, str) and "DATA_MODIFIED:" in response:
-                    print("📋 Response indicates data was modified, forcing frontend update")
+                    logger.debug("📋 Response indicates data was modified, forcing frontend update")
                     data_modified = True
         elif is_junk_detection:
-            print("🧹 === CHECKING JUNK DETECTION RESULTS ===")
-            print(f"🔍 Variable scope check: 'initial_columns' in locals() = {'initial_columns' in locals()}")
+            logger.debug("🧹 === CHECKING JUNK DETECTION RESULTS ===")
+            logger.debug(f"🔍 Variable scope check: 'initial_columns' in locals() = {'initial_columns' in locals()}")
             updated_df = data_handler.get_df()
-            print(f"📊 Updated DataFrame available: {updated_df is not None}")
+            logger.debug(f"📊 Updated DataFrame available: {updated_df is not None}")
             
             # Check if initial_columns was captured (variable exists in scope)
             if 'initial_columns' in locals() and updated_df is not None and initial_columns:
-                print(f"✅ Initial columns variable exists with {len(initial_columns)} columns")
+                logger.debug(f"✅ Initial columns variable exists with {len(initial_columns)} columns")
                 updated_columns = list(updated_df.columns)
                 new_columns = [col for col in updated_columns if col not in initial_columns]
-                print(f"📊 Updated columns count: {len(updated_columns)}")
-                print(f"📊 Updated columns: {updated_columns}")
-                print(f"🆕 New columns detected: {new_columns}")
+                logger.debug(f"📊 Updated columns count: {len(updated_columns)}")
+                logger.debug(f"📊 Updated columns: {updated_columns}")
+                logger.debug(f"🆕 New columns detected: {new_columns}")
                 
                 # Check if any new column contains 'junk_flag'
                 junk_flag_columns = [col for col in new_columns if 'junk_flag' in col.lower()]
                 if junk_flag_columns:
-                    print(f"✅ Junk flag column detected: {junk_flag_columns}")
+                    logger.debug(f"✅ Junk flag column detected: {junk_flag_columns}")
                     data_modified = True
                 else:
-                    print("⚠️ No junk flag column found in new columns")
+                    logger.debug("⚠️ No junk flag column found in new columns")
                     
                     # Fallback: check if response indicates DATA_MODIFIED
                     if response and isinstance(response, str) and "DATA_MODIFIED:" in response:
-                        print("📋 Response indicates data was modified, forcing frontend update")
+                        logger.debug("📋 Response indicates data was modified, forcing frontend update")
                         data_modified = True
             else:
                 if 'initial_columns' not in locals():
-                    print("❌ initial_columns variable not found in scope")
+                    logger.debug("❌ initial_columns variable not found in scope")
                 elif updated_df is None:
-                    print("❌ Updated DataFrame is None")
+                    logger.debug("❌ Updated DataFrame is None")
                 elif not initial_columns:
-                    print("❌ initial_columns is empty")
-                print("⚠️ No initial columns captured or no updated data available")
+                    logger.debug("❌ initial_columns is empty")
+                logger.debug("⚠️ No initial columns captured or no updated data available")
                 # Fallback: check if response indicates DATA_MODIFIED
                 if response and isinstance(response, str) and "DATA_MODIFIED:" in response:
-                    print("📋 Response indicates data was modified, forcing frontend update")
+                    logger.debug("📋 Response indicates data was modified, forcing frontend update")
                     data_modified = True
         else:
             # General data modification check for other operations
@@ -608,13 +455,13 @@ async def process_query(query: Dict[str, Any]):
             
             # Also check if the response indicates DATA_MODIFIED
             if response and isinstance(response, str) and "DATA_MODIFIED:" in response:
-                print("📋 Response indicates data was modified, forcing frontend update")
+                logger.debug("📋 Response indicates data was modified, forcing frontend update")
                 data_modified = True
         
-        print(f"🔄 Data modification detected: {data_modified}")
+        logger.debug(f"🔄 Data modification detected: {data_modified}")
         
         if data_modified:
-            print("🔄 === DATA MODIFICATION DETECTED ===")
+            logger.debug("🔄 === DATA MODIFICATION DETECTED ===")
             # Get the updated data
             updated_df = data_handler.get_df()
             if updated_df is not None:
@@ -626,92 +473,38 @@ async def process_query(query: Dict[str, Any]):
                     "columns": updated_df.columns.tolist(),
                     "rows": len(updated_df)
                 }
-                persist(query.get("workspace_id"))
-                print(f"📊 Updated data included in response: {len(updated_df)} rows, {len(updated_df.columns)} columns")
+                persist(query.workspace_id)
+                logger.debug(f"📊 Updated data included in response: {len(updated_df)} rows, {len(updated_df.columns)} columns")
             else:
-                print("⚠️ Data handler returned None after modification")
+                logger.debug("⚠️ Data handler returned None after modification")
         
         if visualization:
-            print("🎨 === PROCESSING VISUALIZATION ===")
-            print(f"🔍 Visualization type: {visualization.get('type')}")
-            response_data["visualization"] = _shape_visualization(visualization, question)
-            print(f"✅ Visualization added to response: {response_data['visualization'].get('type')}")
+            logger.debug("🎨 === PROCESSING VISUALIZATION ===")
+            logger.debug(f"🔍 Visualization type: {visualization.get('type')}")
+            response_data["visualization"] = visualization
+            logger.debug(f"✅ Visualization added to response: {response_data['visualization'].get('type')}")
         else:
-            print("ℹ️ No visualization to add to response")
+            logger.debug("ℹ️ No visualization to add to response")
         
-        print("📤 === SENDING RESPONSE ===")
-        print(f"🎁 Final response data: {response_data}")
-        print(f"📊 Response data keys: {list(response_data.keys())}")
-        print(f"📏 Response size: {len(str(response_data))} characters")
+        logger.debug("📤 === SENDING RESPONSE ===")
+        logger.debug(f"🎁 Final response data: {response_data}")
+        logger.debug(f"📊 Response data keys: {list(response_data.keys())}")
+        logger.debug(f"📏 Response size: {len(str(response_data))} characters")
         
         return response_data
         
     except HTTPException as he:
-        print(f"⚠️ === HTTP EXCEPTION ===")
-        print(f"🔢 Status code: {he.status_code}")
-        print(f"📝 Detail: {he.detail}")
+        logger.debug("⚠️ === HTTP EXCEPTION ===")
+        logger.debug(f"🔢 Status code: {he.status_code}")
+        logger.debug(f"📝 Detail: {he.detail}")
         raise he
     except Exception as e:
-        print(f"❌ === UNEXPECTED ERROR ===")
-        print(f"💥 Error type: {type(e)}")
-        print(f"📋 Error message: {str(e)}")
-        print(f"🗂️ Error details: {repr(e)}")
+        logger.error("❌ === UNEXPECTED ERROR ===")
+        logger.error(f"💥 Error type: {type(e)}")
+        logger.error(f"📋 Error message: {str(e)}")
+        logger.error(f"🗂️ Error details: {repr(e)}")
         import traceback
-        print(f"📚 Full traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/clarification-choice")
-async def process_clarification_choice(request: Dict[str, Any]):
-    """
-    Process user's clarification choice and execute the selected action.
-    """
-    try:
-        hydrate(request.get("workspace_id"))
-        choice_id = request.get("choice_id")
-        original_query = request.get("original_query")
-        category = request.get("category")
-        
-        if not all([choice_id, original_query, category]):
-            raise HTTPException(status_code=400, detail="Missing required parameters")
-        
-        print(f"🎯 Processing clarification choice: {choice_id} for query: '{original_query}'")
-        
-        # Process the clarification choice
-        response, visualization = agent_services.process_clarification_choice(
-            choice_id, original_query, category
-        )
-        
-        # Prepare response data
-        response_data = {
-            "response": response,
-            "success": True,
-            "clarification_resolved": True
-        }
-        
-        # Check for data modifications
-        data_modified = any(keyword in original_query.lower() for keyword in [
-            'translate', 'clean', 'remove', 'add column', 'delete', 'modify', 'update', 'transform'
-        ])
-        
-        if data_modified:
-            updated_df = data_handler.get_df()
-            if updated_df is not None:
-                updated_df = updated_df.replace({np.nan: None})
-                response_data["data_updated"] = True
-                response_data["updated_data"] = {
-                    "data": updated_df.to_dict(orient="records"),
-                    "columns": updated_df.columns.tolist(),
-                    "rows": len(updated_df)
-                }
-                persist(request.get("workspace_id"))
-        
-        if visualization:
-            response_data["visualization"] = _shape_visualization(visualization, original_query)
-        
-        return response_data
-        
-    except Exception as e:
-        print(f"❌ Error processing clarification choice: {str(e)}")
+        logger.debug(f"📚 Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/generate-report")
@@ -730,7 +523,7 @@ async def generate_report(report_request: ReportRequest, background_tasks: Backg
         # Custom progress callback for API
         def progress_callback(progress, description=None):
             # This would be used for WebSockets in a more advanced implementation
-            print(f"Report generation progress: {progress:.2f} - {description}")
+            logger.debug(f"Report generation progress: {progress:.2f} - {description}")
         
         # Generate report in background
         background_tasks.add_task(
@@ -786,256 +579,6 @@ async def reset_state():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/spreadsheet-command")
-async def process_spreadsheet_command(query: Dict[str, Any]):
-    """DEPRECATED: This endpoint is no longer used.
-
-    All spreadsheet operations now execute directly through the Univer FacadeAPI
-    on the frontend via UniverAdapter. This endpoint previously generated Luckysheet
-    API calls but has been disabled.
-    """
-    logger.info("Deprecated /api/spreadsheet-command endpoint called")
-    return {
-        "success": False,
-        "message": "This endpoint is deprecated. Spreadsheet operations are now handled directly by the Univer frontend.",
-        "deprecated": True
-    }
-    # NOTE: ~865 lines of unreachable Luckysheet generation code removed during Phase 3 cleanup
-@app.post("/api/range-filter")
-async def process_range_filter(filter_request: Dict[str, Any]):
-    hydrate(filter_request.get("workspace_id"))
-    """
-    Apply or remove range filters on spreadsheet data.
-    Supports filtering by column values (exact match or contains).
-    """
-    try:
-        logger.info("🔍 === RANGE FILTER DEBUG START ===")
-        logger.info(f"📥 Received request: {filter_request}")
-        
-        action = filter_request.get("action", "open")  # "open" or "close"
-        sheet_context = filter_request.get("sheet_context", {})
-        
-        if action == "close":
-            logger.info("🧹 Processing clear filter request")
-            logger.info("🎬 Returning setRangeFilter close command")
-            
-            # Clear all filters - return simple success response
-            # Use setRangeFilter with "close" type to remove filters
-            result = {
-                "success": True,
-                "message": "All filters cleared",
-                "action": {
-                    "type": "luckysheet_api", 
-                    "payload": {
-                        "method": "setRangeFilter",
-                        "params": ["close", {}]
-                    }
-                }
-            }
-            
-            logger.info(f"✅ Clear filter result: {result}")
-            return result
-            
-        # For opening/applying filters
-        logger.info("🎯 Processing apply filter request")
-        logger.info(f"📊 Sheet context available: {bool(sheet_context)}")
-        
-        if sheet_context:
-            logger.info(f"📐 Sheet dimensions: {sheet_context.get('total_rows')}x{sheet_context.get('total_cols')}")
-            logger.info(f"📋 Headers: {sheet_context.get('headers', [])}")
-        
-        if data_handler.get_df() is None:
-            raise HTTPException(status_code=400, detail="No data loaded")
-            
-        column = filter_request.get("column")  # Column index or name
-        filter_value = filter_request.get("filter_value", "")
-        filter_type = filter_request.get("filter_type", "exact")  # "exact" or "contains"
-        range_spec = filter_request.get("range")  # Optional range specification
-        
-        logger.info(f"🎯 Filter parameters:")
-        logger.info(f"   Column: {column}")
-        logger.info(f"   Value: {filter_value}")
-        logger.info(f"   Type: {filter_type}")
-        logger.info(f"   Range: {range_spec}")
-        
-        if column is None:
-            raise HTTPException(status_code=400, detail="Column parameter is required")
-            
-        df = data_handler.get_df()
-        
-        # Smart column resolution using sheet context if available
-        column_index = None
-        column_name = None
-        
-        if sheet_context and sheet_context.get('headers'):
-            headers = sheet_context['headers']
-            logger.info(f"🔍 Using sheet context for column resolution")
-            logger.info(f"📋 Available headers: {headers}")
-            
-            # First try exact match with headers
-            if isinstance(column, str):
-                for i, header_cell in enumerate(headers):
-                    # Extract header text from cell object or use as-is
-                    header_text = ""
-                    if isinstance(header_cell, dict):
-                        header_text = str(header_cell.get('m', '') or header_cell.get('v', ''))
-                    else:
-                        header_text = str(header_cell or '')
-                    
-                    logger.info(f"   Checking header[{i}]: '{header_text}' vs '{column}'")
-                    
-                    if header_text.lower() == column.lower():
-                        column_index = i
-                        column_name = header_text  # Use the clean extracted text
-                        logger.info(f"✅ Found exact header match: '{column}' -> column {column_index}")
-                        break
-                
-                # If not found by header name, try as column letter (A, B, C, etc.)
-                if column_index is None and len(column) == 1 and column.upper().isalpha():
-                    column_index = ord(column.upper()) - ord('A')
-                    if column_index < len(headers):
-                        # Extract clean text from header cell
-                        header_cell = headers[column_index]
-                        if isinstance(header_cell, dict):
-                            column_name = str(header_cell.get('m', '') or header_cell.get('v', ''))
-                        else:
-                            column_name = str(header_cell or '')
-                        
-                        if not column_name:  # Fallback if no text found
-                            column_name = f"Column {column.upper()}"
-                            
-                        logger.info(f"✅ Resolved column letter: '{column}' -> column {column_index}")
-                    else:
-                        column_index = None
-            else:
-                column_index = int(column)
-                if column_index < len(headers):
-                    # Extract clean text from header cell
-                    header_cell = headers[column_index]
-                    if isinstance(header_cell, dict):
-                        column_name = str(header_cell.get('m', '') or header_cell.get('v', ''))
-                    else:
-                        column_name = str(header_cell or '')
-                    
-                    if not column_name:  # Fallback if no text found
-                        column_name = f"Column {column_index + 1}"
-                        
-                    logger.info(f"✅ Using column index: {column} -> column {column_index}")
-        else:
-            # Fallback to DataFrame column resolution
-            logger.info(f"⚠️ No sheet context, using DataFrame for column resolution")
-            if isinstance(column, str):
-                # Try to find column by name (case insensitive)
-                column_lower = column.lower()
-                for i, col_name in enumerate(df.columns):
-                    if col_name.lower() == column_lower:
-                        column_index = i
-                        column_name = col_name
-                        break
-                
-                # If not found by name, try as column letter (A, B, C, etc.)
-                if column_index is None and len(column) == 1 and column.upper().isalpha():
-                    column_index = ord(column.upper()) - ord('A')
-                    if column_index < len(df.columns):
-                        column_name = df.columns[column_index]
-                    
-                if column_index is None:
-                    raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
-            else:
-                column_index = int(column)
-                if column_index < len(df.columns):
-                    column_name = df.columns[column_index]
-            
-        # Validate column index
-        if column_index is None or column_index < 0:
-            logger.error(f"❌ Could not resolve column: '{column}'")
-            raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
-            
-        if sheet_context and column_index >= sheet_context.get('total_cols', 0):
-            logger.error(f"❌ Column index {column_index} out of range (max: {sheet_context.get('total_cols', 0) - 1})")
-            raise HTTPException(status_code=400, detail=f"Column index {column_index} out of range")
-        elif not sheet_context and column_index >= len(df.columns):
-            logger.error(f"❌ Column index {column_index} out of range (max: {len(df.columns) - 1})")
-            raise HTTPException(status_code=400, detail=f"Column index {column_index} out of range")
-            
-        logger.info(f"✅ Column resolution successful:")
-        logger.info(f"   Input: '{column}' -> Index: {column_index}, Name: '{column_name}'")
-            
-        # Intelligent range calculation using sheet context
-        logger.info("📏 Calculating filter range...")
-        
-        if sheet_context:
-            # Use sheet context for accurate range calculation
-            total_rows = sheet_context.get('total_rows', len(df) + 1)  # +1 for header
-            total_cols = sheet_context.get('total_cols', len(df.columns))
-            
-            # Include header row (row 0) in the range for proper filter placement
-            start_row = 0  # Include header row (row 1 in Luckysheet 1-based indexing)
-            end_row = total_rows - 1  # Last data row (0-based to 1-based conversion handled below)
-            start_col = 0  # Start from first column
-            end_col = total_cols - 1  # Last column
-            
-            logger.info(f"📊 Using sheet context dimensions: {total_rows} rows x {total_cols} cols")
-        else:
-            # Fallback to DataFrame dimensions
-            start_row = 0  # Include header row
-            end_row = len(df)  # DataFrame rows (header not included in df)
-            start_col = 0
-            end_col = len(df.columns) - 1
-            
-            logger.info(f"📊 Using DataFrame dimensions: {len(df)} data rows + 1 header")
-            
-        # Build the range string for Luckysheet (1-based indexing)
-        start_col_letter = chr(ord('A') + start_col)
-        end_col_letter = chr(ord('A') + end_col)
-        luckysheet_range = f"{start_col_letter}{start_row + 1}:{end_col_letter}{end_row + 1}"
-        
-        logger.info(f"📏 Calculated range:")
-        logger.info(f"   Start: Row {start_row + 1}, Col {start_col_letter}")
-        logger.info(f"   End: Row {end_row + 1}, Col {end_col_letter}")
-        logger.info(f"   Final range: {luckysheet_range}")
-        
-        # Generate user-friendly message
-        display_column_name = column_name or df.columns[column_index] if column_index < len(df.columns) else f"Column {column_index + 1}"
-        message = f"Applied filter to {display_column_name} column. Use the dropdown in the header to select '{filter_value}' to filter the data."
-            
-        logger.info(f"💬 Generated message: {message}")
-            
-        # Return structured response for frontend execution
-        # Use setRangeFilter with "open" type and proper range setting
-        result = {
-            "success": True,
-            "message": message,
-            "action": {
-                "type": "luckysheet_api",
-                "payload": {
-                    "method": "setRangeFilter", 
-                    "params": ["open", {"range": luckysheet_range, "order": 0}]
-                }
-            },
-            # Keep minimal filter data for debugging
-            "filter_data": {
-                "column": column_index,
-                "filter_value": filter_value,
-                "filter_type": filter_type,
-                "range": luckysheet_range,
-                "column_name": display_column_name
-            }
-        }
-        
-        logger.info("🎬 === GENERATING LUCKYSHEET COMMAND ===")
-        logger.info(f"🔧 Method: setRangeFilter")
-        logger.info(f"📋 Params: ['open', {{'range': '{luckysheet_range}', 'order': 0}}]")
-        logger.info(f"💬 Message: {message}")
-        logger.info(f"📊 Filter data: {result['filter_data']}")
-        logger.info("✅ === RANGE FILTER DEBUG END ===")
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error in range filter processing: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/api/initialize-data")
 async def initialize_backend_with_data(request: Dict[str, Any]):
     """
@@ -1054,8 +597,8 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
         # -- otherwise it is a way around it.
         limits.enforce_dataset_size(len(data), len(data[0]) if isinstance(data[0], dict) else 0)
 
-        print(f"🔄 Initializing backend with {len(data)} rows from Supabase")
-        print(f"📄 Filename: {filename}")
+        logger.debug(f"🔄 Initializing backend with {len(data)} rows from Supabase")
+        logger.debug(f"📄 Filename: {filename}")
         
         # Create DataFrame from the provided data
         import pandas as pd
@@ -1067,9 +610,9 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
         # Initialize agents with the restored data
         agent_services.initialize_agents(data_handler)
         
-        print(f"✅ Backend initialized successfully with {len(data)} rows")
-        print(f"📊 Data shape: {df.shape}")
-        print(f"🏷️ Columns: {df.columns.tolist()}")
+        logger.debug(f"✅ Backend initialized successfully with {len(data)} rows")
+        logger.debug(f"📊 Data shape: {df.shape}")
+        logger.debug(f"🏷️ Columns: {df.columns.tolist()}")
         
         return {
             "success": True,
@@ -1082,7 +625,7 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error initializing backend with data: {str(e)}")
+        logger.error(f"❌ Error initializing backend with data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to initialize backend: {str(e)}")
 
 @app.post("/api/workspace")
@@ -1197,36 +740,6 @@ async def save_chat_endpoint(chat_id: str, request: Dict[str, Any]):
     return {"success": True}
 
 
-@app.delete("/api/chats/{chat_id}")
-async def delete_chat_endpoint(chat_id: str):
-    """Delete a chat thread."""
-    try:
-        workspace_store.delete_chat(chat_id)
-    except workspace_store.WorkspaceStoreError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
-    return {"success": True}
-
-
-@app.get("/api/data")
-async def get_current_data(workspace_id: Optional[str] = None):
-    try:
-        hydrate(workspace_id)
-        if data_handler.get_df() is None:
-            raise HTTPException(status_code=400, detail="No data loaded")
-        
-        df = data_handler.get_df()
-        return {
-            "data": df.to_dict(orient="records"),
-            "columns": df.columns.tolist(),
-            "rows": len(df),
-            "filename": data_handler.get_filename() or "Dataset"
-        }
-    except HTTPException:
-        # Let the deliberate 400 through instead of relabelling it a 500.
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/health")
 async def health_check():
     # Check if services are properly initialized
@@ -1234,12 +747,11 @@ async def health_check():
         "data_handler": "available" if data_handler else "unavailable",
         "agent_services": "available" if agent_services else "unavailable",
         "report_generator": "available" if report_generator else "unavailable",
-        "speech_utils": "removed"
     }
-    
+
     # Check LLM status
     llm_status = "available" if settings.LLM else "unavailable"
-    
+
     # Determine overall status
     if all(status == "available" for status in services_status.values()) and llm_status == "available":
         overall_status = "healthy"
@@ -1251,8 +763,14 @@ async def health_check():
         "data_loaded": data_handler.get_df() is not None if data_handler else False,
         "llm": llm_status,
         "services": services_status,
+        # Which model this instance is actually talking to. Reported because
+        # the alternative is discovering a misconfiguration through answers
+        # that look merely bad rather than absent.
+        "llm_config": settings.llm_status(),
+        # Which persistence backend this instance chose. Supabase on the hosted
+        # deployment; a local file when no service-role key is configured.
+        "store": workspace_store.status(),
         "api_keys": {
-            "google_api_key": "configured" if settings.GOOGLE_API_KEY else "missing",
             "supabase": "configured" if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY else "missing"
         },
         # Reported because the daily caps fail open: if the usage_counters
@@ -1262,105 +780,6 @@ async def health_check():
         # discovered from a bill.
         "limits": limits.status()
     }
-
-@app.get("/api/reports/{report_id}/status")
-async def report_status(report_id: str = Path(...)):
-    report_filename = os.path.join(REPORTS_DIR, f"report_{report_id}.pdf")
-    if os.path.exists(report_filename):
-        return {"status": "ready", "report_id": report_id}
-    else:
-        return {"status": "generating", "report_id": report_id}
-
-@app.post("/analyze-formula")
-async def analyze_formula_error(request: Request):
-    try:
-        # Parse the request body
-        data = await request.json()
-        
-        formula = data.get("formula", "").strip()
-        error_type = data.get("errorType", "").strip()
-        cell_ref = data.get("cellRef", "").strip()
-        
-        logger.debug(f"Analyzing formula error: formula={formula}, error_type={error_type}, cell_ref={cell_ref}")
-        
-        if not all([formula, error_type, cell_ref]):
-            logger.error("Missing required fields")
-            raise HTTPException(status_code=400, detail="Missing required fields")
-
-        # Map error types to descriptions
-        error_descriptions = {
-            "NAME": "The formula contains an unrecognized function name or reference",
-            "VALUE": "The formula is using the wrong type of argument or operand",
-            "REF": "The formula refers to a non-valid cell reference",
-            "DIV0": "The formula is trying to divide by zero",
-            "NUM": "The formula has invalid numeric values",
-            "NULL": "The formula uses an intersection of two areas that do not intersect",
-            "SPILL": "The formula result cannot be displayed in the available empty cells",
-            "CALC": "There is a general calculation error in the formula"
-        }
-
-        # Enhanced prompt for formula error analysis with delimiter intelligence
-        base_prompt = f"""Analyze this spreadsheet formula error and provide a solution:
-        Formula: {formula}
-        Error Type: #{error_type}? ({error_descriptions.get(error_type, "Unknown error type")})
-        Cell Reference: {cell_ref}
-
-        """
-
-        # Special handling for VALUE errors with text extraction functions
-        if error_type == "VALUE" and any(func in formula.upper() for func in ["LEFT", "FIND", "RIGHT", "MID"]):
-            base_prompt += """
-SPECIAL FOCUS - This appears to be a text extraction formula with a VALUE error, likely due to incorrect delimiter detection.
-
-Common causes and solutions:
-1. FIND function looking for wrong delimiter (e.g., looking for space " " when data uses colon ":")
-2. Data doesn't contain the expected delimiter
-3. Need to use IFERROR to handle cases where delimiter isn't found
-
-For formulas like =LEFT(cell,FIND(" ",cell)-1):
-- If data is "windows:mac:linux", use =LEFT(cell,FIND(":",cell)-1)
-- If data is "apple,orange,banana", use =LEFT(cell,FIND(",",cell)-1) 
-- Always wrap in IFERROR: =IFERROR(LEFT(cell,FIND(":",cell)-1),cell)
-
-ANALYZE THE FORMULA CAREFULLY to identify what delimiter it's looking for versus what the actual data likely contains.
-"""
-        
-        prompt = base_prompt + """
-        Provide a clear and concise response with:
-        1. The exact cause of the error
-        2. How to fix it
-        3. A corrected example if applicable
-
-        Keep the response focused and practical."""
-
-        logger.debug(f"Sending prompt to LLM: {prompt}")
-
-        # Use our existing LLM service
-        response = agent_services.llm.invoke(prompt)
-        response_text = response.content.strip()
-        logger.debug(f"Received LLM response: {response_text}")
-        
-        # Parse the response into structured format
-        parts = response_text.split('\n\n')
-        
-        analysis = {
-            "problem": parts[0].replace('1.', '').strip() if len(parts) > 0 else "Error analysis unavailable",
-            "solution": parts[1].replace('2.', '').strip() if len(parts) > 1 else "Solution unavailable",
-            "examples": [parts[2].replace('3.', '').strip()] if len(parts) > 2 else []
-        }
-        
-        logger.debug(f"Returning analysis: {analysis}")
-        return analysis
-
-    except HTTPException as he:
-        logger.error(f"HTTP error in formula analysis: {str(he)}")
-        raise he
-    except Exception as e:
-        logger.error(f"Error analyzing formula: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to analyze formula error: {str(e)}"
-        )
 
 class FormulaRequest(BaseModel):
     prompt: str
@@ -1381,7 +800,7 @@ async def generate_formula(request: FormulaRequest):
     if settings.LLM is None:
         raise HTTPException(
             status_code=503,
-            detail="The formula assistant needs GOOGLE_API_KEY to be configured."
+            detail="The formula assistant needs a chat model to be configured."
         )
 
     system_lines = [
@@ -1433,19 +852,131 @@ async def generate_formula(request: FormulaRequest):
     return {"success": True, "formula": formula, "explanation": explanation}
 
 
+# The intents and target types the classifier is allowed to return. Kept in
+# step with CommandClassification in
+# edi-frontend/src/services/llmCommandClassifier.ts.
+_CLASSIFIER_INTENTS = {
+    "conditional_format", "data_modification", "find_replace", "filter", "sort",
+    "column_operation", "row_operation", "cell_operation", "range_operation",
+    "freeze_operation", "table_operation", "hyperlink_operation",
+    "data_validation", "comment_operation", "image_operation",
+    "named_range_operation", "intelligent_analysis", "smart_format",
+    "data_entry", "general_query", "compound_operation", "unknown",
+}
+_CLASSIFIER_TARGETS = {
+    "cell", "column", "row", "range", "all_data", "specific_value", "table",
+    "compound",
+}
+
+
+class ClassifyCommandRequest(BaseModel):
+    prompt: str
+
+
+@app.post("/api/classify-command")
+async def classify_command(request: ClassifyCommandRequest):
+    """
+    Classify a spreadsheet command with the configured model.
+
+    This used to happen in the browser, calling Groq directly with a key read
+    from NEXT_PUBLIC_GROQ_API_KEY. NEXT_PUBLIC_ variables are inlined into the
+    bundle at build time, so that key was readable by every visitor and
+    spendable by any of them -- the exact abuse this app's limits.py exists to
+    prevent, bypassing it entirely one file away.
+
+    The prompt is still built client-side, because it is long and encodes the
+    intent taxonomy the client acts on; duplicating it here would guarantee the
+    two drift apart. What stops this being a general-purpose completion proxy
+    is the return value: the model's reply is parsed and coerced into the
+    classification shape, and nothing else escapes. Ask it to write you a poem
+    and you get {"intent": "unknown"}.
+    """
+    prompt = limits.enforce_question_length(request.prompt)
+    if not prompt.strip():
+        raise HTTPException(status_code=400, detail="Nothing to classify.")
+
+    if settings.LLM is None:
+        # The client falls back to its regex classifier on any failure, so this
+        # degrades to "slightly worse classification" rather than a dead UI.
+        raise HTTPException(
+            status_code=503,
+            detail="Command classification needs a chat model to be configured.",
+        )
+
+    try:
+        reply = settings.LLM.invoke([
+            ("system", "You are a spreadsheet command classifier. Return ONLY JSON matching the schema."),
+            ("human", prompt),
+        ])
+        text = (reply.content or "").strip()
+    except Exception as exc:
+        logger.error("Command classification failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Could not reach the model.")
+
+    text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
+
+    payload = None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        # Smaller models tend to wrap the object in a sentence rather than
+        # obeying "JSON only". Take the first object if there is one.
+        match = re.search(r"\{[\s\S]*\}", text)
+        if match:
+            try:
+                payload = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                payload = None
+
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=502,
+            detail="The model did not return a usable classification.",
+        )
+
+    target = payload.get("target")
+    if not isinstance(target, dict):
+        target = {}
+
+    intent = str(payload.get("intent") or "unknown")
+    target_type = str(target.get("type") or "all_data")
+
+    try:
+        confidence = float(payload.get("confidence", 0.5))
+    except (TypeError, ValueError):
+        confidence = 0.5
+
+    parameters = payload.get("parameters")
+
+    return {
+        "success": True,
+        "classification": {
+            "intent": intent if intent in _CLASSIFIER_INTENTS else "unknown",
+            "action": str(payload.get("action") or "unknown"),
+            "target": {
+                "type": target_type if target_type in _CLASSIFIER_TARGETS else "all_data",
+                "identifier": str(target.get("identifier") or "*"),
+            },
+            "parameters": parameters if isinstance(parameters, dict) else {},
+            "confidence": min(max(confidence, 0.0), 1.0),
+            "reasoning": str(payload.get("reasoning") or "Model classification"),
+        },
+    }
+
+
 @app.get("/api/columns")
 async def get_columns_for_extraction():
     """
     Get available columns with metadata for the extraction dialog.
     """
-    print("📋 === API ENDPOINT /api/columns CALLED ===")
+    logger.debug("📋 === API ENDPOINT /api/columns CALLED ===")
     
     try:
         columns_info = agent_services.get_available_columns_for_extraction()
-        print(f"✅ Retrieved columns info: {columns_info}")
+        logger.debug(f"✅ Retrieved columns info: {columns_info}")
         return columns_info
     except Exception as e:
-        print(f"❌ Error getting columns: {str(e)}")
+        logger.error(f"❌ Error getting columns: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/extract-columns")
@@ -1453,8 +984,8 @@ async def extract_columns(extract_request: ExtractColumnsRequest):
     """
     Extract selected columns and create new Luckysheet data.
     """
-    print("🔧 === API ENDPOINT /api/extract-columns CALLED ===")
-    print(f"📥 Extract request: {extract_request}")
+    logger.debug("🔧 === API ENDPOINT /api/extract-columns CALLED ===")
+    logger.debug(f"📥 Extract request: {extract_request}")
     
     try:
         if not extract_request.selected_columns:
@@ -1466,210 +997,12 @@ async def extract_columns(extract_request: ExtractColumnsRequest):
             new_sheet_name=extract_request.sheet_name
         )
         
-        print(f"✅ Extraction result: {extraction_result}")
+        logger.debug(f"✅ Extraction result: {extraction_result}")
         return extraction_result
         
     except Exception as e:
-        print(f"❌ Error extracting columns: {str(e)}")
+        logger.error(f"❌ Error extracting columns: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/generate-synthetic-dataset")
-async def generate_synthetic_dataset(dataset_request: SyntheticDatasetRequest):
-    """
-    Generate a synthetic dataset based on user specifications using LLM.
-    """
-    print("🧬 === API ENDPOINT /api/generate-synthetic-dataset CALLED ===")
-    print(f"📥 Dataset request: {dataset_request}")
-    
-    try:
-        if not dataset_request.description.strip():
-            raise HTTPException(status_code=400, detail="Dataset description is required")
-        
-        # Create the prompt for dataset generation
-        prompt = f"""IMPORTANT: This is a completely new synthetic dataset generation request. Ignore any previous dataset structures, column names, or data patterns from earlier conversations.
-
-Create a brand new synthetic dataset with the following specifications:
-
-Description: {dataset_request.description}
-Number of rows: {dataset_request.rows}
-"""
-        
-        if dataset_request.column_specs:
-            prompt += f"Column specifications: {dataset_request.column_specs}\n"
-        elif dataset_request.columns:
-            prompt += f"Number of columns: {dataset_request.columns}\n"
-        
-        prompt += """
-Generate completely fresh, realistic sample data that matches ONLY the description above. 
-
-CRITICAL INSTRUCTIONS:
-1. COMPLETELY IGNORE any previous dataset structures or column names
-2. CREATE ENTIRELY NEW column names that match the current description
-3. You MUST return ONLY valid JSON in the exact format below
-4. Do NOT include any explanatory text, markdown formatting, or additional comments
-5. Do NOT use ```json``` code blocks
-6. Return raw JSON only
-
-Required JSON structure:
-{
-    "columns": ["Column1", "Column2", ...],
-    "data": [
-        {"Column1": "value1", "Column2": "value2", ...},
-        ...
-    ]
-}
-
-Data quality guidelines:
-- Create column names that specifically match the current dataset description
-- If it's sales data, include realistic product names, dates, amounts, customer names, etc.
-- If it's employee data, include realistic names, departments, salaries, hire dates, etc.
-- If it's student grades, include student names, subjects, grades, etc.
-- Use appropriate data types (strings, numbers, dates) for each column
-- Ensure data makes logical sense (e.g., dates are in reasonable order, amounts are realistic)
-- Make data varied and realistic
-- DO NOT reuse column structures from any previous requests
-
-RESPONSE FORMAT: Start your response with { and end with } - nothing else."""
-
-        print(f"🧠 Sending prompt to LLM: {prompt}")
-        
-        # Create a fresh LLM instance to avoid context contamination
-        from settings import initialize_llm
-        fresh_llm = initialize_llm()
-        
-        if not fresh_llm:
-            print("❌ Failed to create fresh LLM instance")
-            raise HTTPException(status_code=500, detail="LLM initialization failed")
-        
-        # Use the fresh LLM instance to generate the dataset
-        response = fresh_llm.invoke(prompt)
-        response_text = response.content.strip()
-        
-        print(f"📄 LLM response: {response_text}")
-        
-        # Try to extract JSON from the response
-        try:
-            # Remove any markdown code blocks if present
-            if "```json" in response_text:
-                start = response_text.find("```json") + 7
-                end = response_text.find("```", start)
-                response_text = response_text[start:end].strip()
-            elif "```" in response_text:
-                start = response_text.find("```") + 3
-                end = response_text.rfind("```")
-                response_text = response_text[start:end].strip()
-            
-            # Try to find JSON object boundaries
-            start_brace = response_text.find('{')
-            end_brace = response_text.rfind('}')
-            
-            if start_brace != -1 and end_brace != -1 and end_brace > start_brace:
-                response_text = response_text[start_brace:end_brace + 1]
-                
-                # Validate that JSON has proper structure (basic check)
-                if not (response_text.count('{') >= 1 and response_text.count('}') >= 1 and 
-                        '"columns"' in response_text and '"data"' in response_text):
-                    print("⚠️ JSON structure appears incomplete, using fallback")
-                    raise json.JSONDecodeError("Incomplete JSON structure", response_text, 0)
-            
-            print(f"🔍 Cleaned response text length: {len(response_text)} characters")
-            print(f"🔍 First 200 chars: {response_text[:200]}...")
-            print(f"🔍 Last 200 chars: ...{response_text[-200:]}")
-            
-            # Parse the JSON with error recovery
-            try:
-                dataset_json = json.loads(response_text)
-            except json.JSONDecodeError as inner_e:
-                print(f"⚠️ Initial JSON parse failed: {inner_e}")
-                
-                # Try to repair common JSON issues
-                if "Expecting ',' delimiter" in str(inner_e):
-                    print("🔧 Attempting JSON repair for missing delimiter...")
-                    # Find the position of the error and try to fix it
-                    error_pos = getattr(inner_e, 'pos', 0)
-                    if error_pos > 0 and error_pos < len(response_text):
-                        # Look for incomplete entries at the end
-                        last_complete_brace = response_text.rfind('}', 0, error_pos)
-                        if last_complete_brace > 0:
-                            # Find the end of the data array
-                            data_end = response_text.rfind(']', 0, last_complete_brace + 100)
-                            if data_end > last_complete_brace:
-                                # Try to reconstruct valid JSON
-                                repaired_json = response_text[:data_end + 1] + '\n}'
-                                print(f"🔧 Repaired JSON length: {len(repaired_json)}")
-                                try:
-                                    dataset_json = json.loads(repaired_json)
-                                    print("✅ JSON repair successful!")
-                                except:
-                                    print("❌ JSON repair failed, using fallback")
-                                    raise inner_e
-                            else:
-                                raise inner_e
-                        else:
-                            raise inner_e
-                    else:
-                        raise inner_e
-                else:
-                    raise inner_e
-            
-            if "columns" not in dataset_json or "data" not in dataset_json:
-                raise ValueError("Invalid JSON structure")
-            
-            # Validate the data structure
-            columns = dataset_json["columns"]
-            data_rows = dataset_json["data"]
-            
-            print(f"📊 Generated dataset: {len(data_rows)} rows, {len(columns)} columns")
-            print(f"📋 Columns: {columns}")
-            
-            # Convert to DataFrame for validation and processing
-            df = pd.DataFrame(data_rows)
-            
-            # Update the data handler with the new dataset
-            data_handler.update_df_and_db(df)
-            
-            # Initialize agents with the new data
-            agent_services.initialize_agents(data_handler)
-            
-            return {
-                "success": True,
-                "message": f"Successfully generated synthetic dataset with {len(data_rows)} rows and {len(columns)} columns",
-                "data": df.to_dict(orient="records"),
-                "columns": df.columns.tolist(),
-                "rows": len(df),
-                "dataset_name": f"Synthetic {dataset_request.description}"
-            }
-            
-        except json.JSONDecodeError as e:
-            print(f"❌ JSON parsing error: {e}")
-            print(f"📄 Raw response: {response_text}")
-            
-            # Try to create a fallback dataset based on the description
-            print("🔄 Attempting to create fallback dataset...")
-            try:
-                fallback_data = create_fallback_dataset(dataset_request.description, dataset_request.rows)
-                if fallback_data:
-                    print("✅ Fallback dataset created successfully")
-                    return fallback_data
-            except Exception as fallback_error:
-                print(f"❌ Fallback creation failed: {fallback_error}")
-            
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Failed to parse LLM response as JSON. The AI returned: '{response_text[:100]}...'. Please try again with a clearer description."
-            )
-        except ValueError as e:
-            print(f"❌ Data validation error: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Invalid dataset structure generated. Please try again."
-            )
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ Error generating synthetic dataset: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate dataset: {str(e)}")
 
 @app.post("/api/orchestrate")
 async def orchestrate_compound_query(request: CompoundQueryRequest):
@@ -1677,10 +1010,10 @@ async def orchestrate_compound_query(request: CompoundQueryRequest):
     Process compound queries using the query orchestrator
     Handles complex multi-step operations with intelligent decomposition
     """
-    print(f"🎭 === COMPOUND QUERY ORCHESTRATION ENDPOINT ===")
-    print(f"📥 Query: {request.query}")
-    print(f"🔷 Workspace ID: {request.workspace_id}")
-    print(f"👁️ Preview Only: {request.preview_only}")
+    logger.debug("🎭 === COMPOUND QUERY ORCHESTRATION ENDPOINT ===")
+    logger.debug(f"📥 Query: {request.query}")
+    logger.debug(f"🔷 Workspace ID: {request.workspace_id}")
+    logger.debug(f"👁️ Preview Only: {request.preview_only}")
 
     limits.enforce_question_length(request.query)
 
@@ -1689,7 +1022,7 @@ async def orchestrate_compound_query(request: CompoundQueryRequest):
         
         if request.preview_only:
             # Just decompose and plan, don't execute
-            print("👁️ Preview mode - generating execution plan only")
+            logger.debug("👁️ Preview mode - generating execution plan only")
             
             # Create minimal workspace context for planning
             from query_orchestrator import WorkspaceContext
@@ -1736,307 +1069,19 @@ async def orchestrate_compound_query(request: CompoundQueryRequest):
         
         else:
             # Full orchestration with execution
-            print("🎭 Full orchestration mode - executing compound query")
+            logger.debug("🎭 Full orchestration mode - executing compound query")
             result = await orchestrator.orchestrate_query(request.query, request.workspace_id)
             
             return result
             
     except Exception as e:
-        print(f"❌ Compound query orchestration failed: {str(e)}")
+        logger.error(f"❌ Compound query orchestration failed: {str(e)}")
         return {
             "success": False,
             "error": f"Orchestration failed: {str(e)}",
             "query": request.query,
             "workspace_id": request.workspace_id
         }
-
-# ===========================================
-# LEARN MODE SPECIFIC ENDPOINTS
-# ===========================================
-
-class LearnModeQueryRequest(BaseModel):
-    question: str
-    workspace_id: str
-    chat_id: Optional[str] = None
-    user_progress: Optional[List[Dict[str, Any]]] = None
-    sheet_context: Optional[Dict[str, Any]] = None
-    is_first_message: Optional[bool] = False
-    conversation_history: Optional[List[Dict[str, Any]]] = None
-
-@app.post("/api/learn/query")
-async def process_learn_query(request: LearnModeQueryRequest):
-    """Process queries specifically for Learn Mode with teaching-focused responses"""
-    print("📚 === LEARN MODE QUERY ENDPOINT ===")
-    print(f"📚 Question: {request.question}")
-    print(f"📚 Chat ID: {request.chat_id}")
-    print(f"📚 Conversation History: {len(request.conversation_history or [])} messages")
-
-    limits.enforce_question_length(request.question)
-
-    # Validate conversation history format
-    conversation_valid = True
-    if request.conversation_history:
-        print("📚 Validating conversation history format...")
-        for i, msg in enumerate(request.conversation_history):
-            if not isinstance(msg, dict):
-                print(f"⚠️  Invalid message format at index {i}: not a dict")
-                conversation_valid = False
-                continue
-
-            role = msg.get('role')
-            content = msg.get('content')
-
-            if role not in ['user', 'assistant']:
-                print(f"⚠️  Invalid role at index {i}: {role}")
-                conversation_valid = False
-
-            if not content or not isinstance(content, str):
-                print(f"⚠️  Invalid content at index {i}: {content}")
-                conversation_valid = False
-
-            print(f"  {i+1}. {role}: {content[:100]}...")
-
-        if conversation_valid:
-            print("✅ Conversation history format is valid")
-        else:
-            print("❌ Conversation history has format issues - proceeding with caution")
-    else:
-        print("📚 No conversation history - treating as first message")
-
-    try:
-        ai_processor = create_ai_processor("learn")
-        context = {
-            "workspace_type": "learn",
-            "workspace_id": request.workspace_id,
-            "chat_id": request.chat_id,
-            "learning_progress": request.user_progress or [],
-            "sheet_context": request.sheet_context or {}
-        }
-
-        processing_result = await ai_processor.process_query(request.question, context)
-
-        # Build enhanced LLM prompt with user progress analysis and personalization
-        try:
-            from settings import initialize_llm
-            llm = initialize_llm()
-            if not llm:
-                raise RuntimeError("LLM initialization failed")
-
-            system_prompt = ai_processor.get_system_prompt()
-
-            sheet_ctx = context.get("sheet_context", {})
-            headers = sheet_ctx.get("headers") or []
-            column_map = sheet_ctx.get("columnMap") or {}
-            selection = sheet_ctx.get("currentSelection") or None
-            data_rows = sheet_ctx.get("data") or []
-            sample_rows = data_rows[:10] if isinstance(data_rows, list) else []
-
-            # Build conversation history context with validation
-            conversation_context = ""
-            if request.conversation_history and conversation_valid:
-                print("📚 Building conversation context for LLM...")
-                conversation_context = "\nPREVIOUS CONVERSATION:\n"
-                for msg in request.conversation_history[-10:]:  # Last 10 messages for context
-                    # Additional safety checks
-                    if not isinstance(msg, dict):
-                        continue
-                    role = msg.get('role', 'unknown')
-                    content = msg.get('content', '')
-                    if not content:
-                        continue
-                    conversation_context += f"{role.upper()}: {content}\n"
-                    print(f"📚   Added to context: {role}: {content[:50]}...")
-                conversation_context += "\n"
-                print(f"📚 Final conversation context length: {len(conversation_context)} chars")
-            elif request.conversation_history and not conversation_valid:
-                print("📚 Skipping malformed conversation history - treating as first message")
-            else:
-                print("📚 No conversation history provided - this appears to be first message")
-
-            # Build comprehensive teaching prompt
-            conversation_status = "FIRST TIME USER - NO PREVIOUS CONVERSATION" if not conversation_context.strip() else "RETURNING USER - CONVERSATION HISTORY BELOW"
-
-            prompt = (
-                f"{system_prompt}\n\n"
-                f"═══════════════════════════════════════════════════════════════\n"
-                f"CURRENT SESSION CONTEXT\n"
-                f"═══════════════════════════════════════════════════════════════\n\n"
-                f"📊 USER'S SPREADSHEET DATA:\n"
-                f"Available columns: {', '.join(headers) if headers else 'No data loaded yet'}\n"
-                f"Column mapping (A1 notation): {column_map}\n"
-                f"Current selection: {selection if selection else 'None'}\n"
-                f"Sample data (first 10 rows):\n{sample_rows}\n\n"
-                f"💬 CONVERSATION STATUS: {conversation_status}\n"
-                f"{conversation_context}"
-                f"{'─' * 63}\n\n"
-                f"🎯 CURRENT USER MESSAGE:\n\"{request.question}\"\n\n"
-                f"{'─' * 63}\n\n"
-                f"📋 YOUR RESPONSE INSTRUCTIONS:\n\n"
-                f"1. ANALYZE CONVERSATION CONTEXT:\n"
-                f"   • Read the conversation history carefully (if it exists)\n"
-                f"   • What skill level has the user demonstrated?\n"
-                f"   • What were they just talking about?\n"
-                f"   • What is their current goal or question?\n\n"
-                f"2. INTERPRET CURRENT MESSAGE:\n"
-                f"   • If they say \"not familiar\" - what are they responding to?\n"
-                f"   • Does their question suggest intermediate/advanced understanding?\n"
-                f"   • Are they asking to continue or starting something new?\n\n"
-                f"3. FORMULATE APPROPRIATE RESPONSE:\n"
-                f"   • Reference previous conversation points naturally\n"
-                f"   • Teach at their demonstrated skill level\n"
-                f"   • Use their actual data ({', '.join(headers[:3]) if headers else 'their data'}) in examples\n"
-                f"   • Guide them toward their goal\n"
-                f"   • Be conversational and encouraging\n\n"
-                f"4. QUALITY CHECKS:\n"
-                f"   ✓ Does this response build on previous messages?\n"
-                f"   ✓ Am I teaching at the right level for this user?\n"
-                f"   ✓ Am I using their actual spreadsheet data?\n"
-                f"   ✓ Am I helping them achieve their stated goal?\n"
-                f"   ✗ Am I repeating questions I already asked?\n"
-                f"   ✗ Am I resetting to basics unnecessarily?\n\n"
-                f"Now provide your teaching response:\n"
-            )
-
-            llm_response = llm.invoke(prompt)
-            response_text = getattr(llm_response, "content", None) or str(llm_response)
-
-            return {
-                "response": response_text.strip(),
-                "type": processing_result.get("response_type", "teaching"),
-                "guiding_questions": processing_result.get("guiding_questions", []),
-                "suggested_concept": processing_result.get("suggested_concept"),
-                "step_by_step_breakdown": processing_result.get("step_by_step_breakdown", []),
-                "requires_teaching": True,
-                "workspace_type": "learn"
-            }
-
-        except Exception as gen_err:
-            print(f"⚠️ Learn LLM generation failed, using processor fallback: {gen_err}")
-            # Fallback to processor-only result
-            return {
-                "response": processing_result.get("response", "Let's explore this concept together!"),
-                "type": processing_result.get("response_type", "teaching"),
-                "guiding_questions": processing_result.get("guiding_questions", []),
-                "suggested_concept": processing_result.get("suggested_concept"),
-                "step_by_step_breakdown": processing_result.get("step_by_step_breakdown", []),
-                "requires_teaching": True,
-                "workspace_type": "learn"
-            }
-
-    except Exception as e:
-        print(f"❌ Learn mode query failed: {str(e)}")
-        return {
-            "response": "I'm here to help you learn! Let's try that again.",
-            "type": "error",
-            "error": str(e),
-            "requires_teaching": True
-        }
-
-@app.get("/api/learn/progress/{workspace_id}")
-async def get_learning_progress(workspace_id: str):
-    """Get learning progress for a specific Learn Mode workspace"""
-    # This would integrate with a database in a real implementation
-    # For now, return mock data
-    return {
-        "workspace_id": workspace_id,
-        "progress": [
-            {
-                "concept_id": "basic_functions",
-                "skill_level": "mastered",
-                "attempts_count": 5,
-                "mastery_date": "2024-01-15T10:30:00Z"
-            },
-            {
-                "concept_id": "cell_references",
-                "skill_level": "proficient",
-                "attempts_count": 3,
-                "mastery_date": None
-            }
-        ]
-    }
-
-@app.post("/api/learn/practice-challenge")
-async def generate_practice_challenge(
-    concept_id: str = Query(..., description="The concept to practice"),
-    difficulty: str = Query("beginner", description="Difficulty level")
-):
-    """Generate practice challenges for Learn Mode (not available in Work Mode)"""
-
-    # Mock practice challenges - would be generated by AI in real implementation
-    challenges = {
-        "basic_functions": {
-            "beginner": {
-                "challenge": "Calculate the total sales for all products using the SUM function.",
-                "dataset": [
-                    {"Product": "A", "Sales": 100},
-                    {"Product": "B", "Sales": 150},
-                    {"Product": "C", "Sales": 200}
-                ],
-                "expected_formula": "=SUM(B2:B4)",
-                "hints": [
-                    "Use the SUM function to add numbers",
-                    "Select the range of cells containing sales data",
-                    "The formula should start with ="
-                ]
-            }
-        },
-        "vlookup": {
-            "beginner": {
-                "challenge": "Look up the price for Product B using VLOOKUP.",
-                "dataset": [
-                    {"Product": "A", "Price": 10.99},
-                    {"Product": "B", "Price": 15.50},
-                    {"Product": "C", "Price": 8.75}
-                ],
-                "expected_formula": "=VLOOKUP(\"B\",A2:B4,2,FALSE)",
-                "hints": [
-                    "VLOOKUP searches for a value in the first column",
-                    "Use FALSE for exact match",
-                    "Column index 2 returns the price"
-                ]
-            }
-        }
-    }
-
-    challenge_data = challenges.get(concept_id, {}).get(difficulty)
-    if not challenge_data:
-        return {
-            "error": f"No challenges available for {concept_id} at {difficulty} level"
-        }
-
-    return {
-        "concept_id": concept_id,
-        "difficulty": difficulty,
-        "challenge": challenge_data["challenge"],
-        "dataset": challenge_data["dataset"],
-        "hints": challenge_data["hints"],
-        "learning_objective": f"Master {concept_id} through hands-on practice"
-    }
-
-@app.get("/api/learn/datasets")
-async def get_learning_datasets():
-    """Get available curated learning datasets"""
-    # This would query the learning_datasets table in a real implementation
-    return {
-        "datasets": [
-            {
-                "id": "basic-functions-tutorial",
-                "name": "Basic Functions Tutorial",
-                "concept_category": "basic_functions",
-                "difficulty_level": "beginner",
-                "description": "Learn SUM, AVERAGE, COUNT with employee data",
-                "prerequisites": []
-            },
-            {
-                "id": "vlookup-fundamentals",
-                "name": "VLOOKUP Fundamentals",
-                "concept_category": "lookups",
-                "difficulty_level": "intermediate",
-                "description": "Master lookup functions with product data",
-                "prerequisites": ["basic_functions"]
-            }
-        ]
-    }
 
 @app.post("/api/workspace/{workspace_id}/analyze-insights")
 async def analyze_workspace_insights(
@@ -2056,10 +1101,10 @@ async def analyze_workspace_insights(
     - focus_area: Optional focus ('anomalies' | 'trends' | 'correlations')
     """
     try:
-        print(f"🔍 === INTELLIGENT ANALYSIS REQUEST ===")
-        print(f"   - Workspace ID: {workspace_id}")
-        print(f"   - Analysis Type: {analysis_type}")
-        print(f"   - Focus Area: {focus_area}")
+        logger.debug("🔍 === INTELLIGENT ANALYSIS REQUEST ===")
+        logger.debug(f"   - Workspace ID: {workspace_id}")
+        logger.debug(f"   - Analysis Type: {analysis_type}")
+        logger.debug(f"   - Focus Area: {focus_area}")
 
         # Rebuild this workspace's dataset before reading it (see hydrate()).
         hydrate(workspace_id)
@@ -2073,8 +1118,8 @@ async def analyze_workspace_insights(
                 detail="No data found in workspace. Please upload data first."
             )
 
-        print(f"📊 Data shape: {df.shape}")
-        print(f"🏷️ Columns: {df.columns.tolist()}")
+        logger.debug(f"📊 Data shape: {df.shape}")
+        logger.debug(f"🏷️ Columns: {df.columns.tolist()}")
 
         # Initialize IntelligentAnalyzer
         analyzer = IntelligentAnalyzer(df, settings.LLM)
@@ -2086,7 +1131,7 @@ async def analyze_workspace_insights(
             correlations = []
             seasonality = None
             summary = "Quick data profile complete."
-            print("✅ Quick analysis complete")
+            logger.debug("✅ Quick analysis complete")
 
         elif analysis_type == 'comprehensive':
             profile = analyzer.analyze_quick_profile()
@@ -2101,19 +1146,19 @@ async def analyze_workspace_insights(
                         analyzer.temporal_cols[0],
                         analyzer.numeric_cols[0]
                     )
-                    print(f"📈 Seasonality: {seasonality.get('description') if seasonality else 'None detected'}")
+                    logger.debug(f"📈 Seasonality: {seasonality.get('description') if seasonality else 'None detected'}")
                 except Exception as e:
-                    print(f"⚠️ Seasonality detection failed: {e}")
+                    logger.error(f"⚠️ Seasonality detection failed: {e}")
 
             # Generate executive summary
             try:
                 summary = analyzer.generate_executive_summary(anomalies, correlations, seasonality)
-                print(f"📝 Summary: {summary}")
+                logger.debug(f"📝 Summary: {summary}")
             except Exception as e:
-                print(f"⚠️ Summary generation failed: {e}")
+                logger.error(f"⚠️ Summary generation failed: {e}")
                 summary = "Data analysis complete. Review detailed findings below."
 
-            print("✅ Comprehensive analysis complete")
+            logger.debug("✅ Comprehensive analysis complete")
 
         else:  # focused
             profile = analyzer.analyze_quick_profile()
@@ -2130,18 +1175,18 @@ async def analyze_workspace_insights(
                         analyzer.temporal_cols[0],
                         analyzer.numeric_cols[0]
                     )
-                summary = f"Trend analysis complete."
+                summary = "Trend analysis complete."
             elif focus_area == 'correlations':
                 correlations = analyzer.identify_correlations(threshold=0.6)
                 summary = f"Correlation analysis complete. Found {len(correlations)} significant relationships."
             else:
                 summary = f"Focused analysis on {focus_area} complete."
 
-            print("✅ Focused analysis complete")
+            logger.debug("✅ Focused analysis complete")
 
         # Generate visualization suggestions
         viz_suggestions = analyzer.suggest_visualizations()
-        print(f"💡 {len(viz_suggestions)} visualization suggestions generated")
+        logger.debug(f"💡 {len(viz_suggestions)} visualization suggestions generated")
 
         # Return structured response
         response = {
@@ -2159,7 +1204,7 @@ async def analyze_workspace_insights(
             ]
         }
 
-        print("🎉 === INTELLIGENT ANALYSIS COMPLETE ===")
+        logger.debug("🎉 === INTELLIGENT ANALYSIS COMPLETE ===")
         return response
 
     except HTTPException:
@@ -2192,9 +1237,9 @@ async def smart_format_workspace(
         Formatting instructions for frontend to apply via UniverAdapter
     """
     try:
-        print(f"📐 === SMART FORMATTING REQUEST ===")
-        print(f"   - Workspace ID: {workspace_id}")
-        print(f"   - Template: {template}")
+        logger.debug("📐 === SMART FORMATTING REQUEST ===")
+        logger.debug(f"   - Workspace ID: {workspace_id}")
+        logger.debug(f"   - Template: {template}")
 
         # Rebuild this workspace's dataset before reading it (see hydrate()).
         hydrate(workspace_id)
@@ -2208,17 +1253,17 @@ async def smart_format_workspace(
                 detail="No data found in workspace. Please upload data first."
             )
 
-        print(f"📊 Data shape: {df.shape}")
-        print(f"🏷️ Columns: {df.columns.tolist()}")
+        logger.debug(f"📊 Data shape: {df.shape}")
+        logger.debug(f"🏷️ Columns: {df.columns.tolist()}")
 
         # Initialize SmartFormatter
-        formatter = SmartFormatter(df, settings.LLM)
+        formatter = SmartFormatter(df)
 
         # Generate formatting instructions
         formatting = formatter.generate_formatting_instructions(template)
 
-        print(f"✅ Generated formatting for {len(formatting['column_formats'])} columns")
-        print(f"📋 Detected types: {formatting['column_types']}")
+        logger.debug(f"✅ Generated formatting for {len(formatting['column_formats'])} columns")
+        logger.debug(f"📋 Detected types: {formatting['column_types']}")
 
         return {
             "success": True,
@@ -2229,7 +1274,7 @@ async def smart_format_workspace(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Smart formatting error: {str(e)}")
+        logger.error(f"❌ Smart formatting error: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error generating formatting instructions: {str(e)}"
@@ -2319,7 +1364,7 @@ def process_single_row_entry(df: pd.DataFrame, row_data: Dict[str, Any], positio
             actual_position = int(position)
             # Clamp to valid range (1 to len(df)+1)
             actual_position = max(1, min(actual_position, len(df) + 1))
-        except:
+        except Exception:
             actual_position = len(df) + 1  # Default to bottom
 
     return {
@@ -2363,8 +1408,12 @@ Important:
 """
 
     try:
-        # Use Google Gemini LLM
-        llm = settings.llm
+        llm = settings.LLM
+        if llm is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Generating rows needs a chat model to be configured.",
+            )
         response = llm.invoke(prompt)
 
         # Parse JSON response
@@ -2380,11 +1429,11 @@ Important:
 
         # Validate row count and column count
         if len(rows_data) != count:
-            print(f"⚠️ LLM generated {len(rows_data)} rows instead of {count}")
+            logger.debug(f"⚠️ LLM generated {len(rows_data)} rows instead of {count}")
 
         for row in rows_data:
             if len(row) != len(headers):
-                print(f"⚠️ Row has {len(row)} values instead of {len(headers)}")
+                logger.debug(f"⚠️ Row has {len(row)} values instead of {len(headers)}")
 
         return {
             'rows': rows_data,
@@ -2392,7 +1441,7 @@ Important:
         }
 
     except json.JSONDecodeError as e:
-        print(f"❌ Failed to parse LLM response as JSON: {str(e)}")
+        logger.error(f"❌ Failed to parse LLM response as JSON: {str(e)}")
         # Generate placeholder data as fallback
         placeholder_rows = []
         for i in range(count):
@@ -2405,7 +1454,7 @@ Important:
         }
 
     except Exception as e:
-        print(f"❌ Error generating rows: {str(e)}")
+        logger.error(f"❌ Error generating rows: {str(e)}")
         raise
 
 def process_header_creation(headers: List[str]) -> Dict[str, Any]:
@@ -2459,10 +1508,10 @@ async def quick_data_entry(
     3. create_headers: Create column headers (requires empty sheet)
     """
     try:
-        print(f"📝 === QUICK DATA ENTRY REQUEST ===")
-        print(f"   - Workspace ID: {workspace_id}")
-        print(f"   - Action: {request.action}")
-        print(f"   - Parameters: {request.parameters}")
+        logger.debug("📝 === QUICK DATA ENTRY REQUEST ===")
+        logger.debug(f"   - Workspace ID: {workspace_id}")
+        logger.debug(f"   - Action: {request.action}")
+        logger.debug(f"   - Parameters: {request.parameters}")
 
         action = request.action
         params = request.parameters
@@ -2482,7 +1531,6 @@ async def quick_data_entry(
 
         # Process based on action
         if action == 'add_single_row':
-            row_data_str = params.get('row_data_string', '')
             position = params.get('position', 'bottom')
 
             # Parse column-value pairs (this would be done on frontend, but included for completeness)
@@ -2538,7 +1586,7 @@ async def quick_data_entry(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Quick data entry error: {str(e)}")
+        logger.error(f"❌ Quick data entry error: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error processing data entry: {str(e)}"

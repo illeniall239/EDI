@@ -1,3 +1,4 @@
+import logging
 import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
@@ -7,6 +8,8 @@ import os
 import time
 from langchain_community.utilities import SQLDatabase
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 class DataHandler:
     def __init__(self):
@@ -22,10 +25,6 @@ class DataHandler:
         """User-facing name of the loaded dataset, if any."""
         return self._display_filename
 
-
-    def clean_column_name(self, name):
-        # Keep original column names without cleaning
-        return name.strip()
 
     def check_data_consistency(self, series):
         issues = []
@@ -125,7 +124,7 @@ class DataHandler:
             self._raw_filepath = file_path_str
             self._display_filename = os.path.basename(file_path_str)
 
-            print(f"DEBUG: Loading file: {self._display_filename}")
+            logger.debug(f"DEBUG: Loading file: {self._display_filename}")
 
             if content is not None:
                 source = io.BytesIO(content)
@@ -141,11 +140,11 @@ class DataHandler:
                 progress_callback(1.0, "Failed! Unsupported file format.")
                 return "Unsupported file format. Please upload an Excel (.xlsx) or CSV file.", None
 
-            print(f"DEBUG: Initial DataFrame shape: {self.df.shape}")
-            print("DEBUG: Initial missing values:")
+            logger.debug(f"DEBUG: Initial DataFrame shape: {self.df.shape}")
+            logger.debug("DEBUG: Initial missing values:")
             for col in self.df.columns:
                 missing = self.df[col].isnull().sum()
-                print(f"  {col}: {missing} missing values")
+                logger.debug(f"  {col}: {missing} missing values")
             
             # Convert empty strings and whitespace to NaN
             self.df = self.df.replace(r'^\s*$', np.nan, regex=True)
@@ -153,10 +152,10 @@ class DataHandler:
             # Convert NaN values to None for consistent handling
             self.df = self.df.replace({np.nan: None})
             
-            print("DEBUG: After whitespace and NaN conversion, missing values:")
+            logger.debug("DEBUG: After whitespace and NaN conversion, missing values:")
             for col in self.df.columns:
                 missing = self.df[col].isnull().sum()
-                print(f"  {col}: {missing} missing values")
+                logger.debug(f"  {col}: {missing} missing values")
             
             progress_callback(0.3, f"Processing column names for {self._display_filename}...")
             original_columns = self.df.columns.tolist()
@@ -185,7 +184,7 @@ class DataHandler:
             return response, self.df.copy() 
 
         except Exception as e:
-            print(f"DEBUG: Error loading data: {str(e)}")
+            logger.error(f"DEBUG: Error loading data: {str(e)}")
             self.df = self.engine = self.db_sqlalchemy = self.column_mapping = None
             self._raw_filepath = self._display_filename = None
             error_message = f"Error loading data: {str(e)}"
@@ -230,12 +229,12 @@ class DataHandler:
         return self.df
 
     def update_df_and_db(self, new_df):
-        print("DEBUG: Updating DataFrame and database")
-        print(f"DEBUG: New DataFrame shape: {new_df.shape}")
-        print("DEBUG: Missing values before conversion:")
+        logger.debug("DEBUG: Updating DataFrame and database")
+        logger.debug(f"DEBUG: New DataFrame shape: {new_df.shape}")
+        logger.debug("DEBUG: Missing values before conversion:")
         for col in new_df.columns:
             missing = new_df[col].isnull().sum()
-            print(f"  {col}: {missing} missing values")
+            logger.debug(f"  {col}: {missing} missing values")
         
         # Convert empty strings and whitespace to NaN
         new_df = new_df.replace(r'^\s*$', np.nan, regex=True)
@@ -243,10 +242,10 @@ class DataHandler:
         # Convert NaN values to None for consistent handling
         new_df = new_df.replace({np.nan: None})
         
-        print("DEBUG: Missing values after whitespace and NaN conversion:")
+        logger.debug("DEBUG: Missing values after whitespace and NaN conversion:")
         for col in new_df.columns:
             missing = new_df[col].isnull().sum()
-            print(f"  {col}: {missing} missing values")
+            logger.debug(f"  {col}: {missing} missing values")
         
         self.df = new_df
         
@@ -256,7 +255,7 @@ class DataHandler:
             if not self._display_filename:
                 self._display_filename = f"synthetic_dataset_{int(time.time())}"
             
-            print("DEBUG: Creating new in-memory database engine")
+            logger.debug("DEBUG: Creating new in-memory database engine")
             self.engine = create_engine(
                 'sqlite://',
                 connect_args={'check_same_thread': False},
@@ -269,15 +268,15 @@ class DataHandler:
         # Reinitialize the SQLAlchemy database object for LangChain
         try:
             self.db_sqlalchemy = SQLDatabase(self.engine)
-            print("DEBUG: Successfully reinitialized SQLAlchemy database object")
+            logger.debug("DEBUG: Successfully reinitialized SQLAlchemy database object")
         except Exception as e:
-            print(f"DEBUG: Error reinitializing SQLAlchemy database object: {str(e)}")
+            logger.error(f"DEBUG: Error reinitializing SQLAlchemy database object: {str(e)}")
             self.db_sqlalchemy = None
         
         # Update column mapping to reflect any new columns
         if self.df is not None:
             self.column_mapping = {col: col.strip() for col in self.df.columns}
-            print(f"DEBUG: Updated column mapping: {self.column_mapping}")
+            logger.debug(f"DEBUG: Updated column mapping: {self.column_mapping}")
 
 
     def get_df(self):
@@ -327,15 +326,15 @@ class DataHandler:
         based on data patterns and statistical analysis.
         """
         if self.df is None:
-            print("DEBUG: DataFrame is None")
+            logger.debug("DEBUG: DataFrame is None")
             return {}
 
-        print(f"DEBUG: DataFrame shape: {self.df.shape}")
-        print(f"DEBUG: DataFrame columns: {self.df.columns.tolist()}")
-        print("DEBUG: Missing values per column:")
+        logger.debug(f"DEBUG: DataFrame shape: {self.df.shape}")
+        logger.debug(f"DEBUG: DataFrame columns: {self.df.columns.tolist()}")
+        logger.debug("DEBUG: Missing values per column:")
         for col in self.df.columns:
             missing = self.df[col].isnull().sum()
-            print(f"  {col}: {missing} missing values")
+            logger.debug(f"  {col}: {missing} missing values")
 
         missing_analysis = {}
         total_rows = len(self.df)
@@ -362,9 +361,6 @@ class DataHandler:
             if pd.api.types.is_numeric_dtype(dtype):
                 # For numeric columns
                 if non_missing_values.size > 0:
-                    mean_val = non_missing_values.mean()
-                    median_val = non_missing_values.median()
-                    std_val = non_missing_values.std()
                     skewness = non_missing_values.skew()
                     
                     # Check for time series pattern

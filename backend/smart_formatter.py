@@ -1,6 +1,5 @@
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 import pandas as pd
-import numpy as np
 
 
 class SmartFormatter:
@@ -15,9 +14,8 @@ class SmartFormatter:
     - Text alignment
     """
 
-    def __init__(self, df: pd.DataFrame, llm_client=None):
+    def __init__(self, df: pd.DataFrame):
         self.df = df
-        self.llm = llm_client
         self.column_types = self._detect_column_types()
 
     def _detect_column_types(self) -> Dict[str, str]:
@@ -67,7 +65,7 @@ class SmartFormatter:
                 try:
                     pd.to_datetime(data.head(10), errors='raise')
                     column_types[col] = 'date'
-                except:
+                except Exception:
                     column_types[col] = 'text'
             else:
                 column_types[col] = 'text'

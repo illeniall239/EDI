@@ -1,7 +1,10 @@
+import logging
 import math
 from typing import List, Dict, Optional, Tuple
 import pandas as pd
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # scipy / scikit-learn / statsmodels were dropped to keep the serverless bundle
 # small and cold starts fast (they accounted for ~185 MB). The handful of
@@ -196,7 +199,7 @@ class IntelligentAnalyzer:
         ts_data = self.df[[temporal_col, value_col]].copy()
         try:
             ts_data[temporal_col] = pd.to_datetime(ts_data[temporal_col])
-        except:
+        except Exception:
             return None
 
         ts_data = ts_data.sort_values(temporal_col).set_index(temporal_col)
@@ -219,7 +222,7 @@ class IntelligentAnalyzer:
                 "description": self._describe_seasonality(seasonality_strength)
             }
         except Exception as e:
-            print(f"Seasonality detection failed: {e}")
+            logger.error(f"Seasonality detection failed: {e}")
             return None
 
     def identify_correlations(
@@ -272,7 +275,7 @@ class IntelligentAnalyzer:
                             "sample_size": len(common_idx),
                             "significance": "high" if pvalue < 0.01 else "moderate"
                         })
-                except:
+                except Exception:
                     continue
 
         # Apply Bonferroni correction for multiple testing
@@ -282,7 +285,7 @@ class IntelligentAnalyzer:
                 corrected_pvalues = _bonferroni(pvalues)
                 for corr, corrected_p in zip(correlations, corrected_pvalues):
                     corr['corrected_pvalue'] = float(corrected_p)
-            except:
+            except Exception:
                 pass
 
         # Sort by absolute correlation strength
@@ -358,10 +361,15 @@ class IntelligentAnalyzer:
             """
 
             try:
-                summary = self.llm.generate_content(prompt).text
-                return summary.strip()
-            except:
-                pass
+                reply = self.llm.invoke(prompt)
+                summary = getattr(reply, "content", None) or str(reply)
+                if summary.strip():
+                    return summary.strip()
+            except Exception as exc:
+                # Falling through to the written summary below is the right
+                # behaviour, but say so -- this used to fail silently on every
+                # call because it was written against a different SDK.
+                logger.warning("LLM summary failed, using computed summary: %s", exc)
 
         # Fallback summary
         parts = []
@@ -388,7 +396,7 @@ class IntelligentAnalyzer:
                 try:
                     pd.to_datetime(self.df[col].head(10), errors='raise')
                     temporal.append(col)
-                except:
+                except Exception:
                     pass
         return temporal
 
@@ -404,7 +412,7 @@ class IntelligentAnalyzer:
                 try:
                     z_scores = np.abs(_zscores(data.to_numpy(dtype=float)))
                     count += int((z_scores > 3).sum())
-                except:
+                except Exception:
                     pass
         return count
 

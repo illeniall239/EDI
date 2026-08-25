@@ -11,22 +11,23 @@ This service provides intelligent orchestration of compound user queries by:
 import json
 import logging
 import time
-import os
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
-from typing import Dict, Any, List
 import re
 
-# Gemini via LangChain. settings owns the model choice so there is one place
-# to change it rather than three.
+logger = logging.getLogger(__name__)
+
+
+# The chat model via LangChain. settings owns the provider and model choice so
+# there is one place to change it rather than three.
 try:
     from langchain_core.messages import HumanMessage
     import settings
-    LLM_AVAILABLE = bool(settings.GOOGLE_API_KEY)
+    LLM_AVAILABLE = settings.LLM is not None
     if not LLM_AVAILABLE:
-        print("Warning: GOOGLE_API_KEY not found. LLM decomposition will not work.")
+        logger.warning("Warning: no chat model configured. LLM decomposition will not work.")
 except ImportError:
-    print("Warning: langchain-google-genai not installed. LLM decomposition will not work.")
+    logger.warning("Warning: langchain-core not installed. LLM decomposition will not work.")
     LLM_AVAILABLE = False
 
 
@@ -47,16 +48,6 @@ class ExecutionStep:
     def get_dependencies_list(self) -> List[str]:
         """Get dependencies as list"""
         return list(self.depends_on)
-
-
-@dataclass 
-class StepResult:
-    """Result of executing a single step"""
-    step_id: str
-    success: bool
-    data: Any = None
-    error_message: str = None
-    user_message: str = None  # Human-readable result description
 
 
 class WorkspaceContext:
@@ -107,30 +98,8 @@ class WorkspaceContext:
             logging.getLogger(__name__).warning(f"Could not load workspace context: {str(e)}")
             return context
     
-    def save_to_workspace(self):
-        """Save workspace context state (placeholder for future database integration)"""
-        # TODO: Implement saving to database or file system
-        self.last_updated = time.time()
-        pass
-        
-    def update_columns(self, column_info: Dict[str, Any]):
-        """Update column information from operation results"""
-        self.columns.update(column_info)
-        
-    def add_step_result(self, result: StepResult):
-        """Store step result and update context"""
-        self.operation_history.append(result)
         # For now, we don't need complex context updates since we're using existing flows
     
-    def get_context_for_steps(self) -> Dict[str, Any]:
-        """Get current workspace context for step execution"""
-        return {
-            "workspace_id": self.workspace_id,
-            "columns": self.columns,
-            "current_selection": self.current_selection
-        }
-
-
 class QueryOrchestrator:
     """Main orchestrator for compound query processing"""
 
@@ -139,7 +108,7 @@ class QueryOrchestrator:
             try:
                 self.model = settings._build_llm(temperature=0.4)
             except Exception as e:
-                print(f"Warning: Failed to initialize Gemini model: {str(e)}")
+                logger.error(f"Warning: Failed to initialize Gemini model: {str(e)}")
                 self.model = None
         else:
             self.model = None

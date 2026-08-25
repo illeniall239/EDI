@@ -33,9 +33,8 @@ import os
 import threading
 import time
 from collections import defaultdict, deque
-from typing import Deque, Dict, Optional
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -76,24 +75,25 @@ ENABLED = os.getenv("EDI_LIMITS_ENABLED", "1").strip().lower() not in ("0", "fal
 # Metering is opt-in per path rather than "everything under /api". The
 # persistence endpoints (/api/workspace/..., /api/chats/...) are written on
 # every edit to the sheet, so metering them at a few calls a minute would break
-# ordinary use while protecting nothing -- they never reach Gemini.
+# ordinary use while protecting nothing -- they never reach a model.
 
 _METERED_PREFIXES = (
     "/api/query",
     "/api/orchestrate",
-    "/api/learn/",
-    "/api/clarification-choice",
     "/api/extract-columns",
     "/api/generate-report",
     "/api/generate-formula",
-    "/api/generate-synthetic-dataset",
-    "/analyze-formula",
+    "/api/classify-command",
 )
 
 # Nested under /api/workspace/{id}/, which is otherwise unmetered.
+#
+# /smart-format is absent on purpose: SmartFormatter is pure pandas heuristics
+# and never calls a model, so charging a visitor's budget for it would be
+# metering nothing. /analyze-insights is mostly computed too, but does ask for
+# a written summary at the end.
 _METERED_SUFFIXES = (
     "/analyze-insights",
-    "/smart-format",
     "/quick-data-entry",
 )
 
@@ -176,11 +176,9 @@ def _bump(bucket):
         return None
 
     try:
-        import workspace_store
+        import stores
 
-        client = workspace_store._supabase()
-        response = client.rpc("bump_usage", {"p_bucket": bucket}).execute()
-        count = int(response.data)
+        count = stores.bump_usage(bucket)
         _counter_checked = True
         return count
     except Exception as exc:
@@ -190,8 +188,8 @@ def _bump(bucket):
         _counter_unavailable = True
         logger.warning(
             "Usage counters unavailable (%s). Falling back to the in-memory "
-            "burst limit only; apply the usage_counters migration to enforce "
-            "daily caps across instances.",
+            "burst limit only. On Supabase this usually means the "
+            "usage_counters migration has not been applied.",
             exc,
         )
         return None

@@ -1,4 +1,5 @@
 # Configure Matplotlib to use non-interactive backend before any other imports
+import logging
 import matplotlib
 matplotlib.use('Agg')  # Use the Agg backend that doesn't require a display or GUI
 import matplotlib.pyplot as plt
@@ -14,11 +15,14 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Page
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
 
-# --- Gemini integration ---
+# --- LLM integration ---
 from langchain_core.messages import HumanMessage
 import settings
+
+logger = logging.getLogger(__name__)
+
 
 # --- ReportGenerator Class ---
 class ReportGenerator:
@@ -36,17 +40,16 @@ class ReportGenerator:
         self.max_plots_per_section = 3
         self.max_cat_for_bivariate = 10
 
-        # --- Instantiate the Gemini LLM ---
-        if not (api_key or settings.GOOGLE_API_KEY):
-            raise ValueError("Google API key not provided and GOOGLE_API_KEY is not set.")
-
+        # --- Instantiate the LLM ---
         # Warmer than the query path: reports read better with some latitude.
+        # settings owns which provider that is; a misconfiguration surfaces here
+        # as a ProviderError naming the missing key or package.
         self.llm = settings._build_llm(temperature=0.6)
-        print(f"ReportGenerator initialized with {settings.GEMINI_MODEL} via Google Gemini.")
+        logger.info(f"ReportGenerator initialized with {settings.LLM_MODEL} via {settings.LLM_PROVIDER}.")
 
 
     def _invoke_llm(self, prompt_text, max_retries=3, delay=5):
-        """Helper function to call the Gemini LLM with retries and error handling."""
+        """Helper function to call the LLM with retries and error handling."""
         self._check_cancellation() # Check before making an API call
         for attempt in range(max_retries):
             try:
@@ -59,21 +62,21 @@ class ReportGenerator:
                 else:
                     error_message = f"Gemini API call resulted in no content. Prompt: '{prompt_text[:200]}...'"
                     if attempt < max_retries - 1:
-                        print(f"Warning: {error_message} Retrying ({attempt + 1}/{max_retries})...")
+                        logger.error(f"Warning: {error_message} Retrying ({attempt + 1}/{max_retries})...")
                         time.sleep(delay * (attempt + 1))
                         continue
                     else:
-                        print(f"Error: {error_message} Max retries reached.")
+                        logger.error(f"Error: {error_message} Max retries reached.")
                         # Fallback to a safe string to avoid breaking report generation
                         return "Error: LLM response not available after multiple retries."
 
             except Exception as e:
                 error_message = f"Error calling Gemini API: {str(e)}. Prompt: '{prompt_text[:200]}...'"
                 if attempt < max_retries - 1:
-                    print(f"Warning: {error_message} Retrying ({attempt + 1}/{max_retries})...")
+                    logger.error(f"Warning: {error_message} Retrying ({attempt + 1}/{max_retries})...")
                     time.sleep(delay * (attempt + 1))
                 else:
-                    print(f"Error: {error_message} Max retries reached.")
+                    logger.error(f"Error: {error_message} Max retries reached.")
                     # Fallback to a safe string to avoid breaking report generation
                     return f"Error: LLM communication failed after multiple retries - {str(e)}"
 
@@ -142,13 +145,13 @@ class ReportGenerator:
             self.story.append(KeepInFrame(width + 0.5*inch, height + 0.8*inch, elements_to_keep)) 
             self.story.append(Spacer(1, 0.1 * inch))
         except Exception as e:
-            print(f"Error adding image to report: {str(e)}")
+            logger.error(f"Error adding image to report: {str(e)}")
         finally:
             # Always ensure the figure is closed to prevent memory leaks and Tkinter issues
             try:
                 plt.close(fig)
             except Exception as close_error:
-                print(f"Error closing figure: {str(close_error)}")
+                logger.error(f"Error closing figure: {str(close_error)}")
 
     def _rl_add_table(self, df_table, caption_text):
         self._check_cancellation()
@@ -548,7 +551,7 @@ class ReportGenerator:
                     except Exception as e: self._rl_add_paragraph(f"Error generating crosstab/plot for {col1} vs {col2}: {str(e)}")
 
             if cat_cat_analyses > 0 :
-                cat_cat_context = f"Crosstabs (and opt. stacked bars) generated. Examples:\n" + "\n".join(cat_cat_plot_info[:2])
+                cat_cat_context = "Crosstabs (and opt. stacked bars) generated. Examples:\n" + "\n".join(cat_cat_plot_info[:2])
                 bivar_observations_for_llm.append(f"Categorical vs Categorical: {cat_cat_context.strip()}")
                 prompt_cat_cat = f"""
                 {cat_cat_context}
@@ -609,7 +612,7 @@ class ReportGenerator:
     def generate_report_pdf_reportlab(self, output_filepath=None, progress_callback=None):
         """Generate a comprehensive PDF report using ReportLab and Gemini."""
         self._check_cancellation()  # Check before starting
-        print("Using ReportLab and Gemini for PDF generation with enhanced structure.")
+        logger.info("Using ReportLab and Gemini for PDF generation with enhanced structure.")
         
         df = self.data_handler.get_df()
         if df is None or df.empty:
@@ -720,7 +723,7 @@ class ReportGenerator:
             if os.path.exists(report_filename_pdf):
                 try: os.remove(report_filename_pdf)
                 except OSError: pass
-            print(f"Error building PDF with ReportLab (Gemini workflow): {e}")
+            logger.error(f"Error building PDF with ReportLab (Gemini workflow): {e}")
             import traceback
             traceback.print_exc()
             return None, f"Error building PDF (Gemini): {str(e)}"
@@ -740,11 +743,11 @@ class ReportGenerator:
             
             return report_path, status
         except Exception as e:
-            print(f"Error generating report: {str(e)}")
+            logger.error(f"Error generating report: {str(e)}")
             raise
         finally:
             # Ensure all plots are closed at the end to prevent memory leaks
             try:
                 plt.close('all')
             except Exception as close_error:
-                print(f"Error closing plots: {str(close_error)}")
+                logger.error(f"Error closing plots: {str(close_error)}")

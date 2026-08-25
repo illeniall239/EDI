@@ -1,27 +1,20 @@
 import uuid
 import os
-import subprocess
-import tempfile
 import matplotlib.pyplot as plt
 import json
 import pandas as pd
 import re
 import logging
-import settings
 
-# Supabase client for persistent memory
+# Optional: persistent conversation memory lives in Supabase when it is
+# installed and configured. The outcome is reported once the logger exists.
 try:
     from supabase import create_client, Client
     SUPABASE_AVAILABLE = True
-    print("[OK] Supabase import successful in agent_services.py")
-except ImportError as e:
+    _supabase_import_error = None
+except Exception as exc:
     SUPABASE_AVAILABLE = False
-    print(f"[ERROR] ImportError in agent_services.py: {str(e)}")
-    print("Warning: supabase-py not found. Install with 'pip install supabase' for persistent conversation memory.")
-except Exception as e:
-    SUPABASE_AVAILABLE = False
-    print(f"[ERROR] Unexpected error importing supabase: {str(e)}")
-    print("Warning: supabase import failed for unknown reason.")
+    _supabase_import_error = exc
 from langchain_community.agent_toolkits.sql.base import create_sql_agent
 from langchain.agents.agent_types import AgentType
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
@@ -32,37 +25,26 @@ try:
     LANGCHAIN_MEMORY_AVAILABLE = True
 except Exception:
     LANGCHAIN_MEMORY_AVAILABLE = False
-# Import for Langchain Pandas Agent
-try:
-    from langchain_experimental.agents.agent_toolkits.pandas.base import create_pandas_dataframe_agent
-    LANGCHAIN_PANDAS_AGENT_AVAILABLE = True
-except ImportError:
-    LANGCHAIN_PANDAS_AGENT_AVAILABLE = False
-    print("Warning: langchain_experimental.agents.agent_toolkits.pandas.base not found. Langchain Pandas Agent will not be available. Try 'pip install langchain-experimental'.")
 
 import seaborn as sns
 import numpy as np # Often needed with pandas and plotting
 from typing import Tuple, Optional, Dict, Any
 from sqlalchemy import text as sa_text
-import textwrap
 
-# Configure logging with UTF-8 encoding to handle emojis on Windows
 import sys
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+
+# The log messages carry emoji; a Windows console defaults to a codepage that
+# cannot encode them, and the resulting UnicodeEncodeError takes down the
+# handler rather than the message.
+if sys.platform.startswith('win'):
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
 logger = logging.getLogger('AgentServices')
 
-# Set console encoding to UTF-8 for Windows
-if sys.platform.startswith('win'):
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-        sys.stderr.reconfigure(encoding='utf-8')
-    except AttributeError:
-        # Python < 3.7 doesn't have reconfigure
-        pass
+if not SUPABASE_AVAILABLE:
+    logger.info("supabase-py not available (%s); conversation memory stays in process.",
+                _supabase_import_error)
 
 # CustomSQLDatabaseToolkit definition
 class CustomSQLDatabaseToolkit(SQLDatabaseToolkit):
@@ -78,60 +60,11 @@ class CustomSQLDatabaseToolkit(SQLDatabaseToolkit):
         ]
 
 class AgentServices:
-    def __init__(self, llm, charts_dir=None):
+    def __init__(self, llm):
         self.llm = llm
         self.speech_util = None  # speech removed; kept as a no-op for callers
         self.operation_cancelled_flag = False
         
-        # Use a simple path in a web-accessible location
-        try:
-            if charts_dir:
-                self.charts_dir = os.path.abspath(charts_dir)
-            else:
-                # Save into a writable scratch location for web access.
-                self.charts_dir = os.path.join(
-                    tempfile.gettempdir(), "static", "visualizations"
-                )
-                logger.debug(f"Setting visualization directory to: {self.charts_dir}")
-            
-            # Ensure the directory exists
-            if not os.path.exists(self.charts_dir):
-                logger.debug(f"Creating directory: {self.charts_dir}")
-                os.makedirs(self.charts_dir, exist_ok=True)
-                logger.info(f"Created charts directory: {self.charts_dir}")
-            else:
-                logger.debug(f"Directory already exists: {self.charts_dir}")
-            
-            # Test write permissions
-            try:
-                test_file = os.path.join(self.charts_dir, "test.txt")
-                with open(test_file, 'w') as f:
-                    f.write("test")
-                os.remove(test_file)
-                logger.info(f"Confirmed write permissions for: {self.charts_dir}")
-            except Exception as e:
-                logger.error(f"Cannot write to {self.charts_dir}: {str(e)}")
-                # Fall back to a writable scratch directory
-                self.charts_dir = os.path.join(tempfile.gettempdir(), "static")
-                logger.info(f"Falling back to: {self.charts_dir}")
-                os.makedirs(self.charts_dir, exist_ok=True)
-                
-                # Try to create visualizations subdirectory
-                vis_dir = os.path.join(self.charts_dir, "visualizations")
-                try:
-                    os.makedirs(vis_dir, exist_ok=True)
-                    self.charts_dir = vis_dir
-                    logger.info(f"Created and using visualizations subdirectory: {self.charts_dir}")
-                except Exception as subdir_err:
-                    logger.error(f"Could not create visualizations subdirectory: {str(subdir_err)}")
-        
-        except Exception as e:
-            logger.error(f"Error setting up visualization directory: {str(e)}")
-            # Ultimate fallback - system temp, which is writable everywhere
-            self.charts_dir = tempfile.gettempdir()
-            logger.info(f"Using fallback directory: {self.charts_dir}")
-            os.makedirs(self.charts_dir, exist_ok=True)
-
         self.agent_executor = None
         # Maintain low-level chat histories and wrap them with a ConversationBufferMemory
         self.chat_history = InMemoryChatMessageHistory()
@@ -145,7 +78,6 @@ class AgentServices:
         self.inferred_context = None
         self.data_summary = None
         self.analysis_results = []
-        self.visualizations = []
         self.data_handler = None
         
         # Initialize Supabase client for persistent memory
@@ -207,6 +139,15 @@ When working with data:
 
 Remember: You're a helpful assistant who happens to excel at data analysis, not a rigid data-only machine. Be conversational, engaging, and helpful across all topics while showcasing your data expertise when relevant."""
             
+            # Built for its tools, not for its reasoning. The UI only ever
+            # sends mode="simple" (ChatSidebar keeps queryMode in state and
+            # never changes it), so the ReAct loop below is unreachable --
+            # but _execute_sql_query_directly pulls the sql_db_query tool out
+            # of this executor to run the SQL it generated itself. Deleting
+            # the agent would break the live path.
+            #
+            # It also means no provider needs to survive ReAct parsing, which
+            # is what makes small local models a workable option here.
             self.agent_executor = create_sql_agent(
                 llm=self.llm,
                 toolkit=toolkit,
@@ -219,11 +160,11 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
             )
         else:
             if not self.llm:
-                print("Warning: SQL Agent could not be initialized. LLM missing.")
+                logger.error("Warning: SQL Agent could not be initialized. LLM missing.")
             elif not db_sqlalchemy:
-                print("Info: SQL Agent will be initialized when data is loaded.")
+                logger.debug("Info: SQL Agent will be initialized when data is loaded.")
             else:
-                print("Warning: SQL Agent could not be initialized. Unknown issue.")
+                logger.error("Warning: SQL Agent could not be initialized. Unknown issue.")
             self.agent_executor = None
         if self.memory:
             self.memory.clear()
@@ -234,7 +175,6 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
         self.inferred_context = None
         self.data_summary = None
         self.analysis_results = []
-        self.visualizations = []
         self.operation_cancelled_flag = False # Critical: reset cancellation flag
         
         # Clear all chat memories to prevent context contamination
@@ -243,7 +183,7 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
         
         # Force reinitialize LLM to clear any internal state/memory
         if hasattr(self, 'llm') and self.llm:
-            print("🧹 Clearing LLM context for fresh synthetic dataset generation")
+            logger.debug("🧹 Clearing LLM context")
             # The LLM will be reinitialized on next use, ensuring clean context
 
     # NEW: Chat-specific memory management methods
@@ -279,7 +219,7 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
                             self.chat_history.add_user_message(content)
                         elif role == 'assistant':
                             self.chat_history.add_ai_message(content)
-                    logger.info(f"✅ Successfully restored conversation context from database")
+                    logger.info("✅ Successfully restored conversation context from database")
                     logger.debug(f"🧠 Final memory state: {len(self.chat_history.messages)} messages total")
                 else:
                     logger.debug(f"📭 No previous conversation history found for chat: {chat_id}")
@@ -299,25 +239,9 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
             self.agent_executor.memory = self.memory
             logger.debug(f"🔧 Updated agent executor memory for chat: {chat_id}")
     
-    def clear_chat_context(self, chat_id: str):
-        """Clear specific chat's context"""
-        logger.info(f"🗑️ Clearing context for chat: {chat_id}")
-        
-        if chat_id in self.chat_histories:
-            self.chat_histories[chat_id].clear()
-            del self.chat_histories[chat_id]
-        
-        # If this was the current chat, reset to default memory
-        if self.current_chat_id == chat_id:
-            self.chat_history = InMemoryChatMessageHistory()
-            self.current_chat_id = None
-            if self.agent_executor and hasattr(self.agent_executor, 'memory') and LANGCHAIN_MEMORY_AVAILABLE:
-                self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, chat_memory=self.chat_history)
-                self.agent_executor.memory = self.memory
-
     def _get_conversation_context_string(self, max_messages: int = 6) -> str:
         """Get formatted conversation context for LLM prompts"""
-        logger.debug(f"🔍 Getting conversation context...")
+        logger.debug("🔍 Getting conversation context...")
         logger.debug(f"🔍 Memory exists: {self.memory is not None}")
         logger.debug(f"🔍 Memory exists and has messages: {bool(self.memory and hasattr(self.memory, 'chat_memory'))}")
         logger.debug(f"🔍 Messages count: {len(self.memory.chat_memory.messages) if self.memory and hasattr(self.memory, 'chat_memory') else 0}")
@@ -368,7 +292,7 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
             return []
 
     def cancel_operation(self):
-        print("AgentServices: Cancel operation requested.")
+        logger.debug("AgentServices: Cancel operation requested.")
         self.operation_cancelled_flag = True
 
     def clear_cancel_flag(self):
@@ -442,7 +366,7 @@ try:
 
 except Exception as e:
     # Handle errors
-    print(f"Error during code execution: {{str(e)}}")
+    logger.error(f"Error during code execution: {{str(e)}}")
     result = f"Error: {{str(e)}}" # Store error message in result for feedback
 '''
 """
@@ -577,11 +501,11 @@ except Exception as e:
 
     def categorize_query(self, question: str) -> tuple[str, int]:
         """Categorize the query and return confidence score"""
-        logger.info(f"🔍 === CATEGORIZING QUERY ===")
+        logger.info("🔍 === CATEGORIZING QUERY ===")
         logger.info(f"📝 Input: '{question}'")
         
         # Get basic categorization first
-        logger.info(f"🎯 Running basic categorization...")
+        logger.info("🎯 Running basic categorization...")
         initial_category = self._categorize_query_basic(question)
         logger.info(f"🎯 Basic categorization result: {initial_category}")
         
@@ -632,7 +556,7 @@ except Exception as e:
             return "DUPLICATE_CHECK"
 
         # --- LLM-based categorization first ---
-        logger.info(f"🤖 Running LLM-based categorization...")
+        logger.info("🤖 Running LLM-based categorization...")
         valid_categories = [
             'SPECIFIC_DATA', 'GENERAL', 'VISUALIZATION', 
             'TRANSLATION', 'ANALYSIS', 'MISSING_VALUES', 'DUPLICATE_CHECK', 'SPREADSHEET_COMMAND', 'JUNK_DETECTION'
@@ -659,7 +583,7 @@ IMPORTANT: Any query containing words like "duplicate", "duplicates", "deduplica
 
 Only output the category name, nothing else.
 """
-            logger.info(f"🤖 Sending query to LLM for categorization...")
+            logger.info("🤖 Sending query to LLM for categorization...")
             logger.info(f"🤖 LLM Prompt: {llm_prompt}")
             
             llm_response = self.llm.invoke(llm_prompt)
@@ -774,11 +698,11 @@ Only output the category name, nothing else.
                 ]
                 
                 if any(keyword in question_lower for keyword in visualization_keywords):
-                    logger.debug(f"Query contains visualization keywords, categorizing as VISUALIZATION")
+                    logger.debug("Query contains visualization keywords, categorizing as VISUALIZATION")
                     return "VISUALIZATION"
                 
                 # Otherwise, return SPECIFIC_DATA
-                logger.debug(f"Categorizing as SPECIFIC_DATA")
+                logger.debug("Categorizing as SPECIFIC_DATA")
                 return "SPECIFIC_DATA"
             
         # Then check for visualization requests
@@ -800,16 +724,6 @@ Only output the category name, nothing else.
             
         # Default to general query
         return "GENERAL"
-
-    def process_spreadsheet_command(self, question: str) -> str:
-        """DEPRECATED: Spreadsheet operations now handled by Univer frontend.
-
-        This method previously generated Luckysheet API calls but has been disabled
-        as all spreadsheet operations now execute directly through the Univer FacadeAPI
-        on the frontend via UniverAdapter.
-        """
-        logger.info("process_spreadsheet_command called but is deprecated - operations now use Univer")
-        return "Spreadsheet operations are now handled directly by the Univer frontend. This endpoint is deprecated."
 
     def _process_missing_values(self, question: str, df: pd.DataFrame) -> str:
         """
@@ -898,7 +812,7 @@ Only output the category name, nothing else.
 
     def process_non_visualization_query(self, question: str, query_category: str, is_speech: bool = False, mode: str = "simple") -> str:
         """Process non-visualization queries with improved error handling."""
-        logger.debug(f"🔧 === PROCESS NON-VISUALIZATION QUERY ===")
+        logger.debug("🔧 === PROCESS NON-VISUALIZATION QUERY ===")
         logger.debug(f"💬 Question: {question}")
         logger.debug(f"📂 Category: {query_category}")
         
@@ -914,7 +828,7 @@ Only output the category name, nothing else.
         if is_speech and self.speech_util:
             confirmation = self.generate_confirmation_message(question)
             self.speech_util.text_to_speech(confirmation)
-            print(confirmation)
+            logger.debug(confirmation)
             if self.operation_cancelled_flag:
                 return "I've stopped processing that request as you requested."
 
@@ -929,55 +843,83 @@ Only output the category name, nothing else.
                 if self.operation_cancelled_flag:
                     return "I've stopped processing that request as you requested."
 
-                # CONTEXT-AWARE PROCESSING: Check if query is about conversation vs dataset FIRST
+                # CONTEXT-AWARE PROCESSING: "what did I just ask you?" should be
+                # answered from the conversation, not from the sheet.
                 conversation_context = self._get_conversation_context_string()
-                logger.debug(f"🔍 Conversation context being passed to LLM: {repr(conversation_context)}")
-                
-                # Use LLM to determine if this is about conversation context or dataset
-                context_check_prompt = f"""You must analyze this user query and respond in exactly one of two ways:
 
-{conversation_context}User question: "{question}"
+                # With no history there is nothing to answer from, so this check
+                # can only do harm -- it spends a model call and hands the model
+                # an opportunity to reply with prose that gets shown to the user
+                # as the answer. Most questions arrive on a fresh chat.
+                if not conversation_context.strip():
+                    logger.debug("No conversation history; going straight to the dataset")
+                else:
+                    # A closed one-word classification, then a separate call to
+                    # write the answer -- rather than one prompt offering "reply
+                    # with this token, or else write the answer yourself".
+                    #
+                    # That earlier shape failed open: anything which was not the
+                    # token became the user's answer verbatim, and its branches
+                    # were not mutually exclusive, since a data question really
+                    # is absent from the conversation history. Measured on a
+                    # local 13B it took the prose branch 6 times in 12, once
+                    # replying "the total revenue for the South region is
+                    # $500,000" with no data and no query behind it. Requiring an
+                    # opt-in marker instead made it worse, not better: the same
+                    # model then opted in 12 times out of 12.
+                    #
+                    # Asking for one word out of two is the version weak models
+                    # get right -- 4/4 on data questions in the same test -- and
+                    # anything unrecognised falls through to the dataset, where a
+                    # misrouted question produces a wrong query rather than an
+                    # invented number.
+                    route_prompt = f"""Classify what the user's message is asking about. Answer with one word.
 
-RESPOND WITH EXACTLY ONE OF THESE:
+{conversation_context}User message: "{question}"
 
-1. If the question asks about information from our conversation history above, give a direct helpful answer to the user. Examples:
-   - If they ask "what is my name?" and you see "my name is John" in history → "Your name is John"
-   - If they ask "what did I tell you?" and you see relevant info → summarize what they told you
-   - If they ask about their name but no name was shared → "I don't see you mentioning your name in our conversation yet. What would you like me to call you?"
+DATA     - anything about the spreadsheet: numbers, rows, columns, totals,
+           charts, filtering, sorting, analysis
+HISTORY  - something said earlier in the conversation above
 
-2. If the question is about dataset analysis, data queries, charts, or database operations → respond with exactly: "DATASET_QUERY"
+Answer with exactly one word, DATA or HISTORY, and nothing else."""
 
-CRITICAL: Your response will be shown directly to the user. Do NOT include meta-commentary, analysis, or explanations. Give either:
-- A direct, helpful user-facing answer from conversation history, OR  
-- Exactly "DATASET_QUERY"
+                    route = "DATA"
+                    try:
+                        reply = self.llm.invoke(route_prompt).content.strip().upper()
+                        # Only a clear, unambiguous HISTORY diverts away from the
+                        # data. A reply mentioning both, or neither, is a data
+                        # question as far as this is concerned.
+                        if "HISTORY" in reply and "DATA" not in reply:
+                            route = "HISTORY"
+                        elif "DATA" not in reply and "HISTORY" not in reply:
+                            logger.warning(
+                                "Routing check returned neither word, treating as a "
+                                "dataset query: %r", reply[:120]
+                            )
+                    except Exception as exc:
+                        logger.error(f"Routing check failed, treating as a dataset query: {exc}")
 
-No other format is acceptable."""
+                    if route == "HISTORY":
+                        # Now, and only now, ask it to actually answer. Separating
+                        # the decision from the writing means a model that rambles
+                        # cannot turn a data question into prose.
+                        answer_prompt = f"""{conversation_context}The user asks: "{question}"
+
+Answer using only the conversation above. Address the user directly. If the
+conversation does not contain the answer, say so plainly and briefly."""
+                        try:
+                            answer = self.llm.invoke(answer_prompt).content.strip()
+                            if answer:
+                                logger.debug("Query answered from conversation context")
+                                return answer
+                        except Exception as exc:
+                            logger.error(f"Conversation answer failed: {exc}")
+
 
                 try:
-                    context_response = self.llm.invoke(context_check_prompt)
-                    response_content = context_response.content.strip()
-                    logger.debug(f"🤖 LLM context check response: {repr(response_content)}")
-                    
-                    if response_content == "DATASET_QUERY":
-                        # This is clearly a dataset query, proceed to database
-                        logger.debug("📊 Query classified as dataset query, proceeding to database")
-                    elif "DATASET_QUERY" in response_content:
-                        # LLM included DATASET_QUERY but with extra text - treat as dataset query
-                        logger.debug("📊 Query contains DATASET_QUERY, treating as dataset query")
-                    else:
-                        # This should be a conversation-based response - validate it's user-friendly
-                        if len(response_content) > 0 and not any(phrase in response_content.lower() for phrase in 
-                            ["analyze", "determine", "the user asked", "look in", "check conversation"]):
-                            # Looks like a proper user-facing response
-                            logger.debug("🧠 Query answered from conversation context")
-                            return response_content
-                        else:
-                            # LLM gave diagnostic text instead of user response - provide fallback
-                            logger.warning(f"⚠️ LLM gave diagnostic response instead of user-facing answer: {response_content}")
-                            return "I'm not sure I understand your question. Could you please rephrase it?"
-                    
-                    # If we reach here, it's a dataset query - check database availability and proceed
-                    logger.debug(f"🔍 Dataset query detected, checking data handler state...")
+                    # Not answered from conversation history, so it is a question
+                    # about the data. Check the database is there and run it.
+                    logger.debug("🔍 Dataset query detected, checking data handler state...")
                     logger.debug(f"🔍 self.data_handler is None: {self.data_handler is None}")
                     if self.data_handler is not None:
                         db_obj = self.data_handler.get_db_sqlalchemy_object()
@@ -1129,18 +1071,18 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
                 return "I'm ready to help! What would you like to know or do with your data?", None
                 
             # Log the question for debugging
-            logger.info(f"🚀 === PROCESSING QUERY START ===")
+            logger.info("🚀 === PROCESSING QUERY START ===")
             logger.info(f"📝 Query: '{question}'")
             logger.info(f"🎤 Speech mode: {is_speech}")
             logger.info(f"⚙️ Mode: {mode}")
             
             # Get query category with confidence
-            logger.info(f"🔍 Starting query categorization...")
+            logger.info("🔍 Starting query categorization...")
             query_category, confidence = self.categorize_query(question)
             logger.info(f"✅ Query categorized as: {query_category} (confidence: {confidence}%)")
             
             # Skip clarification - proceed directly with query processing
-            logger.info(f"✅ Proceeding directly with query processing (ambiguity detection removed)")
+            logger.info("✅ Proceeding directly with query processing (ambiguity detection removed)")
             
             # Execute based on final category
             logger.info(f"🎯 === EXECUTING QUERY TYPE: {query_category} ===")
@@ -1155,7 +1097,7 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
                     if response and not response.startswith("I encountered an error"):
                         if hasattr(self, 'chat_history') and self.chat_history:
                             self.chat_history.add_ai_message(response)
-                        logger.debug(f"💾 Added missing values response to unified conversation memory")
+                        logger.debug("💾 Added missing values response to unified conversation memory")
                     return response, None
                 else:
                     no_data_response = "I need some data to analyze first. Please upload a dataset and I can help identify and handle missing values."
@@ -1206,9 +1148,7 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
                     response = self._process_duplicate_removal(question, df)
                     
                     # Check if the response indicates data modification
-                    data_modified = False
                     if response.startswith("DATA_MODIFIED:"):
-                        data_modified = True
                         response = response.replace("DATA_MODIFIED:", "", 1).strip()
                         
                     # Special handling for data modifications
@@ -1294,7 +1234,7 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
                         memory_response = response.replace("DATA_MODIFIED:", "", 1).strip() if response.startswith("DATA_MODIFIED:") else response
                         if hasattr(self, 'chat_history') and self.chat_history:
                             self.chat_history.add_ai_message(memory_response)
-                        logger.debug(f"💾 Added duplicate check response to unified conversation memory")
+                        logger.debug("💾 Added duplicate check response to unified conversation memory")
                     
                     return response, None
                 else:
@@ -1310,10 +1250,8 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
                         response = self._process_duplicate_removal(question, df)
                         
                         # Check if the response indicates data modification
-                        data_modified = False
                         memory_response = response
                         if response.startswith("DATA_MODIFIED:"):
-                            data_modified = True
                             response = response.replace("DATA_MODIFIED:", "", 1).strip()
                             memory_response = response  # Use clean response for memory
                         
@@ -1321,7 +1259,7 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
                         if response and not response.startswith("I encountered an error"):
                             if hasattr(self, 'chat_history') and self.chat_history:
                                 self.chat_history.add_ai_message(memory_response)
-                            logger.debug(f"💾 Added miscategorized duplicate response to unified conversation memory")
+                            logger.debug("💾 Added miscategorized duplicate response to unified conversation memory")
                             
                         # Return without any metadata to avoid frontend visualization processing
                         return response, None
@@ -1338,7 +1276,7 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
                 if response and not response.startswith("I encountered an error"):
                     if hasattr(self, 'chat_history') and self.chat_history:
                         self.chat_history.add_ai_message(response)
-                    logger.debug(f"💾 Added AI response to unified conversation memory")
+                    logger.debug("💾 Added AI response to unified conversation memory")
                 
                 return response, None
         except Exception as e:
@@ -1526,7 +1464,7 @@ Rules:
             A tuple containing (response message, visualization info dictionary)
             The visualization info contains paths to generated visualization files
         """
-        logger.debug(f"📊 === PROCESSING VISUALIZATION REQUEST ===")
+        logger.debug("📊 === PROCESSING VISUALIZATION REQUEST ===")
         logger.debug(f"💬 Query: {question}")
         
         if self.operation_cancelled_flag:
@@ -1543,13 +1481,6 @@ Rules:
 
             if error or not spec:
                 return error or "I couldn't build that chart.", None
-
-            # Add to visualizations history
-            self.visualizations.append({
-                "question": question,
-                "chart_type": spec.get("chart_type"),
-                "timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
-            })
 
             logger.debug(f"📊 Chart spec: {spec['chart_type']} "
                          f"x={spec['x_key']} series={[x['key'] for x in spec['series']]} "
@@ -1573,7 +1504,7 @@ Rules:
         Returns:
             A success/error message string
         """
-        logger.debug(f"🌐 === PROCESSING TRANSLATION REQUEST ===")
+        logger.debug("🌐 === PROCESSING TRANSLATION REQUEST ===")
         logger.debug(f"💬 Question: {question}")
         logger.debug(f"📊 DataFrame shape: {df.shape}")
         
@@ -1686,7 +1617,7 @@ Rules:
                     return f"Error translating values: {str(e)}"
             
             # Step 7: Apply translations to create a new column
-            logger.debug(f"🔄 Creating new column with translations")
+            logger.debug("🔄 Creating new column with translations")
             df[new_column_name] = df[column_name].map(translations)
             
             # Handle values that weren't in the training set (like NaN)
@@ -1714,7 +1645,7 @@ Rules:
         Returns:
             A success/error message string
         """
-        logger.debug(f"🌐🔄 === PROCESSING BULK TRANSLATION REQUEST ===")
+        logger.debug("🌐🔄 === PROCESSING BULK TRANSLATION REQUEST ===")
         logger.debug(f"💬 Question: {question}")
         logger.debug(f"📊 DataFrame shape: {df.shape}")
         
@@ -1764,7 +1695,6 @@ Rules:
                 columns_spec = analysis.get('columns_to_translate', 'all')
                 target_language = analysis.get('target_language', 'English')
                 skip_numeric = analysis.get('skip_numeric_columns', True)
-                reasoning = analysis.get('reasoning', '')
                 
             except (json.JSONDecodeError, Exception) as e:
                 logger.error(f"❌ Failed to parse LLM response as JSON: {str(e)}")
@@ -1772,7 +1702,6 @@ Rules:
                 columns_spec = 'all'
                 target_language = 'English'
                 skip_numeric = True
-                reasoning = "Using default settings due to parsing error."
             
             # Step 2: Determine which columns to translate based on the specification
             columns_to_translate = []
@@ -1931,13 +1860,13 @@ Rules:
             self.data_handler.update_df_and_db(df_working)
             
             # Step 8: Create summary message
-            summary = f"✅ Bulk translation completed successfully!\n"
+            summary = "✅ Bulk translation completed successfully!\n"
             summary += f"📊 Translated {len(translation_results)} columns to {target_language}\n"
             summary += f"🔄 Total unique values translated: {total_translations}\n"
-            summary += f"📋 New columns created:\n"
+            summary += "📋 New columns created:\n"
             for result in translation_results:
                 summary += f"   • {result}\n"
-            summary += f"🗂️ Translated columns placed after their original columns"
+            summary += "🗂️ Translated columns placed after their original columns"
             
             return summary
             
@@ -1955,7 +1884,7 @@ Rules:
         Returns:
             A message with duplicate count information
         """
-        logger.debug(f"🔍 === SIMPLE DUPLICATE CHECK ===")
+        logger.debug("🔍 === SIMPLE DUPLICATE CHECK ===")
         logger.debug(f"💬 Question: {question}")
         logger.debug(f"📊 DataFrame shape: {df.shape}")
         
@@ -1987,7 +1916,7 @@ Rules:
         Returns:
             A success/error message string with details about the changes made
         """
-        logger.debug(f"🧹 === PROCESSING DUPLICATE REMOVAL REQUEST ===")
+        logger.debug("🧹 === PROCESSING DUPLICATE REMOVAL REQUEST ===")
         logger.debug(f"💬 Question: {question}")
         logger.debug(f"📊 DataFrame shape before: {df.shape}")
         
@@ -2063,7 +1992,6 @@ Rules:
                 
                 subset_columns = analysis.get('subset_columns')
                 keep_strategy = analysis.get('keep_strategy')
-                reasoning = analysis.get('reasoning', '')
                 
                 # IMPORTANT: Ensure we always keep at least one instance of each duplicate
                 # Only allow 'first' or 'last' as keep_strategy, never False (which would drop all duplicates)
@@ -2090,7 +2018,6 @@ Rules:
                 # Extract column information manually and initialize variables
                 subset_columns = None
                 keep_strategy = 'first'  # Default value to avoid variable scope issues
-                reasoning = "Extracted from question using pattern matching."
                 
             # Move column_match outside the try block to fix scope issue
             column_match = re.search(r'(?:based on|using|with|for|in|from|of|by)\s+(?:column(?:s)?\s+)?([A-Za-z0-9_,\s]+)', question.lower())
@@ -2149,7 +2076,7 @@ Rules:
                 rows_removed = original_count - new_count
             
                 # Enhanced logging for better debugging
-                logger.debug(f"📊 Direct deduplication analysis:")
+                logger.debug("📊 Direct deduplication analysis:")
                 logger.debug(f"   Original count: {original_count}")
                 logger.debug(f"   New count: {new_count}")
                 logger.debug(f"   Rows removed: {rows_removed}")
@@ -2240,7 +2167,7 @@ Rules:
                 total_dups = dup_mask.sum()
                 unique_count = df.drop_duplicates().shape[0]
                 
-                check_result = f"\n📊 Comprehensive check (all columns): "
+                check_result = "\n📊 Comprehensive check (all columns): "
                 check_result += f"{total_rows} total rows, {unique_count} unique, {total_dups} flagged as duplicates."
             
             # If duplicates exist, show sample
@@ -2250,7 +2177,7 @@ Rules:
                 else:
                     sample_dups = df[df.duplicated(keep=False)].head(3)
                 
-                check_result += f"\n🔍 Sample duplicates found:"
+                check_result += "\n🔍 Sample duplicates found:"
                 for idx, row in sample_dups.iterrows():
                     if subset_columns:
                         sample_data = {col: row[col] for col in subset_columns}
@@ -2271,7 +2198,7 @@ Rules:
         Returns:
             A string response with the query results or error message
         """
-        logger.debug(f"🔍 === EXECUTE SQL QUERY DIRECTLY ===")
+        logger.debug("🔍 === EXECUTE SQL QUERY DIRECTLY ===")
         logger.debug(f"💬 Question: {question}")
         if self.agent_executor is None:
             return "SQL agent is not initialized. Please try again later."
@@ -2611,7 +2538,7 @@ Rules:
         Returns:
             A response with junk detection results or instructions
         """
-        logger.debug(f"🧹 === PROCESSING JUNK DETECTION REQUEST ===")
+        logger.debug("🧹 === PROCESSING JUNK DETECTION REQUEST ===")
         logger.debug(f"💬 Question: {question}")
         logger.debug(f"📊 DataFrame shape: {df.shape}")
         
@@ -2715,7 +2642,7 @@ Rules:
 """
             
             if results['flagged_count'] > 0:
-                response += f"""🚫 **Sample Flagged Responses:**
+                response += """🚫 **Sample Flagged Responses:**
 """
                 for i, item in enumerate(results['sample_flagged'], 1):
                     response += f"{i}. \"{item['text']}\" (confidence: {item['confidence']}% - {item['reason']})\n"
@@ -2736,101 +2663,6 @@ Rules:
             logger.error(f"❌ Error in junk detection processing: {str(e)}")
             return f"Error processing junk detection request: {str(e)}"
 
-    def process_clarification_choice(self, choice_id: str, original_query: str, category: str) -> Tuple[str, Optional[Dict[str, str]]]:
-        """
-        Process user's clarification choice and execute the appropriate action.
-        
-        Args:
-            choice_id: User's selected option ID
-            original_query: Original user query
-            category: Selected category
-            
-        Returns:
-            Tuple of response and visualization data
-        """
-        try:
-            # Process clarification choice directly (clarification system removed)
-            logger.info(f"🎯 Processing clarification choice: {choice_id} for category: {category}")
-            
-            # Simply execute the original query normally
-            logger.info(f"🎯 Executing query: '{original_query}' (clarification system removed)")
-            
-            # Process the query normally 
-            return self.process_query(original_query)
-                
-        except Exception as e:
-            logger.error(f"❌ Error processing clarification choice: {str(e)}")
-            return f"Error processing your choice: {str(e)}", None
-    
-    def _execute_with_category(self, question: str, forced_category: str) -> Tuple[str, Optional[Dict[str, str]]]:
-        """Execute a query with a specific category, bypassing categorization."""
-        try:
-            logger.info(f"🔧 Executing with forced category: {forced_category}")
-            
-            # Execute based on the forced category
-            if forced_category == "JUNK_DETECTION":
-                df = self.data_handler.get_df()
-                if df is not None:
-                    response = self._process_junk_detection_request(question, df)
-                    return response, None
-                else:
-                    return "I need some data to analyze first. Please upload a dataset and I can help detect junk responses in text columns.", None
-                    
-            elif forced_category == "SPREADSHEET_COMMAND":
-                response = self.process_spreadsheet_command(question)
-                return response, None
-                
-            elif forced_category == "SPECIFIC_DATA":
-                df = self.data_handler.get_df()
-                if df is not None:
-                    response = self._process_non_visualization_query(question, df)
-                    return response, None
-                else:
-                    return "I need some data to analyze first. Please upload a dataset.", None
-                    
-            elif forced_category == "VISUALIZATION":
-                response, visualization_data = self._process_visualization_request(question)
-                return response, visualization_data
-                
-            elif forced_category == "DUPLICATE_CHECK":
-                df = self.data_handler.get_df()
-                if df is not None:
-                    response = self._check_duplicates_simple(question, df)
-                    return response, None
-                else:
-                    return "I need some data to check for duplicates. Please upload a dataset first.", None
-                    
-            elif forced_category == "MISSING_VALUES":
-                df = self.data_handler.get_df()
-                if df is not None:
-                    response = self._process_missing_values(question, df)
-                    return response, None
-                else:
-                    return "I need some data to analyze missing values. Please upload a dataset first.", None
-                    
-            elif forced_category == "TRANSLATION":
-                df = self.data_handler.get_df()
-                if df is not None:
-                    response = self._process_translation_request(question, df)
-                    return response, None
-                else:
-                    return "I need some data to translate. Please upload a dataset first.", None
-                    
-            elif forced_category == "ANALYSIS":
-                df = self.data_handler.get_df()
-                if df is not None:
-                    response = self._process_non_visualization_query(question, df)
-                    return response, None
-                else:
-                    return "I need some data to analyze. Please upload a dataset first.", None
-                    
-            else:
-                return f"Category '{forced_category}' is not yet implemented.", None
-                
-        except Exception as e:
-            logger.error(f"❌ Error executing with forced category {forced_category}: {str(e)}")
-            return f"Error executing your request: {str(e)}", None
-
     def get_available_columns_for_extraction(self) -> Dict[str, any]:
         """
         Get available columns with their metadata for the extraction dialog.
@@ -2838,7 +2670,7 @@ Rules:
         Returns:
             Dictionary with column information including names, types, sample data, and statistics
         """
-        logger.debug(f"📋 === GETTING AVAILABLE COLUMNS FOR EXTRACTION ===")
+        logger.debug("📋 === GETTING AVAILABLE COLUMNS FOR EXTRACTION ===")
         
         if not self.data_handler or self.data_handler.get_df() is None:
             return {
@@ -2912,7 +2744,7 @@ Rules:
         Returns:
             Dictionary with extraction results and Luckysheet-compatible data
         """
-        logger.debug(f"🔧 === EXTRACTING SELECTED COLUMNS ===")
+        logger.debug("🔧 === EXTRACTING SELECTED COLUMNS ===")
         logger.debug(f"📋 Selected columns: {selected_columns}")
         
         if not self.data_handler or self.data_handler.get_df() is None:
@@ -2995,7 +2827,7 @@ Rules:
         Returns:
             Dictionary in Luckysheet format
         """
-        logger.debug(f"🔄 Converting DataFrame to Luckysheet format")
+        logger.debug("🔄 Converting DataFrame to Luckysheet format")
         
         try:
             # Create the cell data in Luckysheet format
@@ -3308,331 +3140,3 @@ class DataCleaningAgent:
         except Exception as e:
             self.logger.error(f"❌ Error creating junk flag column: {str(e)}")
             return df
-
-class UniversalClarificationSystem:
-    """Universal system for handling ambiguous user queries by asking for clarification."""
-    
-    def __init__(self, llm):
-        self.llm = llm
-        self.logger = logging.getLogger(__name__)
-        self.user_preferences = {}  # Store user preference patterns
-        self.confidence_threshold = 75  # Queries below this trigger clarification
-    
-    def analyze_query_confidence(self, question: str, initial_category: str) -> tuple[str, int, list]:
-        """
-        Analyze query confidence and detect potential alternative interpretations.
-        
-        Args:
-            question: User's query
-            initial_category: Initially detected category
-            
-        Returns:
-            tuple: (category, confidence_score, alternative_categories)
-        """
-        self.logger.info(f"🔬 === CLARIFICATION SYSTEM ANALYSIS START ===")
-        self.logger.info(f"📝 Query: '{question}'")
-        self.logger.info(f"🎯 Initial category: {initial_category}")
-        
-        try:
-            analysis_prompt = f"""
-            Analyze this user query for ambiguity and confidence: "{question}"
-            
-            Initially categorized as: {initial_category}
-            
-            Your task:
-            1. Rate confidence (0-100%) that the initial category is correct
-            2. Identify alternative valid interpretations
-            3. Consider common user intentions
-            
-            Categories available:
-            - SPECIFIC_DATA: Ask about data points, summaries, context
-            - VISUALIZATION: Create charts, graphs, plots
-            - JUNK_DETECTION: Find/identify/flag junk/spam responses
-            - ANALYSIS: Statistical analysis, correlations, patterns
-            - SPREADSHEET_COMMAND: Format cells, sort, filter data
-            - DUPLICATE_CHECK: Find/remove duplicate rows
-            - TRANSLATION: Translate text content
-            - MISSING_VALUES: Handle null/empty values
-            
-            Common ambiguity patterns:
-            - "find X" could mean: analyze X, search X, highlight X, filter to show X
-            - "show me X" could mean: display data, create visualization, generate report
-            - "clean data" could mean: remove duplicates, fix missing values, identify junk
-            - "highlight X" could mean: format cells, mark important data, filter data
-            
-            Return ONLY this JSON:
-            {{
-                "confidence": 85,
-                "primary_category": "JUNK_DETECTION",
-                "alternatives": [
-                    {{"category": "SPREADSHEET_COMMAND", "reason": "Could want to highlight/search in spreadsheet", "likelihood": 30}},
-                    {{"category": "ANALYSIS", "reason": "Might want statistical analysis of junk patterns", "likelihood": 20}}
-                ],
-                "is_ambiguous": false,
-                "user_intent_keywords": ["find", "junk", "identify"]
-            }}
-            """
-            
-            self.logger.info(f"🤖 Sending confidence analysis to LLM...")
-            self.logger.info(f"🤖 Analysis prompt: {analysis_prompt}")
-            
-            response = self.llm.invoke(analysis_prompt)
-            self.logger.info(f"🤖 LLM raw response: '{response.content}'")
-            
-            raw_content = response.content.strip().replace('```json', '').replace('```', '').strip()
-            self.logger.info(f"🤖 Cleaned response: '{raw_content}'")
-            
-            result = json.loads(raw_content)
-            self.logger.info(f"🤖 Parsed JSON result: {result}")
-            
-            confidence = result.get('confidence', 50)
-            category = result.get('primary_category', initial_category)
-            alternatives = result.get('alternatives', [])
-            
-            self.logger.info(f"✅ Query confidence analysis complete:")
-            self.logger.info(f"   - Confidence: {confidence}%")
-            self.logger.info(f"   - Category: {category}")
-            self.logger.info(f"   - Alternatives: {alternatives}")
-            self.logger.info(f"   - Threshold check: {confidence}% {'<' if confidence < self.confidence_threshold else '>='} {self.confidence_threshold}%")
-            
-            return category, confidence, alternatives
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error in confidence analysis: {str(e)}")
-            # Fallback: assume medium confidence
-            return initial_category, 60, []
-    
-    def generate_clarification_options(self, question: str, primary_category: str, alternatives: list) -> dict:
-        """
-        Generate user-friendly clarification response as conversational text.
-        
-        Args:
-            question: Original user query
-            primary_category: Primary detected category
-            alternatives: List of alternative interpretations
-            
-        Returns:
-            dict: Regular response with conversational clarification text
-        """
-        try:
-            # Generate conversational text explaining the options
-            response_parts = [f"I can help you with \"{question}\" in several ways:"]
-            
-            # Add primary option first (recommended)
-            primary_description = self._get_category_description(primary_category)
-            if primary_description:
-                response_parts.append(f"• **{primary_description}** (Recommended)")
-            
-            # Add alternative options
-            for alt in alternatives:
-                if alt.get('likelihood', 0) >= 20:  # Only show likely alternatives
-                    alt_description = self._get_category_description(alt['category'])
-                    if alt_description and alt_description != primary_description:
-                        response_parts.append(f"• {alt_description}")
-            
-            # Add general option
-            response_parts.append("• Or if you have something else in mind, just let me know!")
-            
-            # Combine into conversational response
-            response_parts.append("\nWhat would you like me to do?")
-            
-            conversational_response = "\n\n".join(response_parts)
-            
-            # Return as a regular response, not special clarification type
-            return {
-                "type": "regular",
-                "message": conversational_response,
-                "original_query": question
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error generating clarification response: {str(e)}")
-            return {
-                "type": "regular",
-                "message": "I'm not sure how to help with that. Could you please rephrase your question or tell me more specifically what you'd like me to do?"
-            }
-    
-    def _get_category_description(self, category: str) -> str:
-        """Get conversational description for a category."""
-        
-        category_descriptions = {
-            "JUNK_DETECTION": "Analyze data quality and identify junk or spam responses",
-            "SPREADSHEET_COMMAND": "Format or manipulate your spreadsheet with visual changes",
-            "SPECIFIC_DATA": "Query and analyze specific information from your data",
-            "VISUALIZATION": "Create charts, graphs, or visual representations",
-            "ANALYSIS": "Perform statistical analysis, find correlations, or identify patterns",
-            "DUPLICATE_CHECK": "Find, analyze, or remove duplicate rows from your dataset",
-            "MISSING_VALUES": "Identify and handle missing or null values in your data",
-            "TRANSLATION": "Translate text content in your data to different languages"
-        }
-        
-        return category_descriptions.get(category, "Help with your data request")
-    
-    def _create_option_for_category(self, category: str, question: str, is_primary: bool = False) -> dict:
-        """Create a user-friendly option for a specific category."""
-        
-        option_templates = {
-            "JUNK_DETECTION": {
-                "id": "junk_analysis",
-                "title": "🧹 Analyze data quality",
-                "description": "Identify and summarize junk/spam responses with confidence scores",
-                "category": "JUNK_DETECTION"
-            },
-            "SPREADSHEET_COMMAND": {
-                "id": "spreadsheet_action", 
-                "title": "🎨 Format or manipulate spreadsheet",
-                "description": "Apply formatting, highlighting, or other visual changes to cells",
-                "category": "SPREADSHEET_COMMAND"
-            },
-            "SPECIFIC_DATA": {
-                "id": "data_query",
-                "title": "📊 Query and analyze data",
-                "description": "Get specific information, summaries, or insights from your data",
-                "category": "SPECIFIC_DATA"
-            },
-            "VISUALIZATION": {
-                "id": "create_chart",
-                "title": "📈 Create visualization",
-                "description": "Generate charts, graphs, or visual representations of your data",
-                "category": "VISUALIZATION"
-            },
-            "ANALYSIS": {
-                "id": "statistical_analysis",
-                "title": "🔬 Perform statistical analysis",
-                "description": "Run correlations, patterns analysis, or other statistical operations",
-                "category": "ANALYSIS"
-            },
-            "DUPLICATE_CHECK": {
-                "id": "duplicate_handling",
-                "title": "🔍 Handle duplicate data",
-                "description": "Find, analyze, or remove duplicate rows from your dataset",
-                "category": "DUPLICATE_CHECK"
-            },
-            "MISSING_VALUES": {
-                "id": "missing_data",
-                "title": "🔧 Handle missing values",
-                "description": "Identify, analyze, or fix missing/null values in your data",
-                "category": "MISSING_VALUES"
-            },
-            "TRANSLATION": {
-                "id": "translate_content",
-                "title": "🌍 Translate content",
-                "description": "Translate text content in your data to different languages",
-                "category": "TRANSLATION"
-            }
-        }
-        
-        template = option_templates.get(category)
-        if template:
-            option = template.copy()
-            if is_primary:
-                option["title"] = f"✨ {option['title']} (Recommended)"
-            return option
-        
-        return None
-    
-    def process_user_choice(self, choice_id: str, original_query: str, category: str) -> tuple[str, str]:
-        """
-        Process user's clarification choice and prepare for execution.
-        
-        Args:
-            choice_id: User's selected option ID
-            original_query: Original user query
-            category: Selected category
-            
-        Returns:
-            tuple: (processed_query, final_category)
-        """
-        try:
-            # Learn user preference
-            self._learn_user_preference(original_query, choice_id, category)
-            
-            # If user chose "other", ask for more details
-            if choice_id == "other":
-                return original_query, "CLARIFY_MORE"
-            
-            # Otherwise, return the query with the selected category
-            self.logger.info(f"✅ User chose {choice_id} for query: '{original_query}'")
-            return original_query, category
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error processing user choice: {str(e)}")
-            return original_query, category
-    
-    def _learn_user_preference(self, query: str, choice_id: str, category: str):
-        """Learn user preferences for similar future queries."""
-        try:
-            # Extract key patterns from the query
-            key_patterns = self._extract_key_patterns(query)
-            
-            # Store preference
-            for pattern in key_patterns:
-                if pattern not in self.user_preferences:
-                    self.user_preferences[pattern] = {}
-                
-                if category not in self.user_preferences[pattern]:
-                    self.user_preferences[pattern][category] = 0
-                
-                self.user_preferences[pattern][category] += 1
-            
-            self.logger.debug(f"📚 Learned preference: {key_patterns} → {category}")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error learning user preference: {str(e)}")
-    
-    def _extract_key_patterns(self, query: str) -> list:
-        """Extract key patterns from user query for learning."""
-        patterns = []
-        query_lower = query.lower()
-        
-        # Action verbs
-        action_verbs = ['find', 'show', 'create', 'make', 'generate', 'analyze', 'identify', 'clean', 'remove', 'fix']
-        for verb in action_verbs:
-            if verb in query_lower:
-                patterns.append(f"action:{verb}")
-        
-        # Subject nouns
-        subjects = ['junk', 'duplicate', 'chart', 'graph', 'data', 'trend', 'pattern', 'missing', 'null']
-        for subject in subjects:
-            if subject in query_lower:
-                patterns.append(f"subject:{subject}")
-        
-        # Combined patterns
-        if 'junk' in query_lower and 'find' in query_lower:
-            patterns.append("pattern:find_junk")
-        if 'show' in query_lower and 'trend' in query_lower:
-            patterns.append("pattern:show_trend")
-        
-        return patterns
-    
-    def check_learned_preferences(self, query: str) -> tuple[str, int]:
-        """
-        Check if we've learned user preferences for this type of query.
-        
-        Args:
-            query: User's query
-            
-        Returns:
-            tuple: (preferred_category, confidence_boost)
-        """
-        try:
-            patterns = self._extract_key_patterns(query)
-            category_scores = {}
-            
-            for pattern in patterns:
-                if pattern in self.user_preferences:
-                    for category, count in self.user_preferences[pattern].items():
-                        category_scores[category] = category_scores.get(category, 0) + count
-            
-            if category_scores:
-                # Get the most preferred category
-                preferred_category = max(category_scores.items(), key=lambda x: x[1])
-                confidence_boost = min(30, preferred_category[1] * 10)  # Max 30 point boost
-                
-                self.logger.debug(f"📈 Learned preference boost: {preferred_category[0]} (+{confidence_boost}%)")
-                return preferred_category[0], confidence_boost
-            
-        except Exception as e:
-            self.logger.error(f"❌ Error checking learned preferences: {str(e)}")
-        
-        return None, 0
