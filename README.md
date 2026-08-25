@@ -6,6 +6,10 @@ English to filter it, clean it, chart it, or have it explained back to you.
 There is no sign-up. Opening the app drops you straight into a sheet with the
 AI sidebar next to it.
 
+![Uploading a CSV, asking which region had the highest revenue, charting revenue by month, and sorting the sheet -- all from the chat](assets/edi-demo.gif)
+
+*Real answers from a real model. The pauses while it thinks are cut; nothing else is.*
+
 EDI is a harness: you bring the model. It runs on Google, OpenAI, Anthropic,
 Groq, a local model through **Ollama**, or anything speaking the
 OpenAI-compatible wire format. With nothing configured at all it keeps

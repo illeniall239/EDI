@@ -34,7 +34,7 @@ export default function DocsHome() {
                 controls
                 preload="metadata"
                 poster="/edi-demo-poster.jpg"
-                aria-label="Uploading a spreadsheet, asking it questions in plain English, and generating a formula"
+                aria-label="Uploading a CSV, asking which region had the highest revenue, charting revenue by month, and sorting the sheet -- all from the chat"
             >
                 <source src="/edi-demo.webm" type="video/webm" />
                 <source src="/edi-demo.mp4" type="video/mp4" />
