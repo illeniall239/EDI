@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { ArrowRight, Bot, Check, ChevronDown, Paperclip } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,8 @@ interface AIPromptProps {
     // Additional action buttons
     additionalButtons?: React.ReactNode;
     minimal?: boolean;
+    /** Bump to move the cursor into the box -- see the effect below. */
+    focusToken?: number;
 }
 
 // How a question gets answered. There are two paths through the backend and
@@ -50,11 +53,23 @@ export default function AIPrompt({
     onModeChange,
     additionalButtons,
     minimal = false,
+    focusToken = 0,
 }: AIPromptProps) {
     const { textareaRef, adjustHeight } = useAutoResizeTextarea({
         minHeight: 72,
         maxHeight: 300,
     });
+
+    // Filling the box from somewhere else -- a suggestion -- should leave the
+    // cursor in it, ready to send or edit. Without this the text appears but
+    // Enter does nothing, because focus is still on whatever was clicked.
+    useEffect(() => {
+        if (!focusToken) return;
+        const box = textareaRef.current;
+        if (!box) return;
+        box.focus();
+        box.setSelectionRange(box.value.length, box.value.length);
+    }, [focusToken, textareaRef]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "Enter" && !e.shiftKey) {

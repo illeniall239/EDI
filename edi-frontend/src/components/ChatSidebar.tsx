@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, Upload } from 'lucide-react';
-import { useState, useRef, useEffect, useCallback, Fragment } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, LimitError } from '@/utils/api';
 import { commandService } from '@/services/commandService';
@@ -14,6 +14,7 @@ import { TypeAnimation } from 'react-type-animation';
 import Image from 'next/image';
 import { API_BASE_URL } from '@/config';
 import ReactMarkdown from 'react-markdown';
+import { columnsOf, suggestionsFor } from '@/utils/dataShape';
 import { ChartRenderer, LegacyChartImage } from '@/components/charts/ChartRenderer';
 import remarkGfm from 'remark-gfm';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -125,12 +126,18 @@ export default function ChatSidebar({
     
     // NEW: Multiple chat state management
     const [chats, setChats] = useState<Chat[]>([]);
+    // Bumped to pull the cursor into the prompt after filling it.
+    const [promptFocus, setPromptFocus] = useState(0);
     const [activeChat, setActiveChat] = useState<Chat | null>(null);
 
     // How many messages are on screen, readable without becoming a dependency.
     // loadWorkspaceChats needs this for its "don't clobber an open chat" guard,
     // but must not be re-created when it changes -- see the note on that
     // callback's dependency list.
+    // Derived from the loaded sheet rather than hardcoded: see utils/dataShape.
+    const sheetColumns = useMemo(() => columnsOf(data), [data]);
+    const sheetSuggestions = useMemo(() => suggestionsFor(data), [data]);
+
     const messageCountRef = useRef(0);
     const [isCreatingChat, setIsCreatingChat] = useState(false);
 
@@ -4761,7 +4768,7 @@ export default function ChatSidebar({
                     
                     {/* Chat Controls in Header */}
                     {isExpanded && (
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5">
                             {/* Upload data. Sits before New Chat because it is
                                 the first thing a new workspace needs, and it is
                                 never disabled -- uploading is how you get out of
@@ -4769,10 +4776,10 @@ export default function ChatSidebar({
                             {onFileUpload && (
                                 <label
                                     title="Upload a CSV or Excel file"
-                                    className="bg-black hover:bg-black/90 text-white px-3 py-2 rounded-md font-medium transition-all duration-200 border border-white/20 flex items-center gap-2 cursor-pointer"
+                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[12px] text-white/65 hover:text-white bg-white/[0.03] hover:bg-white/[0.07] border border-[color:var(--edi-hairline-soft)] hover:border-[color:var(--edi-hairline)] transition-colors cursor-pointer"
                                 >
                                     <Upload className="w-4 h-4" />
-                                    <span className="text-sm">Upload data</span>
+                                    <span>Upload data</span>
                                     <input
                                         type="file"
                                         accept=".csv,.xlsx,.xls"
@@ -4786,21 +4793,21 @@ export default function ChatSidebar({
                             <button
                                 onClick={() => handleCreateNewChat()}
                                 disabled={isCreatingChat || !currentWorkspace?.id}
-                                className="bg-black hover:bg-black/90 text-white px-3 py-2 rounded-md font-medium transition-all duration-200 border border-white/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[12px] text-white/65 hover:text-white bg-white/[0.03] hover:bg-white/[0.07] border border-[color:var(--edi-hairline-soft)] hover:border-[color:var(--edi-hairline)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                                 {isCreatingChat ? (
                                     <div className="w-4 h-4 border border-current border-t-transparent rounded-full animate-spin"></div>
                                 ) : (
                                     <Plus className="w-4 h-4" />
                                 )}
-                                <span className="text-sm">New Chat</span>
+                                <span>New chat</span>
                             </button>
 
                             {/* Cycle Arrow */}
                             <button
                                 onClick={() => handleCycleChat()}
                                 disabled={chats.length <= 1}
-                                className="flex items-center justify-center w-6 h-6 text-sidebar-foreground hover:text-sidebar-foreground/80 disabled:text-sidebar-foreground/30 disabled:cursor-not-allowed transition-colors"
+                                className="flex items-center justify-center w-7 h-7 rounded-md text-white/40 hover:text-white/80 hover:bg-white/[0.05] disabled:text-white/15 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
                                 title="Cycle through chats"
                             >
                                 <RefreshCw className="w-4 h-4" />
@@ -4861,69 +4868,89 @@ export default function ChatSidebar({
                         </div>
                     ) : messages.length === 0 ? (
                         <div className="text-sidebar-foreground text-sm space-y-6">
-                            {/* Opening state. This is the first thing anyone sees, so it
-                                states what the panel is for and hands over three real
-                                questions rather than describing itself in the abstract. */}
-                            <div className="mt-7">
-                                <div className="edi-kicker edi-rise mb-4" style={{ animationDelay: '40ms' }}>
-                                    {isDataLoaded ? 'Ready' : 'No dataset'}
-                                </div>
-
-                                <h3
-                                    className="edi-rise text-[26px] leading-[1.16] font-medium tracking-[-0.02em] text-white mb-3"
-                                    style={{ animationDelay: '110ms' }}
-                                >
-                                    Ask your
-                                    <br />
-                                    spreadsheet
-                                    <br />
-                                    <span style={{ color: 'var(--edi-signal)' }}>anything.</span>
-                                </h3>
-
-                                <p
-                                    className="edi-rise text-[12.5px] leading-relaxed text-white/45 mb-6 max-w-[290px]"
-                                    style={{ animationDelay: '180ms' }}
-                                >
-                                    Filter it, clean it, chart it, or have it explained back to you — in plain English.
-                                </p>
-
-                                {(
-                                    <div className="space-y-2">
-                                        <div className="edi-kicker edi-rise mb-3" style={{ animationDelay: '240ms' }}>
-                                            Try asking
-                                        </div>
-                                        {[
-                                            'Which region has the highest total revenue?',
-                                            'Chart total revenue by product as a bar chart',
-                                            'Remove duplicate rows'
-                                        ].map((example, i) => (
-                                            <button
-                                                key={example}
-                                                type="button"
-                                                onClick={() => setInput(example)}
-                                                disabled={!isDataLoaded}
-                                                className="edi-suggestion edi-rise disabled:opacity-40 disabled:cursor-not-allowed"
-                                                style={{ animationDelay: `${290 + i * 70}ms` }}
-                                            >
-                                                {example}
-                                            </button>
-                                        ))}
+                            {/* Opening state.
+                                A panel that greets you with a slogan is a panel
+                                with nothing to say. This says what is actually
+                                loaded -- the real columns, and questions built
+                                from them -- which is different for every file
+                                and useful on the first read. */}
+                            {isDataLoaded && sheetColumns.length > 0 ? (
+                                <div className="edi-rise mt-6">
+                                    <div className="flex items-baseline justify-between mb-2.5">
+                                        <span className="edi-kicker">Columns</span>
+                                        <span className="edi-num text-[11px]">{sheetColumns.length}</span>
                                     </div>
-                                )}
-                            </div>
+
+                                    <div
+                                        className="rounded-lg overflow-hidden mb-7"
+                                        style={{ border: '1px solid var(--edi-hairline-soft)' }}
+                                    >
+                                        {sheetColumns.slice(0, 8).map((column, i) => (
+                                            <div
+                                                key={column.name}
+                                                className="flex items-center justify-between gap-3 px-3 py-[7px]"
+                                                style={{
+                                                    borderTop: i ? '1px solid var(--edi-hairline-soft)' : 'none',
+                                                    background: i % 2 ? 'rgba(255,255,255,0.012)' : 'transparent'
+                                                }}
+                                            >
+                                                <span className="text-[12px] text-white/72 truncate min-w-0">
+                                                    {column.name}
+                                                </span>
+                                                <span
+                                                    className="edi-kicker shrink-0"
+                                                    style={{
+                                                        color: column.kind === 'num'
+                                                            ? 'rgba(255,212,121,0.72)'
+                                                            : 'rgba(255,255,255,0.3)'
+                                                    }}
+                                                >
+                                                    {column.kind}
+                                                </span>
+                                            </div>
+                                        ))}
+                                        {sheetColumns.length > 8 && (
+                                            <div
+                                                className="px-3 py-[7px] text-[11px] text-white/32"
+                                                style={{ borderTop: '1px solid var(--edi-hairline-soft)' }}
+                                            >
+                                                +{sheetColumns.length - 8} more
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {sheetSuggestions.length > 0 && (
+                                        <>
+                                            <div className="edi-kicker mb-2.5">Ask</div>
+                                            <div className="space-y-2">
+                                                {sheetSuggestions.map((example) => (
+                                                    <button
+                                                        key={example}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setInput(example);
+                                                            setPromptFocus((n) => n + 1);
+                                                        }}
+                                                        className="edi-suggestion"
+                                                    >
+                                                        {example}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="edi-rise mt-6">
+                                    <p className="text-[13px] text-white/45 leading-relaxed">
+                                        No data yet. Upload a CSV or Excel file and
+                                        this panel will show you what is in it.
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Instructions removed per request */}
 
-                            {!isDataLoaded && (
-                                <div className="bg-muted/20 border border-border rounded-lg p-3">
-                                    <div className="flex items-center gap-2 text-muted-foreground">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L5.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                        </svg>
-                                        <span className="text-xs font-medium">Upload data to start chatting</span>
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     ) : (
                         messages.map((message, index) => (
@@ -5055,6 +5082,7 @@ export default function ChatSidebar({
                                 fileInput.click();
                             }
                         }}
+                        focusToken={promptFocus}
                         disabled={!isDataLoaded}
                         isProcessing={isProcessing}
                         placeholder={isDataLoaded ? "Ask about your data or use voice command..." : "Upload data first..."}
