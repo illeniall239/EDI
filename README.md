@@ -62,7 +62,7 @@ EDI_LLM_PROVIDER=ollama python backend/check_model.py
 ```
 
 To use a hosted model and Postgres instead, copy `sample.env` to `.env`, fill
-in a key and your Supabase details, and apply the migrations:
+in a key and your Supabase details, and apply the schema:
 
 ```bash
 supabase db push

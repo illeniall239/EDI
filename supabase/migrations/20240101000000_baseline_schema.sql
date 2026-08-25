@@ -1,16 +1,13 @@
--- The tables everything else assumes.
+-- The whole schema, in one file.
 --
--- This migration is newer than the two that follow it. Until it existed, the
--- repo carried migrations that ALTER `workspaces` but nothing that creates it,
--- so `supabase db push` against a fresh project failed on the first statement
--- and a clean clone could not be provisioned at all. The schema below is
--- reconstructed from what backend/stores/supabase.py actually reads and
--- writes, which is the only authoritative source now.
+-- Only needed with EDI_STORE=supabase. Running against a local SQLite file --
+-- the default -- there is no database to migrate and nothing here applies.
 --
--- It is dated ahead of the others so it runs first, and is written to be safe
--- to apply to a project that already has these tables: every statement is
--- guarded, so an existing deployment can run it as a no-op rather than having
--- to know whether it needs it.
+-- Every statement is guarded, so applying this to a project that already has
+-- the tables is a no-op rather than an error.
+--
+-- The shape is reconstructed from what backend/stores/supabase_store.py
+-- actually reads and writes, which is the authoritative source.
 
 create table if not exists public.workspaces (
     id uuid primary key default gen_random_uuid(),
@@ -93,3 +90,55 @@ create index if not exists idx_chats_updated_at
 -- what would be the bug.
 alter table public.workspaces enable row level security;
 alter table public.chats enable row level security;
+
+
+-- --------------------------------------------------------------------------
+-- Usage counters
+-- --------------------------------------------------------------------------
+--
+-- Only used when EDI_LIMITS_ENABLED=1, which is off by default and exists for
+-- deployments on a public URL. Created here regardless: an unused empty table
+-- costs nothing, and it means turning the limits on later does not also mean
+-- remembering to run a second migration.
+--
+-- The count lives in Postgres rather than in the backend process because a
+-- deployment may be several processes, or serverless functions that share no
+-- memory -- either way an in-process counter only ever sees the slice of
+-- traffic that reached it.
+
+create table if not exists public.usage_counters (
+    bucket text not null,
+    day date not null,
+    count integer not null default 0,
+    primary key (bucket, day)
+);
+
+-- Closed to the anon role, for the same reason as the tables above.
+alter table public.usage_counters enable row level security;
+
+-- Increment today's counter and return the new value.
+--
+-- The insert ... on conflict is a single statement, so two requests arriving
+-- together cannot both read the same count and write the same total back.
+-- Doing this read-modify-write in Python would let a burst slip past the cap.
+create or replace function public.bump_usage(p_bucket text)
+returns integer
+language plpgsql
+as $$
+declare
+    new_count integer;
+begin
+    insert into public.usage_counters (bucket, day, count)
+    values (p_bucket, (now() at time zone 'utc')::date, 1)
+    on conflict (bucket, day) do update
+        set count = public.usage_counters.count + 1
+    returning count into new_count;
+
+    return new_count;
+end;
+$$;
+
+-- Nothing but the service role may move the counter. Without this, anyone
+-- holding the public anon key could call the function over PostgREST and
+-- inflate the global count until the deployment refuses everyone.
+revoke execute on function public.bump_usage(text) from public, anon, authenticated;

@@ -107,7 +107,7 @@ something is misconfigured.
 
 - `backend/generated_reports/` — PDF reports (gitignored)
 - `.edi-data/` — the local workspace store (gitignored)
-- `supabase/migrations/` — three migrations; the baseline creates the tables
+- `supabase/migrations/` — one migration holding the whole schema
 
 ## Testing
 

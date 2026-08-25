@@ -59,23 +59,17 @@ export default function SelfHosting() {
             </div>
 
             <h2>Supabase setup</h2>
+            <p>
+                Only if you are using it. On SQLite there is no database to migrate and
+                none of this applies.
+            </p>
             <pre><code>{`supabase db push`}</code></pre>
-            <p>Three migrations, in order:</p>
-            <ul>
-                <li>
-                    <code>20240101000000_baseline_schema.sql</code> — creates{' '}
-                    <code>workspaces</code> and <code>chats</code>. Every statement is
-                    guarded, so it is safe to run against a project that already has them.
-                </li>
-                <li>
-                    <code>20260823000000_remove_auth_requirement.sql</code> — makes workspaces
-                    ownerless, since there is no sign-in.
-                </li>
-                <li>
-                    <code>20260824000000_usage_counters.sql</code> — the counters the daily
-                    caps are enforced with.
-                </li>
-            </ul>
+            <p>
+                One migration, holding the whole schema: <code>workspaces</code>,{' '}
+                <code>chats</code>, and the counters the usage limits use if you switch
+                them on. Every statement is guarded, so applying it to a project that
+                already has the tables is a no-op rather than an error.
+            </p>
 
             <p>
                 Row-level security is enabled on every table with <strong>no policies at
