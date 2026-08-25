@@ -23,6 +23,7 @@ import {
     forgetWorkspaceId,
     hasTabChosenWorkspace
 } from '@/utils/workspace';
+import { downloadCSV } from '@/utils/exportSheet';
 import { Workspace } from '@/types';
 
 /**
@@ -262,8 +263,11 @@ export default function HomePage() {
     const handleCreateWorkspace = async () => {
         setSwitching(true);
         try {
-            const id = await createWorkspace(`Workbook ${workspaces.length + 1}`);
-            await openWorkspace(id);
+            const name = `Workbook ${workspaces.length + 1}`;
+            const id = await createWorkspace(name);
+            // Pass the name on: without it openWorkspace falls back to its
+            // "My Sheet" default and the navbar shows the wrong workbook.
+            await openWorkspace(id, name);
             await refreshWorkspaces();
             setShowOpener(false);
         } catch (err) {
@@ -413,6 +417,7 @@ export default function HomePage() {
                 onCreateWorkspace={handleCreateWorkspace}
                 onShowAllWorkbooks={handleShowOpener}
                 onClearData={handleClearData}
+                onExportCSV={() => downloadCSV(data as Record<string, unknown>[], currentFilename)}
                 onSpreadsheetCommand={async (command: string) => ({
                     success: true,
                     message: `Processed command: "${command}"`

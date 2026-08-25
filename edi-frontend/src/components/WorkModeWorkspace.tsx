@@ -29,6 +29,7 @@ interface WorkModeWorkspaceProps {
   onCreateWorkspace: () => void;
   onShowAllWorkbooks: () => void;
   onClearData: () => void;
+  onExportCSV: () => void;
   onSpreadsheetCommand: (command: string) => Promise<any>;
   onDataUpdate: (data: any[]) => void;
   onFileUploadFromSpreadsheet: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -48,6 +49,7 @@ export default function WorkModeWorkspace({
   onCreateWorkspace,
   onShowAllWorkbooks,
   onClearData,
+  onExportCSV,
   onSpreadsheetCommand,
   onDataUpdate,
   onFileUploadFromSpreadsheet,
@@ -77,6 +79,7 @@ export default function WorkModeWorkspace({
         onCreateWorkspace={onCreateWorkspace}
         onShowAllWorkbooks={onShowAllWorkbooks}
         onClearData={onClearData}
+        onExportCSV={onExportCSV}
         data={data}
       />
 

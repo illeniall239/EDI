@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { File, ChevronDown, Download, ChevronRight, Trash2, Edit, Table, FileSpreadsheet, Plus, LayoutGrid } from 'lucide-react';
+import { ChevronDown, Trash2, Edit, Download, Plus, LayoutGrid } from 'lucide-react';
 import ConfirmationDialog from './ConfirmationDialog';
 
 interface Workspace {
@@ -24,7 +24,6 @@ interface SpreadsheetNavbarProps {
   // Data Operations
   onClearData?: () => void;
   onExportCSV?: () => void;
-  onExportExcel?: () => void;
   data: any[];
   
   // Tools
@@ -43,12 +42,9 @@ export default function SpreadsheetNavbar({
   onShowAllWorkbooks,
   onClearData,
   onExportCSV,
-  onExportExcel,
   data,
 }: SpreadsheetNavbarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [fileDropdownOpen, setFileDropdownOpen] = useState(false);
-  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editLoading, setEditLoading] = useState(false);
@@ -58,8 +54,6 @@ export default function SpreadsheetNavbar({
 
 
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const fileDropdownRef = useRef<HTMLDivElement>(null);
-  const exportDropdownRef = useRef<HTMLDivElement>(null);
   
 
   // Close dropdowns when clicking outside
@@ -71,23 +65,14 @@ export default function SpreadsheetNavbar({
       const univerContainer = document.getElementById('univer-container');
       const isClickInsideSpreadsheet = univerContainer && univerContainer.contains(target);
 
-      // Close all dropdowns if clicking inside spreadsheet
+      // Close the menu if clicking inside the spreadsheet
       if (isClickInsideSpreadsheet) {
         setDropdownOpen(false);
-        setFileDropdownOpen(false);
-        setExportDropdownOpen(false);
         return;
       }
 
-      // Otherwise, close dropdowns when clicking outside their refs
       if (dropdownRef.current && !dropdownRef.current.contains(target)) {
         setDropdownOpen(false);
-      }
-      if (fileDropdownRef.current && !fileDropdownRef.current.contains(target)) {
-        setFileDropdownOpen(false);
-      }
-      if (exportDropdownRef.current && !exportDropdownRef.current.contains(target)) {
-        setExportDropdownOpen(false);
       }
     };
 
@@ -129,95 +114,9 @@ export default function SpreadsheetNavbar({
     <nav className="w-full bg-background/95 backdrop-blur-sm border-b border-border fixed top-0 left-0 z-50">
       <div className="max-w-full px-8">
         <div className="flex justify-between items-center h-12">
-          {/* Left section - Logo and Navigation */}
-          <div className="flex items-center space-x-6">
-            {/* Logo */}
-            <div className="flex-shrink-0">
-              <span className="text-xl font-bold text-white font-pixelify">EDI.ai</span>
-            </div>
-
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center space-x-6">
-              {/* File Menu. Everything in it -- export, clear -- needs data,
-                 so with an empty sheet the button would open an empty box. */}
-              {data.length > 0 && (
-                <div className="relative" ref={fileDropdownRef}>
-                  <button
-                    onClick={() => setFileDropdownOpen(!fileDropdownOpen)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-white/10 transition-all text-sm text-white hover:text-white"
-                  >
-                    <File className="w-4 h-4" />
-                    File
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  </button>
-
-                  {fileDropdownOpen && (
-                    <div className="absolute top-full left-0 mt-2 w-48 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50">
-                      {/* Export submenu */}
-                      {data.length > 0 && (
-                        <div className="relative" ref={exportDropdownRef}>
-                          <button
-                            onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
-                            className="w-full flex items-center justify-between gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
-                          >
-                            <div className="flex items-center gap-3">
-                              <Download className="w-4 h-4" />
-                              Export File
-                            </div>
-                            <ChevronRight className="w-4 h-4" />
-                          </button>
-
-                          {exportDropdownOpen && (
-                            <div className="absolute left-full top-0 ml-1 w-44 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50">
-                              {onExportCSV && (
-                                <button
-                                  onClick={() => {
-                                    onExportCSV();
-                                    setExportDropdownOpen(false);
-                                    setFileDropdownOpen(false);
-                                  }}
-                                  className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
-                                >
-                                  <Table className="w-4 h-4" />
-                                  Export as CSV
-                                </button>
-                              )}
-                              {onExportExcel && (
-                                <button
-                                  onClick={() => {
-                                    onExportExcel();
-                                    setExportDropdownOpen(false);
-                                    setFileDropdownOpen(false);
-                                  }}
-                                  className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
-                                >
-                                  <FileSpreadsheet className="w-4 h-4" />
-                                  Export as Excel
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {onClearData && data.length > 0 && (
-                        <button
-                          onClick={() => {
-                            setShowClearDataConfirm(true);
-                            setFileDropdownOpen(false);
-                          }}
-                          className="w-full flex items-center gap-3 px-4 py-2 hover:bg-destructive text-sm text-popover-foreground hover:text-destructive-foreground"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Clear Data
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
+          {/* Left section - Logo */}
+          <div className="flex-shrink-0">
+            <span className="text-xl font-bold text-white font-pixelify">EDI.ai</span>
           </div>
 
           {/* Right section - Workspace Selector and User Profile */}
@@ -238,6 +137,41 @@ export default function SpreadsheetNavbar({
 
               {dropdownOpen && (
                 <div className="absolute right-0 top-full mt-2 w-80 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50 max-h-80 overflow-y-auto">
+                  {/* What you can do to the workbook that is open. Nothing here
+                     means anything on an empty sheet, so it only appears with
+                     data in it. */}
+                  {data.length > 0 && (
+                    <div className="pb-2 mb-1 border-b border-border">
+                      {onExportCSV && (
+                        <button
+                          onClick={() => {
+                            onExportCSV();
+                            setDropdownOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download as CSV
+                        </button>
+                      )}
+                      {onClearData && (
+                        <button
+                          onClick={() => {
+                            setShowClearDataConfirm(true);
+                            setDropdownOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-destructive text-sm text-popover-foreground hover:text-destructive-foreground"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Clear data
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Empty until the summaries land, and an empty padded box
+                     reads as a rendering fault rather than as a loading list. */}
+                  {workspaces.length > 0 && (
                   <div className="py-2">
                     {workspaces.map((workspace) => (
                       <div key={workspace.id} className="group">
@@ -298,8 +232,9 @@ export default function SpreadsheetNavbar({
                       </div>
                     ))}
                   </div>
+                  )}
 
-                  <div className="border-t border-border pt-2 mt-1">
+                  <div className={`${workspaces.length > 0 ? 'border-t border-border pt-2 mt-1' : ''}`}>
                     <button
                       onClick={() => {
                         onCreateWorkspace();
