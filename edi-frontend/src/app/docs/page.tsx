@@ -25,7 +25,14 @@ export default function DocsHome() {
                 loop
                 muted
                 playsInline
-                preload="none"
+                /* Muted autoplay is permitted nearly everywhere, so this
+                   plays on its own. `controls` is the fallback for where it
+                   is not -- iOS in low power mode, a strict Firefox setting,
+                   data saver -- which would otherwise leave a poster frame
+                   and no way to start it. `metadata` so the scrubber knows
+                   the duration before anyone touches it. */
+                controls
+                preload="metadata"
                 poster="/edi-demo-poster.jpg"
                 aria-label="Uploading a spreadsheet, asking it questions in plain English, and generating a formula"
             >

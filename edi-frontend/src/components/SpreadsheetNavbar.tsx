@@ -24,8 +24,6 @@ interface SpreadsheetNavbarProps {
   // Data Operations
   onClearData?: () => void;
   onExportCSV?: () => void;
-  /** Demo mode: one sample dataset, no persistence, nothing to switch to. */
-  demo?: boolean;
   data: any[];
   
   // Tools
@@ -44,7 +42,6 @@ export default function SpreadsheetNavbar({
   onShowAllWorkbooks,
   onClearData,
   onExportCSV,
-  demo = false,
   data,
 }: SpreadsheetNavbarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -159,7 +156,7 @@ export default function SpreadsheetNavbar({
                           Download as CSV
                         </button>
                       )}
-                      {onClearData && !demo && (
+                      {onClearData && (
                         <button
                           onClick={() => {
                             setShowClearDataConfirm(true);
@@ -175,10 +172,8 @@ export default function SpreadsheetNavbar({
                   )}
 
                   {/* Empty until the summaries land, and an empty padded box
-                     reads as a rendering fault rather than as a loading list.
-                     A demo has exactly one workbook and never persists it, so
-                     there is nothing to list there either. */}
-                  {workspaces.length > 0 && !demo && (
+                     reads as a rendering fault rather than as a loading list. */}
+                  {workspaces.length > 0 && (
                   <div className="py-2">
                     {workspaces.map((workspace) => (
                       <div key={workspace.id} className="group">
@@ -241,7 +236,6 @@ export default function SpreadsheetNavbar({
                   </div>
                   )}
 
-                  {!demo && (
                   <div className={`${workspaces.length > 0 ? 'border-t border-border pt-2 mt-1' : ''}`}>
                     <button
                       onClick={() => {
@@ -264,7 +258,6 @@ export default function SpreadsheetNavbar({
                       All workbooks
                     </button>
                   </div>
-                  )}
                 </div>
               )}
             </div>

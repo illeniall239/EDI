@@ -32,9 +32,7 @@ interface WorkModeWorkspaceProps {
   onExportCSV: () => void;
   onSpreadsheetCommand: (command: string) => Promise<any>;
   onDataUpdate: (data: any[]) => void;
-  onFileUploadFromSpreadsheet?: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  /** Demo deployments have one sample dataset and no persistence. */
-  demo?: boolean;
+  onFileUploadFromSpreadsheet: (event: React.ChangeEvent<HTMLInputElement>) => void;
   currentFilename?: string;
   initialSheets?: any[];
   onAdapterReady?: (adapter: any) => void;
@@ -55,7 +53,6 @@ export default function WorkModeWorkspace({
   onSpreadsheetCommand,
   onDataUpdate,
   onFileUploadFromSpreadsheet,
-  demo = false,
   currentFilename,
   initialSheets,
   onAdapterReady
@@ -83,7 +80,6 @@ export default function WorkModeWorkspace({
         onShowAllWorkbooks={onShowAllWorkbooks}
         onClearData={onClearData}
         onExportCSV={onExportCSV}
-        demo={demo}
         data={data}
       />
 

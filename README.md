@@ -156,28 +156,6 @@ thought/action/observation format across several turns. Capable hosted models
 do; smaller local ones often do not, and fail back with a message saying so.
 It is also more model calls, so it is slower and costs more.
 
-## Demo mode
-
-For a public link whose job is to be tried rather than lived in:
-
-```bash
-EDI_DEMO_MODE=1
-```
-
-Every visitor arrives on the same sample dataset — `backend/demo_data/` —
-with no upload step in the way, and nothing about them is remembered.
-Uploading is refused by the backend, not merely hidden in the interface.
-
-"No persistence" is the browser's half. A workspace row is still created per
-visit, because the backend is stateless and re-reads the dataset from the
-store on every request that touches data. What changes is that the id lives
-in `sessionStorage` and nowhere else, so a reload keeps the conversation
-someone is in the middle of while a new tab or a new day starts clean. Those
-rows are swept once they are over six hours old, on the next visit, so a demo
-does not fill its database one visitor at a time.
-
-Turn the limits below on as well — a demo is a public URL by definition.
-
 ## Usage limits, if you put this on a public URL
 
 **Off by default.** Running EDI for yourself there is nobody to rate limit,

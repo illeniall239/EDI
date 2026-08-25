@@ -24,7 +24,6 @@ from stores import (  # noqa: F401
     get_handler,
     list_chats,
     list_workspaces,
-    purge_demo_workspaces,
     save_chat,
     save_handler,
     save_workspace,

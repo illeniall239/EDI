@@ -66,7 +66,6 @@ create_workspace = _impl.create_workspace
 fetch_workspace = _impl.fetch_workspace
 save_workspace = _impl.save_workspace
 list_workspaces = _impl.list_workspaces
-purge_demo_workspaces = _impl.purge_demo_workspaces
 delete_workspace = _impl.delete_workspace
 list_chats = _impl.list_chats
 fetch_chat = _impl.fetch_chat
@@ -89,7 +88,6 @@ STORAGE_API = (
     "save_workspace",
     "list_workspaces",
     "delete_workspace",
-    "purge_demo_workspaces",
     "list_chats",
     "fetch_chat",
     "create_chat",
@@ -127,7 +125,6 @@ __all__ = [
     "forget",
     "get_handler",
     "list_chats",
-    "purge_demo_workspaces",
     "save_chat",
     "save_handler",
     "save_workspace",

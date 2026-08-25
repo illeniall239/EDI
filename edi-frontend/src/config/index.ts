@@ -26,9 +26,7 @@ export const API_ENDPOINTS = {
     workspace: (id: string) => `${API_BASE_URL}/api/workspace/${id}`,
     workspaces: `${API_BASE_URL}/api/workspaces`,
     chats: (workspaceId: string) => `${API_BASE_URL}/api/workspace/${workspaceId}/chats`,
-    chat: (chatId: string) => `${API_BASE_URL}/api/chats/${chatId}`,
-    health: `${API_BASE_URL}/api/health`,
-    demoSession: `${API_BASE_URL}/api/demo/session`
+    chat: (chatId: string) => `${API_BASE_URL}/api/chats/${chatId}`
 };
 
 // File upload configuration

@@ -160,27 +160,6 @@ export function setActiveWorkspaceId(id: string): void {
     rememberWorkspaceId(id);
 }
 
-/**
- * The demo's workspace for this tab.
- *
- * Kept in sessionStorage and nowhere else. That is the whole of "no
- * persistence": the id dies with the tab, so a new visit gets a fresh sample
- * dataset, while a reload -- which is staying put, not coming back -- keeps
- * the conversation the visitor is in the middle of.
- *
- * A separate key from ACTIVE_KEY on purpose, so a demo session can never
- * leak into the workspace list a normal install keeps.
- */
-const DEMO_KEY = 'edi.demoWorkspaceId';
-
-export function getDemoSessionId(): string | null {
-    return read(session(), DEMO_KEY);
-}
-
-export function setDemoSessionId(id: string): void {
-    write(session(), DEMO_KEY, id);
-}
-
 /** Create a workspace server-side and remember it. */
 export async function createWorkspace(name = 'Untitled'): Promise<string> {
     const response = await fetch(API_ENDPOINTS.createWorkspace, {

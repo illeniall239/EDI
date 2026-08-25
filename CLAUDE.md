@@ -25,8 +25,6 @@ writing anything that assumes a specific provider or model.
 - `stores/` — workspace persistence: `sqlite_store.py` (local file) or
   `supabase_store.py` (Postgres), chosen in `stores/__init__.py`
 - `limits.py` — usage limits; off unless `EDI_LIMITS_ENABLED=1`
-- `demo.py` — demo mode; off unless `EDI_DEMO_MODE=1`. Sample data in
-  `demo_data/`
 
 **Frontend** (`edi-frontend/`):
 - Next.js 16, React 19, Tailwind 4, TypeScript
@@ -82,8 +80,6 @@ file and the model is looked for on `localhost:11434` (Ollama). See
   `SUPABASE_SERVICE_ROLE_KEY` when unset
 - `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — for the Supabase store
 - `EDI_LIMITS_ENABLED=1` — turn the usage caps on, for a public deployment
-- `EDI_DEMO_MODE=1` — every visitor gets `backend/demo_data/retail_sales.csv`,
-  uploading is refused, and nothing is remembered past the tab. See `demo.py`
 - `EDI_CORS_ORIGINS` — only when the browser and the API are on different
   origins. Unset means no CORS middleware at all; a wildcard is refused
 - `BACKEND_ORIGIN` — goes in `edi-frontend/.env.local`, proxies `/api/*` in dev

@@ -9,7 +9,7 @@ type Row = { method: string; path: string; note: string; metered?: boolean };
 
 const CORE: Row[] = [
     { method: 'GET', path: '/api/health', note: 'Resolved provider and model, storage backend, limit state. Start here when something is wrong.' },
-    { method: 'POST', path: '/api/upload', note: 'Upload a CSV or Excel file. 403 when EDI_DEMO_MODE=1.' },
+    { method: 'POST', path: '/api/upload', note: 'Upload a CSV or Excel file.' },
     { method: 'POST', path: '/api/query', note: 'Ask a question about the data. The main one.', metered: true },
     { method: 'POST', path: '/api/initialize-data', note: 'Load rows into a workspace without a file upload.' },
 ];
@@ -29,7 +29,6 @@ const WORKSPACE: Row[] = [
     { method: 'POST', path: '/api/workspace/{id}/chats', note: 'Start a thread.' },
     { method: 'GET', path: '/api/chats/{id}', note: 'One thread.' },
     { method: 'PUT', path: '/api/chats/{id}', note: 'Save messages or rename.' },
-    { method: 'POST', path: '/api/demo/session', note: 'A workspace holding the sample dataset. 404 unless EDI_DEMO_MODE=1. Also sweeps demo workspaces older than six hours.' },
 ];
 
 const SHEET: Row[] = [

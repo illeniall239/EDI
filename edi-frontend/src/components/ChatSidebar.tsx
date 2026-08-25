@@ -5038,33 +5038,34 @@ export default function ChatSidebar({
                         /* Undefined, not a no-op wrapper: AIPrompt decides
                            whether to draw the paperclip from whether this prop
                            exists, so a wrapper that is always truthy draws a
-                           button that does nothing -- which is what happened in
-                           demo mode, where uploading is off. */
+                           button that quietly does nothing. */
                         onFileUpload={!onFileUpload ? undefined : () => {
-                            // Create a hidden file input and trigger it
-                            const fileInput = document.createElement('input');
-                            fileInput.type = 'file';
-                            fileInput.accept = '.csv,.xlsx,.xls';
-                            fileInput.multiple = false; // Match the direct file input behavior
-                            fileInput.style.display = 'none';
-
-                            fileInput.onchange = () => {
-                                // Pass a minimal synthetic event compatible with our handler
-                                const syntheticEvent = {
-                                    target: fileInput,
-                                } as unknown as React.ChangeEvent<HTMLInputElement>;
-                                onFileUpload(syntheticEvent);
-
-                                // Clean up after the handler completes
-                                setTimeout(() => {
-                                    if (document.body.contains(fileInput)) {
-                                        document.body.removeChild(fileInput);
-                                    }
-                                }, 100);
-                            };
-
-                            document.body.appendChild(fileInput);
-                            fileInput.click();
+                            {
+                                // Create a hidden file input and trigger it
+                                const fileInput = document.createElement('input');
+                                fileInput.type = 'file';
+                                fileInput.accept = '.csv,.xlsx,.xls';
+                                fileInput.multiple = false; // Match the direct file input behavior
+                                fileInput.style.display = 'none';
+                                
+                                fileInput.onchange = () => {
+                                    // Pass a minimal synthetic event compatible with our handler
+                                    const syntheticEvent = {
+                                        target: fileInput,
+                                    } as unknown as React.ChangeEvent<HTMLInputElement>;
+                                    onFileUpload(syntheticEvent);
+                                    
+                                    // Clean up after the handler completes
+                                    setTimeout(() => {
+                                        if (document.body.contains(fileInput)) {
+                                            document.body.removeChild(fileInput);
+                                        }
+                                    }, 100);
+                                };
+                                
+                                document.body.appendChild(fileInput);
+                                fileInput.click();
+                            }
                         }}
                         focusToken={promptFocus}
                         disabled={!isDataLoaded}
