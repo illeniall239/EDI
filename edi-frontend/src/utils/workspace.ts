@@ -4,21 +4,27 @@ import { API_ENDPOINTS } from '@/config';
  * Anonymous workspace identity.
  *
  * EDI has no sign-in. A workspace is just a row keyed by a UUID, and the
- * browser remembers which one is "yours" in localStorage. That is the whole
+ * browser remembers which ones are "yours" in localStorage. That is the whole
  * of the identity model: clearing site data or opening another browser gets
  * you a fresh, empty sheet, and nothing is shared between devices.
  *
- * The id is only ever handed to our own backend, which is what talks to
- * Supabase. Nothing here needs the database credentials.
+ * Because the backend has no idea who is asking, the list of workspaces lives
+ * here rather than in a query. The alternative -- a "list all workspaces"
+ * endpoint -- would hand every visitor everyone else's sheets on any shared
+ * deployment. The browser holds the ids and asks about those.
+ *
+ * The ids are only ever handed to our own backend, which is what talks to the
+ * store. Nothing here needs the database credentials.
  */
-const STORAGE_KEY = 'edi.workspaceId';
+const ACTIVE_KEY = 'edi.workspaceId';
+const LIST_KEY = 'edi.workspaceIds';
 
 /** In-flight creation, so a double render cannot create two workspaces. */
 let pending: Promise<string> | null = null;
 
-function readStored(): string | null {
+function readRaw(key: string): string | null {
     try {
-        return localStorage.getItem(STORAGE_KEY);
+        return localStorage.getItem(key);
     } catch {
         // Private mode and blocked site data both throw here rather than
         // returning null. Losing persistence is survivable; crashing is not.
@@ -26,20 +32,75 @@ function readStored(): string | null {
     }
 }
 
-function writeStored(id: string): void {
+function writeRaw(key: string, value: string): void {
     try {
-        localStorage.setItem(STORAGE_KEY, id);
+        localStorage.setItem(key, value);
     } catch {
         // Same as above: the session still works, it just will not be
         // remembered after a reload.
     }
 }
 
-async function createWorkspace(): Promise<string> {
+/**
+ * Every workspace id this browser knows about, most recently added first.
+ *
+ * Migrates the single-id key that predates multiple workspaces: anyone who
+ * used EDI before this existed has one sheet under `edi.workspaceId`, and it
+ * should show up in their list rather than being orphaned.
+ */
+export function listWorkspaceIds(): string[] {
+    const stored = readRaw(LIST_KEY);
+    if (stored) {
+        try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) {
+                return parsed.filter((id): id is string => typeof id === 'string' && id.length > 0);
+            }
+        } catch {
+            // Corrupt value; fall through to the single-id migration.
+        }
+    }
+
+    const legacy = readRaw(ACTIVE_KEY);
+    return legacy ? [legacy] : [];
+}
+
+function writeWorkspaceIds(ids: string[]): void {
+    writeRaw(LIST_KEY, JSON.stringify(ids));
+}
+
+/** Remember a workspace, newest first, without duplicating it. */
+export function rememberWorkspaceId(id: string): void {
+    const ids = listWorkspaceIds().filter((existing) => existing !== id);
+    writeWorkspaceIds([id, ...ids]);
+}
+
+/** Forget a workspace. Does not delete anything server-side. */
+export function forgetWorkspaceId(id: string): void {
+    writeWorkspaceIds(listWorkspaceIds().filter((existing) => existing !== id));
+    if (readRaw(ACTIVE_KEY) === id) {
+        writeRaw(ACTIVE_KEY, '');
+    }
+}
+
+/** The workspace to open on load. */
+export function getActiveWorkspaceId(): string | null {
+    const active = readRaw(ACTIVE_KEY);
+    if (active) return active;
+    return listWorkspaceIds()[0] ?? null;
+}
+
+export function setActiveWorkspaceId(id: string): void {
+    writeRaw(ACTIVE_KEY, id);
+    rememberWorkspaceId(id);
+}
+
+/** Create a workspace server-side and remember it. */
+export async function createWorkspace(name = 'Untitled'): Promise<string> {
     const response = await fetch(API_ENDPOINTS.createWorkspace, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'My Sheet' })
+        body: JSON.stringify({ name })
     });
 
     if (!response.ok) {
@@ -49,32 +110,38 @@ async function createWorkspace(): Promise<string> {
 
     const { id } = await response.json();
     if (!id) throw new Error('Backend created a workspace but returned no id.');
+
+    rememberWorkspaceId(id as string);
     return id as string;
 }
 
 /**
- * Return the current workspace id, creating one on first visit.
+ * Return the workspace to open, creating one on first visit.
  *
  * A stored id that the backend no longer recognises (the row was deleted, or
- * it came from a different Supabase project) is discarded rather than left to
- * fail every subsequent request.
+ * it came from a different store) is discarded rather than left to fail every
+ * subsequent request.
  */
 export async function getOrCreateWorkspaceId(): Promise<string> {
     if (pending) return pending;
 
     pending = (async () => {
-        const stored = readStored();
+        const stored = getActiveWorkspaceId();
         if (stored) {
             const response = await fetch(API_ENDPOINTS.workspace(stored));
-            if (response.ok) return stored;
+            if (response.ok) {
+                setActiveWorkspaceId(stored);
+                return stored;
+            }
             if (response.status !== 404) {
                 const detail = await response.text();
                 throw new Error(`Could not open your sheet: ${detail || response.statusText}`);
             }
+            forgetWorkspaceId(stored);
         }
 
-        const id = await createWorkspace();
-        writeStored(id);
+        const id = await createWorkspace('My Sheet');
+        setActiveWorkspaceId(id);
         return id;
     })();
 

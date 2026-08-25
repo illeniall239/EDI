@@ -24,13 +24,15 @@ browser ──── /api/* ────► FastAPI ────► your model
    │                         └────────► workspace store
    │                                    (Postgres, or a local file)
    │
-   └── remembers an anonymous workspace id in localStorage
+   └── remembers its anonymous workspace ids in localStorage
 ```
 
 A workspace is a row in Postgres keyed by a UUID. The browser keeps that UUID
 in `localStorage` and sends it with every request; that is the whole identity
-model. Clearing site data or opening a different browser gets you a fresh,
-empty sheet.
+model. You can keep several workbooks, and the browser holds the list of them
+-- there is no "list all workspaces" endpoint, because with no sign-in it
+would hand every visitor everyone else's sheets. Clearing site data or opening
+a different browser gets you a fresh, empty sheet.
 
 The browser never talks to the database. Every read and write goes through the
 backend using the service-role key, which lets row-level security stay closed

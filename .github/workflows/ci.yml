@@ -30,6 +30,19 @@ jobs:
         working-directory: backend
         run: python -c "import llm_providers, stores, settings, limits"
 
+      - name: workspace_store re-exports everything stores has
+        # The shim lists its re-exports by hand, so a function added to stores
+        # is missing from it until someone remembers. That failure only shows
+        # up when the endpoint is called, which a lint and an import both miss.
+        working-directory: backend
+        run: |
+          python - <<'EOF'
+          import stores, workspace_store
+          missing = sorted(n for n in stores.STORAGE_API if not hasattr(workspace_store, n))
+          assert not missing, f"workspace_store.py does not re-export: {missing}"
+          print("shim exports everything stores does")
+          EOF
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

@@ -206,6 +206,60 @@ export async function loadWorkspaceData(workspaceId: string): Promise<{ data: un
     }
 }
 
+export interface WorkspaceSummary {
+    id: string;
+    name: string;
+    filename?: string | null;
+    /** Null on stores that cannot count rows cheaply; show the filename instead. */
+    row_count?: number | null;
+    last_modified?: string | null;
+}
+
+/**
+ * Summarise the given workspaces, newest first.
+ *
+ * The ids come from localStorage rather than from the server: with no
+ * sign-in, the browser is the only thing that knows which workspaces are
+ * yours. Ids the store does not recognise are dropped from the result.
+ */
+export async function fetchWorkspaceSummaries(ids: string[]): Promise<WorkspaceSummary[]> {
+    if (!ids.length) return [];
+    try {
+        const response = await fetch(API_ENDPOINTS.workspaces, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        if (!response.ok) throw new Error(await response.text() || response.statusText);
+        const body = await response.json();
+        return (body.workspaces || []) as WorkspaceSummary[];
+    } catch (error) {
+        console.error('Error in fetchWorkspaceSummaries:', error);
+        return [];
+    }
+}
+
+/** Rename a workspace. Goes through the ordinary save, which leaves data alone. */
+export async function renameWorkspace(workspaceId: string, name: string): Promise<void> {
+    const response = await fetch(API_ENDPOINTS.workspace(workspaceId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+    });
+    if (!response.ok) {
+        throw new Error(await response.text() || response.statusText);
+    }
+}
+
+/** Delete a workspace and everything in it. Its chats go by cascade. */
+export async function deleteWorkspace(workspaceId: string): Promise<void> {
+    const response = await fetch(API_ENDPOINTS.workspace(workspaceId), { method: 'DELETE' });
+    // Already gone is the outcome the caller wanted.
+    if (!response.ok && response.status !== 404) {
+        throw new Error(await response.text() || response.statusText);
+    }
+}
+
 export async function initializeBackendWithData(data: unknown[], filename?: string): Promise<{ success: boolean, message: string }> {
     try {
         // Use Next.js API route proxy to avoid browser CORS/preflight

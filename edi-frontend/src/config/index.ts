@@ -24,6 +24,7 @@ export const API_ENDPOINTS = {
     initializeData: `${API_BASE_URL}/api/initialize-data`,
     createWorkspace: `${API_BASE_URL}/api/workspace`,
     workspace: (id: string) => `${API_BASE_URL}/api/workspace/${id}`,
+    workspaces: `${API_BASE_URL}/api/workspaces`,
     chats: (workspaceId: string) => `${API_BASE_URL}/api/workspace/${workspaceId}/chats`,
     chat: (chatId: string) => `${API_BASE_URL}/api/chats/${chatId}`
 };

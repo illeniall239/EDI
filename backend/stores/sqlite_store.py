@@ -223,6 +223,7 @@ def save_workspace(
     sheet_state: Any = None,
     column_order: Optional[List[str]] = None,
     chat_messages: Any = None,
+    name: Optional[str] = None,
 ) -> None:
     """
     Write the sheet's current state back.
@@ -243,6 +244,8 @@ def save_workspace(
         columns["sheet_state"] = json.dumps(sheet_state)
     if chat_messages is not None:
         columns["chat_messages"] = json.dumps(chat_messages)
+    if name is not None:
+        columns["name"] = name
 
     assignments = ", ".join(f"{name} = ?" for name in columns)
     try:
@@ -257,6 +260,67 @@ def save_workspace(
 
     if data is not None:
         _handlers.invalidate(workspace_id)
+
+
+def list_workspaces(workspace_ids: List[str]) -> List[dict]:
+    """
+    Summarise the given workspaces, newest first, skipping ids that do not
+    exist.
+
+    Takes ids rather than listing the table because there is no sign-in: the
+    browser holds the list of workspaces it created, and a query that returned
+    every row would hand each visitor everyone else's sheets.
+
+    Deliberately does not select `data` -- a workspace picker needs a name and
+    a row count, not several megabytes of spreadsheet per entry.
+    """
+    ids = [i for i in (workspace_ids or []) if i]
+    if not ids:
+        return []
+
+    placeholders = ", ".join("?" for _ in ids)
+    try:
+        rows = _connect().execute(
+            "select id, name, filename, created_at, last_modified,"
+            " json_array_length(data) as row_count"
+            f" from workspaces where id in ({placeholders})"
+            " order by last_modified desc",
+            tuple(ids),
+        ).fetchall()
+    except sqlite3.Error as exc:
+        raise WorkspaceStoreError(f"Could not list workspaces: {exc}") from exc
+
+    return [
+        {
+            "id": row["id"],
+            "name": row["name"],
+            "filename": row["filename"],
+            "row_count": row["row_count"] or 0,
+            "created_at": row["created_at"],
+            "last_modified": row["last_modified"],
+        }
+        for row in rows
+    ]
+
+
+def delete_workspace(workspace_id: str) -> bool:
+    """
+    Delete a workspace and everything in it. True if a row went.
+
+    Chats go with it: the foreign key is `on delete cascade` and
+    `pragma foreign_keys` is on for this connection.
+    """
+    if not workspace_id:
+        return False
+    try:
+        conn = _connect()
+        cursor = conn.execute("delete from workspaces where id = ?", (workspace_id,))
+        conn.commit()
+    except sqlite3.Error as exc:
+        raise WorkspaceStoreError(f"Could not delete workspace {workspace_id}: {exc}") from exc
+
+    _handlers.invalidate(workspace_id)
+    return cursor.rowcount > 0
 
 
 def list_chats(workspace_id: str) -> List[dict]:

@@ -65,12 +65,36 @@ forget = _impl.forget
 create_workspace = _impl.create_workspace
 fetch_workspace = _impl.fetch_workspace
 save_workspace = _impl.save_workspace
+list_workspaces = _impl.list_workspaces
+delete_workspace = _impl.delete_workspace
 list_chats = _impl.list_chats
 fetch_chat = _impl.fetch_chat
 create_chat = _impl.create_chat
 save_chat = _impl.save_chat
 delete_chat = _impl.delete_chat
 bump_usage = _impl.bump_usage
+
+# The names above, as data. workspace_store.py re-exports this API by hand for
+# the call sites that predate this package, and CI checks it against this list
+# so a function added here cannot go missing there -- a gap that neither a
+# lint nor an import catches, only calling the endpoint.
+STORAGE_API = (
+    "fetch_row",
+    "get_handler",
+    "save_handler",
+    "forget",
+    "create_workspace",
+    "fetch_workspace",
+    "save_workspace",
+    "list_workspaces",
+    "delete_workspace",
+    "list_chats",
+    "fetch_chat",
+    "create_chat",
+    "save_chat",
+    "delete_chat",
+    "bump_usage",
+)
 
 
 def status() -> dict:

@@ -21,13 +21,20 @@ export default function Architecture() {
    │                         └────────► workspace store
    │                                    (Postgres, or a local file)
    │
-   └── remembers an anonymous workspace id in localStorage`}</code></pre>
+   └── remembers its anonymous workspace ids in localStorage`}</code></pre>
 
             <p>
                 A workspace is one row keyed by a UUID. The browser keeps that UUID in{' '}
                 <code>localStorage</code> and sends it with every request; that is the whole
                 identity model. Clearing site data or opening a different browser gets you a
                 fresh, empty sheet. There is no sign-in.
+            </p>
+            <p>
+                You can keep several workbooks, and the same absence of sign-in decides how.
+                The browser holds the list of ids and posts it to{' '}
+                <code>/api/workspaces</code> to be summarised; there is deliberately no
+                endpoint that lists the table, because on a shared deployment it would hand
+                every visitor everyone else&apos;s sheets.
             </p>
 
             <p>

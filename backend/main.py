@@ -590,6 +590,39 @@ async def create_workspace_endpoint(request: Optional[Dict[str, Any]] = None):
     return {"id": workspace_id, "name": name}
 
 
+# A bound on the ids one request may ask about, so the list endpoint cannot
+# be turned into an arbitrary-length query. Well above what anyone keeps.
+_MAX_WORKSPACES = 200
+
+
+@app.post("/api/workspaces")
+async def list_workspaces_endpoint(request: Dict[str, Any]):
+    """
+    Summarise the workspaces the caller names.
+
+    A POST for what is a read, because the ids go in the body: there is no
+    sign-in, so the browser is the only thing that knows which workspaces are
+    yours, and it sends the list. Listing the table instead would hand every
+    visitor everyone else's sheets.
+
+    Unknown ids are dropped rather than erroring, so a workspace deleted on
+    another device does not wedge the picker.
+    """
+    ids = request.get("ids")
+    if not isinstance(ids, list):
+        raise HTTPException(status_code=422, detail="Expected a list of workspace ids.")
+    if len(ids) > _MAX_WORKSPACES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Too many workspace ids; the limit is {_MAX_WORKSPACES}.",
+        )
+
+    try:
+        return {"workspaces": workspace_store.list_workspaces([str(i) for i in ids])}
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
 @app.get("/api/workspace/{workspace_id}")
 async def get_workspace_endpoint(workspace_id: str):
     """Return the stored sheet, filename and chat history for a workspace."""
@@ -633,9 +666,28 @@ async def save_workspace_endpoint(workspace_id: str, request: Dict[str, Any]):
             sheet_state=request.get("sheet_state"),
             column_order=request.get("column_order"),
             chat_messages=request.get("chat_messages"),
+            name=request.get("name"),
         )
     except workspace_store.WorkspaceStoreError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+    return {"success": True}
+
+
+@app.delete("/api/workspace/{workspace_id}")
+async def delete_workspace_endpoint(workspace_id: str):
+    """
+    Delete a workspace and its chats.
+
+    The chats go by cascade rather than by a second statement here, so a
+    half-deleted workspace is not reachable.
+    """
+    try:
+        deleted = workspace_store.delete_workspace(workspace_id)
+    except workspace_store.WorkspaceStoreError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Workspace not found")
     return {"success": True}
 
 

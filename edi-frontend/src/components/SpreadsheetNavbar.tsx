@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { File, ChevronDown, Download, ChevronRight, Trash2, Edit, Table, FileSpreadsheet } from 'lucide-react';
+import { File, ChevronDown, Download, ChevronRight, Trash2, Edit, Table, FileSpreadsheet, Plus } from 'lucide-react';
 import ConfirmationDialog from './ConfirmationDialog';
 
 interface Workspace {
@@ -18,6 +18,7 @@ interface SpreadsheetNavbarProps {
   onWorkspaceChange: (workspace: Workspace) => void;
   onRenameWorkspace: (id: string, name: string) => void;
   onDeleteWorkspace: (id: string) => void;
+  onCreateWorkspace: () => void;
   
   // Data Operations
   onClearData?: () => void;
@@ -37,6 +38,7 @@ export default function SpreadsheetNavbar({
   onWorkspaceChange,
   onRenameWorkspace,
   onDeleteWorkspace,
+  onCreateWorkspace,
   onClearData,
   onExportCSV,
   onExportExcel,
@@ -49,6 +51,8 @@ export default function SpreadsheetNavbar({
   const [editValue, setEditValue] = useState('');
   const [editLoading, setEditLoading] = useState(false);
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
+  // Deleting a workbook takes its data and chats with it, so it asks first.
+  const [pendingDelete, setPendingDelete] = useState<Workspace | null>(null);
 
 
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -277,7 +281,10 @@ export default function SpreadsheetNavbar({
                                 <Edit className="w-3 h-3" />
                               </button>
                               <button
-                                onClick={() => onDeleteWorkspace(workspace.id)}
+                                onClick={() => {
+                                  setPendingDelete(workspace);
+                                  setDropdownOpen(false);
+                                }}
                                 className="p-1 rounded hover:bg-destructive text-muted-foreground hover:text-destructive-foreground"
                                 title="Delete"
                               >
@@ -288,6 +295,19 @@ export default function SpreadsheetNavbar({
                         )}
                       </div>
                     ))}
+                  </div>
+
+                  <div className="border-t border-border pt-2 mt-1">
+                    <button
+                      onClick={() => {
+                        onCreateWorkspace();
+                        setDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
+                    >
+                      <Plus className="w-4 h-4" />
+                      New workbook
+                    </button>
                   </div>
                 </div>
               )}
@@ -306,6 +326,20 @@ export default function SpreadsheetNavbar({
         title="Clear All Data?"
         message="Are you sure you want to clear all data? This action cannot be undone."
         confirmText="Clear Data"
+        cancelText="Cancel"
+        confirmVariant="destructive"
+      />
+
+      <ConfirmationDialog
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) onDeleteWorkspace(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        title="Delete this workbook?"
+        message={`"${pendingDelete?.name ?? ''}" and its data and chats will be deleted. This action cannot be undone.`}
+        confirmText="Delete"
         cancelText="Cancel"
         confirmVariant="destructive"
       />

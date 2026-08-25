@@ -21,8 +21,10 @@ const MODEL: Row[] = [
 
 const WORKSPACE: Row[] = [
     { method: 'POST', path: '/api/workspace', note: 'Create a workspace.' },
+    { method: 'POST', path: '/api/workspaces', note: 'Summarise the workspaces whose ids you send. A POST for a read, because the browser supplies the list.' },
     { method: 'GET', path: '/api/workspace/{id}', note: 'Everything the sheet needs to restore itself.' },
-    { method: 'PUT', path: '/api/workspace/{id}', note: 'Save data, sheet state, or chat messages. Only the fields sent are written.' },
+    { method: 'PUT', path: '/api/workspace/{id}', note: 'Save data, sheet state, chat messages, or the name. Only the fields sent are written.' },
+    { method: 'DELETE', path: '/api/workspace/{id}', note: 'Delete a workspace. Its chats go with it, by cascade.' },
     { method: 'GET', path: '/api/workspace/{id}/chats', note: 'Chat threads, newest first.' },
     { method: 'POST', path: '/api/workspace/{id}/chats', note: 'Start a thread.' },
     { method: 'GET', path: '/api/chats/{id}', note: 'One thread.' },

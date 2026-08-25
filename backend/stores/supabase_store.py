@@ -159,6 +159,7 @@ def save_workspace(
     sheet_state: Any = None,
     column_order: Optional[List[str]] = None,
     chat_messages: Any = None,
+    name: Optional[str] = None,
 ) -> None:
     """
     Write the sheet's current state back to its row.
@@ -178,6 +179,8 @@ def save_workspace(
         payload["sheet_state"] = sheet_state
     if chat_messages is not None:
         payload["chat_messages"] = chat_messages
+    if name is not None:
+        payload["name"] = name
 
     try:
         _supabase().table(TABLE).update(payload).eq("id", workspace_id).execute()
@@ -187,6 +190,68 @@ def save_workspace(
     # The stored rows just changed underneath any hydrated handler.
     if data is not None:
         _handlers.invalidate(workspace_id)
+
+
+def list_workspaces(workspace_ids: List[str]) -> List[dict]:
+    """
+    Summarise the given workspaces, newest first, skipping ids that do not
+    exist.
+
+    Takes ids rather than listing the table because there is no sign-in: the
+    browser holds the list of workspaces it created, and a query that returned
+    every row would hand each visitor everyone else's sheets.
+
+    `data` is deliberately not selected -- a picker needs a name, not several
+    megabytes of spreadsheet per entry. That costs the row count, which
+    PostgREST cannot compute without a database function; `row_count` is None
+    here and the caller falls back to the filename. The SQLite store, which is
+    querying locally, does return it.
+    """
+    ids = [i for i in (workspace_ids or []) if i]
+    if not ids:
+        return []
+
+    try:
+        result = (
+            _supabase()
+            .table(TABLE)
+            .select("id, name, filename, created_at, last_modified")
+            .in_("id", ids)
+            .order("last_modified", desc=True)
+            .execute()
+        )
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not list workspaces: {exc}") from exc
+
+    return [
+        {
+            "id": row.get("id"),
+            "name": row.get("name"),
+            "filename": row.get("filename"),
+            "row_count": None,
+            "created_at": row.get("created_at"),
+            "last_modified": row.get("last_modified"),
+        }
+        for row in (getattr(result, "data", None) or [])
+    ]
+
+
+def delete_workspace(workspace_id: str) -> bool:
+    """
+    Delete a workspace and everything in it. True if a row went.
+
+    Chats go with it: `chats.workspace_id` is declared
+    `references workspaces(id) on delete cascade` in the baseline migration.
+    """
+    if not workspace_id:
+        return False
+    try:
+        result = _supabase().table(TABLE).delete().eq("id", workspace_id).execute()
+    except Exception as exc:
+        raise WorkspaceStoreError(f"Could not delete workspace {workspace_id}: {exc}") from exc
+
+    _handlers.invalidate(workspace_id)
+    return bool(getattr(result, "data", None))
 
 
 def list_chats(workspace_id: str) -> List[dict]:
