@@ -1,0 +1,21 @@
+# Lint configuration.
+#
+# The default rule set, minus two purely stylistic checks. Everything ruff
+# flags here is now fixed, so a failure in CI means something new -- which is
+# the only way a linter earns its place.
+
+target-version = "py311"
+line-length = 120
+
+[lint]
+# E701/E702 object to `if x: return` and `a = 1; b = 2`. That is a formatting
+# opinion rather than a defect, and this codebase uses the compact form in
+# enough places that enforcing it would mean a large diff that changes no
+# behaviour. Left off deliberately, not overlooked.
+ignore = ["E701", "E702"]
+
+[lint.per-file-ignores]
+# Re-exports: the whole point of these modules is to make names available
+# elsewhere, which looks like an unused import.
+"backend/workspace_store.py" = ["F401"]
+"backend/stores/__init__.py" = ["F401"]

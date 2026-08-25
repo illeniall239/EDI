@@ -1,0 +1,30 @@
+# Optional chat-model providers.
+#
+# backend/requirements.txt ships Google only. To use a different model, install
+# the one line you need -- imports in llm_providers.py are lazy, so an
+# uninstalled provider costs nothing and an installed one needs no other change.
+#
+#   pip install langchain-ollama==0.3.3
+#   EDI_LLM_PROVIDER=ollama
+#
+# Stay on the 0.3.x line of every langchain-* package. The 1.x releases moved
+# modules that langchain 0.3.19 still imports (langchain_core.memory among
+# them), so an unpinned `pip install langchain-ollama` upgrades langchain-core
+# to 1.x and the backend stops importing entirely.
+#
+# See the Models page in the docs for the full matrix.
+
+# EDI_LLM_PROVIDER=openai  or  openai-compatible
+#   openai-compatible also covers OpenRouter, LM Studio, vLLM, Together and
+#   llama.cpp's server -- set EDI_LLM_BASE_URL to point at one.
+# langchain-openai==0.3.16
+
+# EDI_LLM_PROVIDER=anthropic
+# langchain-anthropic==0.3.13
+
+# EDI_LLM_PROVIDER=groq
+# langchain-groq==0.2.4
+
+# EDI_LLM_PROVIDER=ollama
+#   Runs against a local Ollama daemon. No API key, no account, no bill.
+# langchain-ollama==0.3.3

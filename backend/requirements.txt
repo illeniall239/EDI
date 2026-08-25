@@ -10,9 +10,13 @@ openpyxl==3.1.5
 SQLAlchemy==2.0.38
 
 langchain==0.3.19
-langchain-core==0.3.58
+# 0.3.66 rather than 0.3.58 so the optional providers install without a
+# resolver conflict: langchain-ollama 0.3.3 requires >=0.3.60.
+langchain-core==0.3.66
 langchain-community==0.3.18
-langchain-experimental==0.3.4
+# The default provider. Swap or add one from requirements-providers.txt to
+# point this at OpenAI, Anthropic, Groq, Ollama or any OpenAI-compatible
+# endpoint -- see backend/llm_providers.py.
 langchain-google-genai==2.1.3
 
 supabase==2.15.1

@@ -1,16 +1,27 @@
+import logging
 import os
+
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
+
+import llm_providers
+
+logger = logging.getLogger(__name__)
+
 
 # Load environment variables
 load_dotenv()
 
-# API keys from environment
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+# Which model, and how to reach it. See llm_providers.py for the full matrix.
+# An existing deployment that sets only GOOGLE_API_KEY resolves to exactly what
+# it resolved to before this module grew a registry: Gemini, GEMINI_MODEL.
+LLM_CONFIG = llm_providers.resolve()
 
-# Pinned rather than a floating alias so behaviour does not shift underneath
-# the app; override with GEMINI_MODEL to try a different one.
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+# Kept as module attributes because the rest of the app reads them, and
+# /api/health reports on them.
+LLM_PROVIDER = LLM_CONFIG.provider
+LLM_MODEL = LLM_CONFIG.model
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = LLM_CONFIG.model if LLM_CONFIG.provider == "google" else None
 
 # Where uploaded datasets live. Vercel Functions have a read-only filesystem
 # apart from /tmp, which does not survive between invocations, so the dataset
@@ -22,10 +33,11 @@ SUPABASE_DATASET_BUCKET = os.getenv("SUPABASE_DATASET_BUCKET", "datasets")
 
 def _build_llm(temperature=0.4):
     """
-    Construct a Gemini chat model.
+    Construct a chat model for the configured provider.
 
-    Deliberately does not set convert_system_message_to_human: it is deprecated
-    in langchain-google-genai, and Gemini handles system messages natively.
+    Deliberately does not set convert_system_message_to_human on Gemini: it is
+    deprecated in langchain-google-genai, and Gemini handles system messages
+    natively.
 
     It also degrades instruction-following. Asked for SQL with "no fences" in
     the system message, the model emitted markdown fences 10/10 times with the
@@ -34,45 +46,38 @@ def _build_llm(temperature=0.4):
     prompt wording to "no markdown code fences" took both conditions to 0/10.
     So this is hygiene, not a correctness fix.
     """
-    return ChatGoogleGenerativeAI(
-        model=GEMINI_MODEL,
-        temperature=temperature,  # lower keeps structured output consistent
-        google_api_key=GOOGLE_API_KEY,
-        max_output_tokens=8192,   # enough for complete responses
-    )
+    return llm_providers.build(LLM_CONFIG, temperature=temperature)
+
+
+def llm_status():
+    """
+    What /api/health should say about the model.
+
+    Reported rather than merely logged because the failure this guards against
+    is silent: a missing key degrades the app into fallback responses that look
+    like bad answers rather than like a misconfiguration.
+    """
+    return {
+        "provider": LLM_CONFIG.provider,
+        "model": LLM_CONFIG.model or None,
+        "configured": LLM is not None,
+        "detail": llm_providers.describe(LLM_CONFIG) or None,
+    }
 
 
 LLM = None
-if GOOGLE_API_KEY:
+_problem = llm_providers.describe(LLM_CONFIG)
+if _problem:
+    # Never raise at import: the app is expected to come up and explain itself
+    # rather than fail to start, and several routes work with no model at all.
+    logger.info(f"LLM not configured: {_problem}")
+else:
     try:
         LLM = _build_llm()
-        print(f"LLM initialized successfully with {GEMINI_MODEL} via Google Gemini")
+        logger.info(f"LLM initialized: {LLM_CONFIG.model} via {LLM_CONFIG.provider}")
     except Exception as e:
-        print(f"Failed to initialize LLM: {str(e)}")
-        print("Please check your GOOGLE_API_KEY environment variable")
+        logger.error(f"Failed to initialize LLM: {e}")
         LLM = None
-else:
-    print("GOOGLE_API_KEY not found in environment variables")
-    print("Please set GOOGLE_API_KEY in your .env file")
-    LLM = None
-
-
-def initialize_llm():
-    """
-    Create a fresh LLM instance for synthetic dataset generation.
-    This ensures no context contamination between generations.
-    """
-    if not GOOGLE_API_KEY:
-        print("GOOGLE_API_KEY not found in environment variables")
-        return None
-
-    try:
-        fresh_llm = _build_llm()
-        print(f"Fresh LLM instance created successfully with {GEMINI_MODEL} via Google Gemini")
-        return fresh_llm
-    except Exception as e:
-        print(f"Failed to create fresh LLM instance: {str(e)}")
-        return None
 
 
 # Global application state flags (managed by app.py logic)
