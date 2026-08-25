@@ -1,5 +1,0 @@
-- changed the bg in the hero section to cyan-magenta gradient
-- fixed all this itsy bitsy errors
-- no unified schema, iffy persistence
-- no formatting sync 
-- stuff works, not everything.

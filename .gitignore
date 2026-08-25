@@ -27,18 +27,25 @@ out/
 
 # Database files
 *.db
-backend/temp_db_*.db
 
-# Generated files
-backend/static/visualizations/*.png
-backend/static/visualizations/*.html
-backend/generated_reports/*.pdf
-# Runtime chart output. These were committed once and put 16 MB of embedded
-# plotly.js into the deploy bundle; nothing reads them back.
-backend/generated_charts/
-backend/visualization_debug.log
+# Generated output. These patterns were once scoped to backend/, but the same
+# files also land at the repo root -- which is how a dozen PDFs ended up
+# committed. Nothing reads any of it back.
+generated_reports/
+data_exports/
+
+# Local media. Large, and not used by the app.
+*.mp4
+!edi-frontend/public/edi-demo.mp4
+
+# Local workspace store (EDI_STORE=sqlite)
+.edi-data/
+
+# Editor and tool state
+.claude/settings.local.json
 
 # IDE
+.cursor/
 .vscode/
 .idea/
 *.swp
