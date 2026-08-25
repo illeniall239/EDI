@@ -11,6 +11,43 @@
  * and so are the questions.
  */
 
+/**
+ * Rows out of the grid, in the shape the rest of the app speaks.
+ *
+ * Every producer of a sheet's rows -- the upload endpoint, the workspace
+ * store, the chat's data operations -- emits one object per row keyed by
+ * column name. The Univer adapter is the exception: `getAllData()` returns a
+ * plain 2-D array whose first row is the header. Letting that form reach
+ * state is what turned the sidebar's column list into "0, 1, 2" a second
+ * after an upload, and it would have exported a CSV with numbers for column
+ * headings. Anything already in record form is returned untouched.
+ */
+export function rowsToRecords(rows: unknown[] | undefined): Record<string, unknown>[] {
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    if (!Array.isArray(rows[0])) return rows as Record<string, unknown>[];
+
+    const [header, ...body] = rows as unknown[][];
+
+    // Two columns headed the same would collide into one key and silently
+    // drop a column, so the later one is numbered instead.
+    const used = new Set<string>();
+    const names = (header ?? []).map((cell, i) => {
+        const base = cell === null || cell === undefined ? '' : String(cell).trim();
+        let name = base || `Column ${i + 1}`;
+        for (let n = 2; used.has(name); n += 1) name = `${base || `Column ${i + 1}`} (${n})`;
+        used.add(name);
+        return name;
+    });
+
+    return body.map((row) => {
+        const record: Record<string, unknown> = {};
+        names.forEach((name, i) => {
+            record[name] = row?.[i] ?? '';
+        });
+        return record;
+    });
+}
+
 export type ColumnKind = 'num' | 'date' | 'text';
 
 export interface Column {

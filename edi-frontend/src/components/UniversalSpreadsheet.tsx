@@ -60,6 +60,7 @@ import '@univerjs/sheets-drawing-ui/lib/index.css';
 
 import { UniverConverter } from '@/utils/univerConverter';
 import { UniverAdapter, createUniverAdapter } from '@/utils/univerAdapter';
+import { rowsToRecords } from '@/utils/dataShape';
 import ChatSidebar from '@/components/ChatSidebar';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 
@@ -297,9 +298,13 @@ export default function UniversalSpreadsheet({
   /**
    * Get current data from Univer
    */
+  // Records out, always. The adapter hands back a 2-D array with the header
+  // as row 0 while currentData holds records, and a function that returns
+  // either depending on whether the sheet happens to be ready is a shape bug
+  // waiting to reach state.
   const getCurrentData = useCallback((): any[] => {
     if (univerAdapterRef.current?.isReady()) {
-      return univerAdapterRef.current.getAllData();
+      return rowsToRecords(univerAdapterRef.current.getAllData());
     }
     return currentData;
   }, [currentData]);
@@ -316,7 +321,7 @@ export default function UniversalSpreadsheet({
     const success = univerAdapterRef.current.loadData(fileData, clearExisting);
     
     if (success && onDataUpdate) {
-      onDataUpdate(fileData);
+      onDataUpdate(rowsToRecords(fileData));
     }
     
     return success;
