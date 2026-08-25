@@ -4824,7 +4824,7 @@ export default function ChatSidebar({
                             className="w-1.5 h-1.5 rounded-full shrink-0"
                             style={{
                                 background: isDataLoaded ? 'var(--edi-signal)' : 'rgba(255,255,255,0.25)',
-                                boxShadow: isDataLoaded ? '0 0 8px rgba(255,174,4,0.75)' : 'none'
+                                boxShadow: isDataLoaded ? '0 0 8px rgb(var(--edi-signal-rgb) / 0.75)' : 'none'
                             }}
                         />
                         <span className="text-[12px] text-white/70 truncate min-w-0 flex-1">
@@ -4892,7 +4892,7 @@ export default function ChatSidebar({
                                                     className="edi-kicker shrink-0"
                                                     style={{
                                                         color: column.kind === 'num'
-                                                            ? 'rgba(255,212,121,0.72)'
+                                                            ? 'rgb(var(--edi-signal-tint-rgb) / 0.72)'
                                                             : 'rgba(255,255,255,0.3)'
                                                     }}
                                                 >

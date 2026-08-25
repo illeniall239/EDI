@@ -20,8 +20,8 @@
   --border: #242424;
   --input: #333333;
   --ring: #a4a4a4;
-  --chart-1: #ffae04;
-  --chart-2: #2671f4;
+  --chart-1: #22d3ee;
+  --chart-2: #ffae04;
   --chart-3: #747474;
   --chart-4: #525252;
   --chart-5: #e4e4e4;
@@ -478,12 +478,21 @@ body.modal-open .visualization-modal-overlay * {
 
    The panel sits against a bright white spreadsheet, so it is built as
    a dark *material* rather than a void: layered light, a hairline
-   system, and one warm signal colour that the cold sheet never uses.
+   system, and one signal colour.
+
+   The signal is defined once, as channels, so every wash and hairline
+   below derives from it and changing the accent is one line rather
+   than a dozen rgba() literals to find.
    ══════════════════════════════════════════════════════════════════ */
 
 :root {
-  --edi-signal: #ffae04;
-  --edi-signal-dim: rgba(255, 174, 4, 0.55);
+  --edi-signal-rgb: 34 211 238;
+  --edi-signal: rgb(var(--edi-signal-rgb));
+  --edi-signal-dim: rgb(var(--edi-signal-rgb) / 0.55);
+  /* Softer, for long runs of it -- inline code and figures in prose.
+     The full signal glares when it is a whole line rather than a mark. */
+  --edi-signal-tint-rgb: 142 230 245;
+  --edi-signal-tint: rgb(var(--edi-signal-tint-rgb));
   --edi-hairline: rgba(255, 255, 255, 0.09);
   --edi-hairline-soft: rgba(255, 255, 255, 0.055);
 }
@@ -492,8 +501,8 @@ body.modal-open .visualization-modal-overlay * {
    settle, so the surface has a direction instead of reading flat. */
 .edi-panel {
   background:
-    radial-gradient(120% 55% at 8% -6%, rgba(255, 174, 4, 0.10), transparent 62%),
-    radial-gradient(90% 45% at 100% 4%, rgba(120, 170, 255, 0.07), transparent 60%),
+    radial-gradient(120% 55% at 8% -6%, rgb(var(--edi-signal-rgb) / 0.10), transparent 62%),
+    radial-gradient(90% 45% at 100% 4%, rgba(255, 174, 4, 0.055), transparent 60%),
     linear-gradient(180deg, #111114 0%, #0b0b0e 42%, #08080a 100%);
 }
 
@@ -539,7 +548,7 @@ body.modal-open .visualization-modal-overlay * {
   font-variant-numeric: tabular-nums;
   font-size: 0.94em;
   letter-spacing: -0.01em;
-  color: #ffd479;
+  color: var(--edi-signal-tint);
 }
 
 /* ── Messages ────────────────────────────────────────────────────── */
@@ -577,7 +586,7 @@ body.modal-open .visualization-modal-overlay * {
   bottom: 0;
   width: 2px;
   border-radius: 4px 0 0 4px;
-  background: linear-gradient(180deg, var(--edi-signal), var(--edi-signal-dim) 30%, rgba(255, 174, 4, 0.12));
+  background: linear-gradient(180deg, var(--edi-signal), var(--edi-signal-dim) 30%, rgb(var(--edi-signal-rgb) / 0.12));
 }
 
 /* Byline above each answer: mark, hairline, then the run's metadata. */
@@ -650,7 +659,7 @@ body.modal-open .visualization-modal-overlay * {
 
 .edi-suggestion:hover {
   background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 174, 4, 0.35);
+  border-color: rgb(var(--edi-signal-rgb) / 0.35);
   color: #fff;
   transform: translateX(2px);
 }
@@ -725,8 +734,8 @@ body.modal-open .visualization-modal-overlay * {
 
 .edi-docs-shell {
   background:
-    radial-gradient(90% 40% at 12% -8%, rgba(255, 174, 4, 0.07), transparent 60%),
-    radial-gradient(70% 35% at 100% 0%, rgba(120, 170, 255, 0.05), transparent 58%),
+    radial-gradient(90% 40% at 12% -8%, rgb(var(--edi-signal-rgb) / 0.07), transparent 60%),
+    radial-gradient(70% 35% at 100% 0%, rgba(255, 174, 4, 0.04), transparent 58%),
     linear-gradient(180deg, #0d0d10 0%, #08080a 60%);
   min-height: 100vh;
 }
@@ -749,7 +758,7 @@ body.modal-open .visualization-modal-overlay * {
 .edi-docs-nav a[data-active='true'] {
   color: #fff;
   border-left-color: var(--edi-signal);
-  background: rgba(255, 174, 4, 0.06);
+  background: rgb(var(--edi-signal-rgb) / 0.06);
 }
 
 /* Prose */
@@ -796,7 +805,7 @@ body.modal-open .visualization-modal-overlay * {
   color: var(--edi-signal);
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: rgba(255, 174, 4, 0.35);
+  text-decoration-color: rgb(var(--edi-signal-rgb) / 0.35);
 }
 .edi-doc a:hover { text-decoration-color: var(--edi-signal); }
 
@@ -805,7 +814,7 @@ body.modal-open .visualization-modal-overlay * {
 .edi-doc code {
   font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
   font-size: 0.87em;
-  color: #ffd479;
+  color: var(--edi-signal-tint);
   background: rgba(255, 255, 255, 0.055);
   border: 1px solid var(--edi-hairline-soft);
   border-radius: 4px;
@@ -872,7 +881,7 @@ body.modal-open .visualization-modal-overlay * {
    people an afternoon when they are not said. */
 .edi-note {
   border-left: 2px solid var(--edi-signal);
-  background: rgba(255, 174, 4, 0.045);
+  background: rgb(var(--edi-signal-rgb) / 0.045);
   border-radius: 0 8px 8px 0;
   padding: 12px 16px;
   font-size: 14px;
