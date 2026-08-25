@@ -10,22 +10,22 @@ const NAV: { group: string; items: { href: string; label: string }[] }[] = [
     {
         group: 'Start',
         items: [
-            { href: '/docs', label: 'What EDI is' },
-            { href: '/docs/quickstart', label: 'Quickstart' },
+            { href: '/', label: 'What EDI is' },
+            { href: '/quickstart', label: 'Quickstart' },
         ],
     },
     {
         group: 'Configure',
         items: [
-            { href: '/docs/models', label: 'Choosing a model' },
-            { href: '/docs/self-hosting', label: 'Self-hosting' },
+            { href: '/models', label: 'Choosing a model' },
+            { href: '/self-hosting', label: 'Self-hosting' },
         ],
     },
     {
         group: 'Reference',
         items: [
-            { href: '/docs/architecture', label: 'How it works' },
-            { href: '/docs/api', label: 'HTTP API' },
+            { href: '/architecture', label: 'How it works' },
+            { href: '/http-api', label: 'HTTP API' },
         ],
     },
 ];

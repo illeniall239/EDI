@@ -146,13 +146,14 @@ export default function Api() {
                 <strong>FastAPI&apos;s own schema is not routed.</strong> It generates one at{' '}
                 <code>/openapi.json</code>, with interactive docs at <code>/docs</code>, and
                 both work when you run the backend directly. Behind a proxy that forwards
-                only <code>/api/*</code> they reach the frontend instead and 404. Forward
-                them too if you want them public — and consider whether you do, since they
-                describe every endpoint to anyone who asks.
+                only <code>/api/*</code> they reach the frontend instead — where{' '}
+                <code>/docs</code> now redirects to these pages, which is a more confusing
+                answer than a 404. Forward them too if you want them public — and consider
+                whether you do, since they describe every endpoint to anyone who asks.
             </div>
 
             <p>
-                <Link href="/docs/architecture">How it works</Link> covers what happens behind{' '}
+                <Link href="/architecture">How it works</Link> covers what happens behind{' '}
                 <code>/api/query</code>.
             </p>
         </>

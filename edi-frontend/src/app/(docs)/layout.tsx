@@ -5,8 +5,8 @@ import DocsNav from '@/components/docs/DocsNav';
 
 export const metadata: Metadata = {
     title: {
-        template: '%s — EDI.ai Docs',
-        default: 'EDI.ai Docs',
+        template: '%s — EDI.ai',
+        default: 'EDI.ai',
     },
 };
 
@@ -21,12 +21,12 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
                 }}
             >
                 <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-3.5">
-                    <Link href="/docs" className="font-semibold tracking-tight text-white">
+                    <Link href="/" className="font-semibold tracking-tight text-white">
                         EDI<span style={{ color: 'var(--edi-signal)' }}>.ai</span>
                     </Link>
                     <span className="edi-kicker-doc">Docs</span>
                     <Link
-                        href="/"
+                        href="/app"
                         className="ml-auto text-[13px] text-white/55 transition-colors hover:text-white"
                     >
                         Open the app →

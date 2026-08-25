@@ -235,7 +235,7 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
             </ul>
 
             <p>
-                <Link href="/docs/architecture">How it works</Link> explains why the backend is
+                <Link href="/architecture">How it works</Link> explains why the backend is
                 stateless and what that costs.
             </p>
         </>

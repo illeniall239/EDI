@@ -1,9 +1,9 @@
 import Link from 'next/link';
 
 export const metadata = {
-    // The layout supplies the "— EDI.ai Docs" suffix; `absolute` opts this one
-    // page out of it so the landing page is not "EDI.ai Docs — EDI.ai Docs".
-    title: { absolute: 'EDI.ai Docs' },
+    // The layout supplies the "— EDI.ai" suffix; `absolute` opts this one page
+    // out of it so the landing page is not "EDI.ai — EDI.ai".
+    title: { absolute: 'EDI.ai — a spreadsheet you can ask questions' },
     description: 'A spreadsheet you can ask questions, running on any model you bring.',
 };
 
@@ -67,7 +67,7 @@ export default function DocsHome() {
                 answers confidently and wrongly. Before trusting a model you have not used
                 here, run <code>python backend/check_model.py</code>, which tests the four
                 things this app actually asks of one. See{' '}
-                <Link href="/docs/models">Choosing a model</Link>.
+                <Link href="/models">Choosing a model</Link>.
             </div>
 
             <h2>Running it with no accounts</h2>
@@ -84,7 +84,7 @@ pip install langchain-ollama==0.3.3
 ollama serve
 EDI_LLM_PROVIDER=ollama uvicorn main:app --app-dir backend --port 8000`}</code></pre>
             <p>
-                The <Link href="/docs/quickstart">Quickstart</Link> covers the frontend and
+                The <Link href="/quickstart">Quickstart</Link> covers the frontend and
                 the hosted path as well.
             </p>
 
@@ -110,23 +110,23 @@ EDI_LLM_PROVIDER=ollama uvicorn main:app --app-dir backend --port 8000`}</code><
             <h2>Where to go next</h2>
             <ul>
                 <li>
-                    <Link href="/docs/quickstart">Quickstart</Link> — clone to running, locally
+                    <Link href="/quickstart">Quickstart</Link> — clone to running, locally
                     or deployed.
                 </li>
                 <li>
-                    <Link href="/docs/models">Choosing a model</Link> — the provider matrix,
+                    <Link href="/models">Choosing a model</Link> — the provider matrix,
                     and how to tell whether yours is good enough.
                 </li>
                 <li>
-                    <Link href="/docs/self-hosting">Self-hosting</Link> — storage, deployment,
+                    <Link href="/self-hosting">Self-hosting</Link> — storage, deployment,
                     and the usage limits.
                 </li>
                 <li>
-                    <Link href="/docs/architecture">How it works</Link> — what happens between
+                    <Link href="/architecture">How it works</Link> — what happens between
                     a question and an answer.
                 </li>
                 <li>
-                    <Link href="/docs/api">HTTP API</Link> — the endpoints.
+                    <Link href="/http-api">HTTP API</Link> — the endpoints.
                 </li>
             </ul>
         </>

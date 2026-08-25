@@ -259,7 +259,7 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
             </ul>
 
             <p>
-                <Link href="/docs/architecture">How it works</Link> traces exactly where each
+                <Link href="/architecture">How it works</Link> traces exactly where each
                 of these calls happens.
             </p>
         </>

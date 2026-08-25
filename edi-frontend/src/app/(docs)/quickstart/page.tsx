@@ -21,7 +21,7 @@ export default function Quickstart() {
                 <li>
                     A model. Either <a href="https://ollama.com">Ollama</a> running locally,
                     or an API key from any provider in{' '}
-                    <Link href="/docs/models">Choosing a model</Link>.
+                    <Link href="/models">Choosing a model</Link>.
                 </li>
             </ul>
 
@@ -99,12 +99,12 @@ npm run dev`}</code></pre>
                 <code>SUPABASE_SERVICE_ROLE_KEY</code> in the environment.
             </p>
             <p>
-                <Link href="/docs/self-hosting">Self-hosting</Link> goes through both,
+                <Link href="/self-hosting">Self-hosting</Link> goes through both,
                 including the Vercel configuration the demo runs on.
             </p>
 
             <p>
-                <Link href="/docs/self-hosting">Self-hosting</Link> covers storage, the
+                <Link href="/self-hosting">Self-hosting</Link> covers storage, the
                 usage limits, and what to change for a deployment that is not a demo.
             </p>
         </>

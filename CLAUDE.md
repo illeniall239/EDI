@@ -30,8 +30,9 @@ writing anything that assumes a specific provider or model.
 - Next.js 16, React 19, Tailwind 4, TypeScript
 - Univer (Apache-2.0) for the spreadsheet — this is a harness around it,
   not a spreadsheet of its own — and Recharts for charts
-- `src/app/page.tsx` — the whole app, one route
-- `src/app/docs/` — the documentation site
+- `src/app/app/page.tsx` — the whole app, one route, served at `/app`
+- `src/app/(docs)/` — the documentation site, served at `/`. A route group,
+  so the docs shell wraps the root without a `/docs` path segment
 - `src/utils/api.ts` — every backend call
 
 **Data flow**: upload → parsed by `data_handler` into an in-memory SQLite

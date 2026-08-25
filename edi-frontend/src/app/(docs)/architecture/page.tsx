@@ -174,13 +174,13 @@ export default function Architecture() {
     supabase_store.py     Postgres
     sqlite_store.py       a local file
 edi-frontend/
-  src/app/page.tsx        the app, one route
-  src/app/docs/           these pages
+  src/app/app/page.tsx    the app, one route, at /app
+  src/app/(docs)/         these pages, at /
   src/components/         spreadsheet, chat sidebar, charts
   src/utils/api.ts        every backend call`}</code></pre>
 
             <p>
-                <Link href="/docs/api">HTTP API</Link> lists the endpoints.
+                <Link href="/http-api">HTTP API</Link> lists the endpoints.
             </p>
         </>
     );

@@ -22,6 +22,21 @@ const nextConfig: NextConfig = {
     // slow model. Ten minutes is past the point where anyone is still waiting.
     proxyTimeout: 600_000,
   },
+  // The docs moved to the root when the hosted demo was retired: there is no
+  // app to land on any more, so the documentation is the site. These keep the
+  // old paths, and anything that already linked to them, working.
+  async redirects() {
+    return [
+      { source: '/docs', destination: '/', permanent: true },
+      // Before the wildcard: the API reference is not at /api. That path
+      // belongs to the backend, and a docs page inside the API namespace is a
+      // collision waiting for whichever router normalises a trailing slash
+      // differently.
+      { source: '/docs/api', destination: '/http-api', permanent: true },
+      { source: '/docs/:path*', destination: '/:path*', permanent: true },
+    ];
+  },
+
   async rewrites() {
     const backend = process.env.BACKEND_ORIGIN;
     if (!backend) return [];

@@ -12,8 +12,9 @@ OpenAI-compatible wire format. With nothing configured at all it keeps
 workspaces in a local file and looks for Ollama on localhost -- no API key, no
 database signup.
 
-Documentation is part of the app: run it and open `/docs`, or read the source
-in [`edi-frontend/src/app/docs`](edi-frontend/src/app/docs). It covers the
+Documentation is part of the app and is what you land on: run it and open
+`/`, with the spreadsheet itself at `/app`. Or read the source in
+[`edi-frontend/src/app/(docs)`](<edi-frontend/src/app/(docs)>). It covers the
 quickstart, the provider matrix, self-hosting, and how it works.
 
 ## How it works
@@ -229,7 +230,8 @@ backend/
   stores/               workspace persistence (Postgres or a local file)
 edi-frontend/
   src/app/page.tsx      the entire app, one route
-  src/app/docs/         the documentation site
+  src/app/(docs)/       the documentation site, served at /
+  src/app/app/          the spreadsheet, served at /app
   src/components/       spreadsheet, chat sidebar, chart renderer
   src/utils/api.ts      every backend call
 ```
