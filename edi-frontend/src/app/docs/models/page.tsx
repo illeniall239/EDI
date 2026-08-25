@@ -138,35 +138,74 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
 
             <h2>Reasoning models</h2>
             <p>
-                Models that work out loud — DeepSeek-R1, QwQ, Qwen3 in thinking mode,
-                OpenAI&apos;s o-series — are supported, with two things handled for you.
+                Models that work out loud &mdash; DeepSeek-R1, QwQ, Qwen3 in thinking mode,
+                OpenAI&apos;s o-series, Claude with extended thinking &mdash; work here.
+                Their working is removed before anything reads the reply, because nothing
+                downstream expects it: the chart path parses the reply as JSON, and the
+                read-only SQL check tests that the query starts with <code>SELECT</code>{' '}
+                rather than with a paragraph of deliberation.
             </p>
             <p>
-                <strong>The thinking is removed before anything reads the reply.</strong>{' '}
-                Local reasoning models return their working inside the message, wrapped in{' '}
-                <code>&lt;think&gt;</code> tags, and Ollama and most OpenAI-compatible
-                servers pass it straight through. Nothing downstream expects that: the
-                chart path calls <code>JSON.parse</code> on the reply, and the read-only
-                SQL check tests that the query starts with <code>SELECT</code> rather than{' '}
-                <code>&lt;think&gt;</code>. Every reply is now read through one helper that
-                strips it, so the working never reaches a parser or your screen.
+                Servers disagree about where the working goes, so all three shapes are
+                handled:
             </p>
+            <ul>
+                <li>
+                    <strong>A separate field.</strong> Ollama returns it as{' '}
+                    <code>message.thinking</code>, and as <code>reasoning</code> on its
+                    OpenAI-compatible route; Anthropic returns a <code>thinking</code>{' '}
+                    content block. The reply text is already clean.
+                </li>
+                <li>
+                    <strong>Inline tags.</strong> llama.cpp&apos;s server, LM Studio and
+                    vLLM leave <code>&lt;think&gt;&hellip;&lt;/think&gt;</code> in the
+                    message. The block is stripped.
+                </li>
+                <li>
+                    <strong>A closing tag with no opening one.</strong> The commonest shape
+                    and the least obvious: chat templates usually prefill{' '}
+                    <code>&lt;think&gt;</code> into the prompt, so the model emits only the{' '}
+                    <code>&lt;/think&gt;</code>. Everything up to it is treated as working.
+                </li>
+            </ul>
             <p>
                 <strong>Unsupported parameters are dropped.</strong> OpenAI&apos;s o-series
                 and gpt-5 reject a custom <code>temperature</code>, and want{' '}
                 <code>max_completion_tokens</code> where other models want{' '}
-                <code>max_tokens</code> — sending the wrong one fails the request outright
-                rather than being ignored. Those models are recognised by name and sent
-                what they accept.
+                <code>max_tokens</code> &mdash; sending the wrong one fails the request
+                outright rather than being ignored. Those models are recognised by name and
+                sent what they accept.
             </p>
+
             <div className="edi-note">
-                <strong>They are slower, and rarely worth it here.</strong> The work this
-                app asks of a model is short and well-specified: write one SQL query,
-                return one JSON object, answer with one word. Thinking tokens are billed
-                and waited on without changing those answers much. An instruction- or
-                code-tuned model of the same size is usually the better choice; reach for
-                reasoning when questions genuinely need several steps.
+                <strong>Do not turn thinking off to make it faster.</strong> It is the
+                obvious move and it backfires. Qwen3 with Ollama&apos;s{' '}
+                <code>think: false</code> does not stop reasoning &mdash; it reasons in the
+                answer instead, as plain prose, and the server stops separating it out for
+                you. You trade a clean reply for a messy one and save nothing. Leave
+                thinking on, or pick a non-reasoning model.
             </div>
+
+            <h3>They are slower, and rarely worth it here</h3>
+            <p>
+                The work this
+                app asks of a model is short and well-specified: write one SQL query,
+                return one JSON object, answer with one word. On <code>qwen3:4b</code>,
+                a one-line <code>GROUP BY</code> took 713 characters of thinking to produce
+                54 characters of SQL, and a question that a non-reasoning model of the same
+                size answers in seconds took around two minutes. Those tokens are billed
+                and waited on without changing the answer. An instruction- or code-tuned
+                model of the same size is usually the better choice; reach for reasoning
+                when questions genuinely need several steps.
+            </p>
+            <p>
+                Budget for the wait, too. A reasoning model on modest hardware can take
+                minutes on a single question, and anything sitting between the browser and
+                the backend needs to allow for that. The bundled dev proxy is set to ten
+                minutes; a reverse proxy of your own will have its own timeout, usually 30
+                or 60 seconds, and a request cut off there looks to the user exactly like
+                the app being broken.
+            </p>
 
             <h2>Testing yours</h2>
             <p>
