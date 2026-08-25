@@ -13,6 +13,9 @@ import { API_ENDPOINTS } from '@/config';
  * endpoint -- would hand every visitor everyone else's sheets on any shared
  * deployment. The browser holds the ids and asks about those.
  *
+ * The list is shared by every tab; which workspace is open is not. See the
+ * note on the two stores below.
+ *
  * The ids are only ever handed to our own backend, which is what talks to the
  * store. Nothing here needs the database credentials.
  */
@@ -22,9 +25,9 @@ const LIST_KEY = 'edi.workspaceIds';
 /** In-flight creation, so a double render cannot create two workspaces. */
 let pending: Promise<string> | null = null;
 
-function readRaw(key: string): string | null {
+function read(store: Storage | null, key: string): string | null {
     try {
-        return localStorage.getItem(key);
+        return store?.getItem(key) ?? null;
     } catch {
         // Private mode and blocked site data both throw here rather than
         // returning null. Losing persistence is survivable; crashing is not.
@@ -32,13 +35,50 @@ function readRaw(key: string): string | null {
     }
 }
 
-function writeRaw(key: string, value: string): void {
+function write(store: Storage | null, key: string, value: string): void {
     try {
-        localStorage.setItem(key, value);
+        store?.setItem(key, value);
     } catch {
         // Same as above: the session still works, it just will not be
         // remembered after a reload.
     }
+}
+
+/**
+ * The two stores, and why there are two.
+ *
+ * The list of workspaces belongs to the browser, so it lives in
+ * localStorage and every tab sees the same one. Which workspace is *open*
+ * belongs to the tab: with a single shared key, opening a second workbook in
+ * one tab silently redirected every other tab the next time it reloaded.
+ * sessionStorage is per-tab and survives a reload, which is exactly the
+ * lifetime wanted.
+ *
+ * The shared key is still written, so a newly opened tab lands on whatever
+ * you last had open rather than on an arbitrary workspace.
+ */
+function local(): Storage | null {
+    try {
+        return typeof window === 'undefined' ? null : window.localStorage;
+    } catch {
+        return null;
+    }
+}
+
+function session(): Storage | null {
+    try {
+        return typeof window === 'undefined' ? null : window.sessionStorage;
+    } catch {
+        return null;
+    }
+}
+
+function readRaw(key: string): string | null {
+    return read(local(), key);
+}
+
+function writeRaw(key: string, value: string): void {
+    write(local(), key, value);
 }
 
 /**
@@ -81,17 +121,31 @@ export function forgetWorkspaceId(id: string): void {
     if (readRaw(ACTIVE_KEY) === id) {
         writeRaw(ACTIVE_KEY, '');
     }
+    if (read(session(), ACTIVE_KEY) === id) {
+        write(session(), ACTIVE_KEY, '');
+    }
 }
 
-/** The workspace to open on load. */
+/**
+ * The workspace this tab should open.
+ *
+ * This tab's own choice wins. A tab that has not made one -- a newly opened
+ * tab -- falls back to whatever was last opened anywhere, then to the first
+ * workspace in the list.
+ */
 export function getActiveWorkspaceId(): string | null {
-    const active = readRaw(ACTIVE_KEY);
-    if (active) return active;
+    const mine = read(session(), ACTIVE_KEY);
+    if (mine) return mine;
+
+    const shared = readRaw(ACTIVE_KEY);
+    if (shared) return shared;
+
     return listWorkspaceIds()[0] ?? null;
 }
 
 export function setActiveWorkspaceId(id: string): void {
-    writeRaw(ACTIVE_KEY, id);
+    write(session(), ACTIVE_KEY, id);   // this tab, across reloads
+    writeRaw(ACTIVE_KEY, id);           // the default for the next new tab
     rememberWorkspaceId(id);
 }
 

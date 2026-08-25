@@ -34,7 +34,10 @@ export default function Architecture() {
                 The browser holds the list of ids and posts it to{' '}
                 <code>/api/workspaces</code> to be summarised; there is deliberately no
                 endpoint that lists the table, because on a shared deployment it would hand
-                every visitor everyone else&apos;s sheets.
+                every visitor everyone else&apos;s sheets. The list is shared by every tab,
+                in <code>localStorage</code>; which workbook is <em>open</em> is per tab, in{' '}
+                <code>sessionStorage</code>, so two tabs can sit on two workbooks and a
+                reload does not drag one onto the other.
             </p>
 
             <p>
