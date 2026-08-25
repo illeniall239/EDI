@@ -206,27 +206,21 @@ export class UniversalQueryRouter {
    */
   async route(query: string, context: QueryContext = {}): Promise<ExecutionPlan> {
     try {
-      console.log('🧠 Universal Query Router: Analyzing query:', query);
       
       // Step 1: Deep semantic analysis
       const semantics = await this.analyzeSemantics(query, context);
-      console.log('📊 Semantic analysis:', semantics);
       
       // Step 2: Universal query classification
       const queryType = this.classifyUniversally(semantics, context);
-      console.log('🏷️ Query classified as:', queryType);
       
       // Step 3: Find optimal processor based on capabilities
       const processorType = this.findOptimalProcessor(queryType);
-      console.log('🎯 Optimal processor:', processorType);
       
       // Step 4: Create routing decision with fallbacks
       const routing = this.createRoutingDecision(queryType, processorType, semantics);
-      console.log('🗺️ Routing decision:', routing);
       
       // Step 5: Build execution plan
       const executionPlan = this.buildExecutionPlan(query, routing, context);
-      console.log('📋 Execution plan created:', executionPlan);
       
       return executionPlan;
       
@@ -288,7 +282,6 @@ export class UniversalQueryRouter {
     
     // Rule 1: Comparative Analytics (YOUR CASE!)
     if (this.isComparativeAnalytics(lowerText, operations)) {
-      console.log('✅ Classified as ANALYTICS_COMPARATIVE (direct backend route)');
       return UniversalQueryType.ANALYTICS_COMPARATIVE;
     }
     
@@ -365,7 +358,6 @@ export class UniversalQueryRouter {
     }
     
     // Default: Simple analytics (safe fallback)
-    console.log('⚠️ Defaulting to ANALYTICS_SIMPLE for unclear query');
     return UniversalQueryType.ANALYTICS_SIMPLE;
   }
 
@@ -388,7 +380,6 @@ export class UniversalQueryRouter {
     const hasComparativePattern = comparativePatterns.some(pattern => pattern.test(text));
     
     if (hasComparativePattern && statisticalOps) {
-      console.log('🎯 Detected comparative analytics pattern');
       return true;
     }
     
@@ -623,23 +614,19 @@ export class UniversalQueryRouter {
     // Check each processor's capabilities
     for (const [processor, capabilities] of Object.entries(PROCESSOR_CAPABILITIES)) {
       if (capabilities[queryType] === true) {
-        console.log(`✅ Found optimal processor ${processor} for ${queryType}`);
         return processor as ProcessorType;
       }
     }
     
     // Fallback logic
     if (queryType.startsWith('analytics') || queryType.startsWith('visualization')) {
-      console.log('📊 Defaulting to DIRECT_BACKEND for analytics/visualization');
       return ProcessorType.DIRECT_BACKEND;
     }
     
     if (queryType.startsWith('ui')) {
-      console.log('🖥️ Defaulting to DIRECT_FRONTEND for UI operations');
       return ProcessorType.DIRECT_FRONTEND;
     }
     
-    console.log('⚠️ No optimal processor found, using fallback');
     return ProcessorType.FALLBACK_LEGACY;
   }
 
@@ -780,7 +767,6 @@ export class UniversalQueryRouter {
    */
   private createLegacyFallbackPlan(query: string, context: QueryContext): ExecutionPlan {
     void context;
-    console.log('🔄 Creating legacy fallback plan for query:', query);
     
     return {
       routing: {
@@ -816,27 +802,3 @@ export const universalQueryRouter = UniversalQueryRouter.getInstance({
 // ================================
 // UTILITY FUNCTIONS
 // ================================
-
-/**
- * Quick routing check for specific query types
- */
-export async function shouldRouteDirectlyToBackend(query: string): Promise<boolean> {
-  try {
-    const plan = await universalQueryRouter.route(query);
-    return plan.routing.processorType === ProcessorType.DIRECT_BACKEND;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if query needs orchestration (should be rare!)
- */
-export async function needsOrchestration(query: string): Promise<boolean> {
-  try {
-    const plan = await universalQueryRouter.route(query);
-    return plan.routing.processorType === ProcessorType.ORCHESTRATED;
-  } catch {
-    return false;
-  }
-}

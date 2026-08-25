@@ -40,11 +40,38 @@ export default function ColumnExtractionDialog({
   const [dragOffset, setDragOffset] = useState<{x: number, y: number}>({x: 0, y: 0});
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Fetch available columns when dialog opens
+  // Fetch available columns when dialog opens. Reopening while a fetch is still
+  // in flight abandons the first one rather than letting it land on top of the
+  // second.
   useEffect(() => {
-    if (isOpen) {
-      fetchColumns();
-    }
+    if (!isOpen) return;
+
+    const request = new AbortController();
+
+    const fetchColumns = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/columns`, { signal: request.signal });
+        const data = await response.json();
+
+        if (data.success) {
+          setColumns(data.columns);
+        } else {
+          setError(data.error || 'Failed to load columns');
+        }
+      } catch (err) {
+        if (request.signal.aborted) return;
+        console.error('Error fetching columns:', err);
+        setError('Error connecting to server');
+      } finally {
+        if (!request.signal.aborted) setLoading(false);
+      }
+    };
+
+    void fetchColumns();
+
+    return () => request.abort();
   }, [isOpen]);
 
   // Drag handlers
@@ -110,26 +137,6 @@ export default function ColumnExtractionDialog({
       document.removeEventListener('mouseup', handleDragEnd);
     };
   }, [isDragging, handleDrag, handleDragEnd]);
-
-  const fetchColumns = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/columns`);
-      const data = await response.json();
-      
-      if (data.success) {
-        setColumns(data.columns);
-      } else {
-        setError(data.error || 'Failed to load columns');
-      }
-    } catch (err) {
-      console.error('Error fetching columns:', err);
-      setError('Error connecting to server');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Filter columns based on search and category
   const filteredColumns = columns.filter(col => {

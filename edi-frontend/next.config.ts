@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // The repo root also holds a package.json, and a stale nested .git makes
-  // Turbopack guess the wrong workspace root. Pin it to this directory, which
-  // is what Vercel builds as the frontend service.
+  // A stale nested .git makes Turbopack guess the wrong workspace root. Pin it
+  // to this directory, which is what Vercel builds as the frontend service.
   turbopack: {
     root: __dirname,
   },

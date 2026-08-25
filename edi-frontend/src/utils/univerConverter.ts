@@ -216,65 +216,11 @@ function createEmptyWorkbook(rows: number = DEFAULT_ROW_COUNT, cols: number = 26
 }
 
 /**
- * Convert Luckysheet celldata format to Univer format
- * Useful for migrating saved data
- */
-export function luckysheetToUniverCellData(
-  luckysheetCelldata: any[]
-): IObjectMatrixPrimitiveType<ICellData> {
-  const univerCellData: IObjectMatrixPrimitiveType<ICellData> = {};
-
-  luckysheetCelldata.forEach((cell: any) => {
-    const row = cell.r;
-    const col = cell.c;
-    const cellValue = cell.v;
-
-    if (!univerCellData[row]) {
-      univerCellData[row] = {};
-    }
-
-    // Convert Luckysheet cell format to Univer format
-    const univerCell: ICellData = {
-      v: cellValue?.v ?? null,
-      t: detectCellType(cellValue?.v),
-    };
-
-    // Preserve formula
-    if (cellValue?.f) {
-      univerCell.f = cellValue.f;
-    }
-
-    // Preserve formatting (basic mapping)
-    if (cellValue?.s) {
-      univerCell.s = cellValue.s;
-    }
-
-    univerCellData[row][col] = univerCell;
-  });
-
-  return univerCellData;
-}
-
-/**
- * Detect cell type from value
- */
-function detectCellType(value: any): CellValueType {
-  if (typeof value === 'number') {
-    return CellValueType.NUMBER;
-  }
-  if (typeof value === 'boolean') {
-    return CellValueType.BOOLEAN;
-  }
-  return CellValueType.STRING;
-}
-
-/**
  * Export utilities
  */
 export const UniverConverter = {
   arrayToUniver: arrayToUniverData,
   univerToArray: univerDataToArray,
-  luckysheetToUniver: luckysheetToUniverCellData,
   valueToCell: convertValueToUniverCell,
   cellToValue: convertUniverCellToValue,
 };

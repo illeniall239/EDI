@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { BarChart3, FileText, File, ChevronDown, Upload, Database, Download, ChevronRight, Trash2, Settings, Columns3, Calculator, Menu, Edit, Table, FileSpreadsheet, Zap } from 'lucide-react';
+import { BarChart3, FileText, File, ChevronDown, Upload, Download, ChevronRight, Trash2, Settings, Columns3, Calculator, Menu, Edit, Table, FileSpreadsheet } from 'lucide-react';
 import ConfirmationDialog from './ConfirmationDialog';
-import { isUniverEnabled, toggleSpreadsheetEngine } from '@/config/spreadsheetConfig';
 
 interface Workspace {
   id: string;
@@ -22,7 +21,6 @@ interface SpreadsheetNavbarProps {
   
   // Data Operations
   onFileUpload?: (files: FileList) => void;
-  onGenerateDataset: () => void;
   onGenerateQualityReport: () => void;
   onGenerateReport: () => void;
   onExtractColumns: () => void;
@@ -36,10 +34,8 @@ interface SpreadsheetNavbarProps {
   onShowFormulaAssistant: () => void;
   
   // States for dialogs
-  setShowSyntheticDatasetDialog: (show: boolean) => void;
   setShowColumnExtraction: (show: boolean) => void;
   // Mode determines which controls are visible
-  mode?: 'work' | 'learn';
 }
 
 export default function SpreadsheetNavbar({
@@ -49,7 +45,6 @@ export default function SpreadsheetNavbar({
   onRenameWorkspace,
   onDeleteWorkspace,
   onFileUpload,
-  onGenerateDataset: _onGenerateDataset,
   onGenerateQualityReport,
   onGenerateReport,
   onExtractColumns: _onExtractColumns,
@@ -59,9 +54,7 @@ export default function SpreadsheetNavbar({
   data,
   isGeneratingReport,
   onShowFormulaAssistant,
-  setShowSyntheticDatasetDialog,
   setShowColumnExtraction,
-  mode = 'work'
 }: SpreadsheetNavbarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [fileDropdownOpen, setFileDropdownOpen] = useState(false);
@@ -73,7 +66,6 @@ export default function SpreadsheetNavbar({
   const [editLoading, setEditLoading] = useState(false);
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
 
-  void _onGenerateDataset;
   void _onExtractColumns;
 
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -175,7 +167,7 @@ export default function SpreadsheetNavbar({
 
                 {fileDropdownOpen && (
                   <div className="absolute top-full left-0 mt-2 w-48 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50">
-                    {onFileUpload && mode === 'work' && (
+                    {onFileUpload && (
                       <label className="flex items-center gap-3 px-4 py-2 hover:bg-accent cursor-pointer text-sm text-popover-foreground hover:text-accent-foreground">
                         <Upload className="w-4 h-4" />
                         Upload Data
@@ -189,19 +181,9 @@ export default function SpreadsheetNavbar({
                       </label>
                     )}
                     
-                    <button
-                      onClick={() => {
-                        setShowSyntheticDatasetDialog(true);
-                        setFileDropdownOpen(false);
-                      }}
-                      className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
-                    >
-                      <Database className="w-4 h-4" />
-                      {mode === 'learn' ? 'Load Practice Dataset' : 'Generate Dataset'}
-                    </button>
 
                     {/* Export submenu */}
-                    {data.length > 0 && mode === 'work' && (
+                    {data.length > 0 && (
                       <div className="relative" ref={exportDropdownRef}>
                         <button
                           onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
@@ -247,7 +229,7 @@ export default function SpreadsheetNavbar({
                       </div>
                     )}
 
-                    {onClearData && data.length > 0 && mode === 'work' && (
+                    {onClearData && data.length > 0 && (
                       <button
                         onClick={() => {
                           setShowClearDataConfirm(true);
@@ -276,7 +258,7 @@ export default function SpreadsheetNavbar({
 
                 {toolsDropdownOpen && (
                   <div className="absolute top-full left-0 mt-2 w-56 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50">
-                    {mode === 'work' && (
+                    {(
                     <button
                       onClick={() => {
                         onGenerateQualityReport();
@@ -293,7 +275,7 @@ export default function SpreadsheetNavbar({
                       {isGeneratingReport ? 'Analyzing...' : 'Quality Report'}
                     </button>)}
 
-                    {mode === 'work' && (
+                    {(
                     <button
                       onClick={() => {
                         onGenerateReport();
@@ -310,7 +292,7 @@ export default function SpreadsheetNavbar({
                       {isGeneratingReport ? 'Generating...' : 'Insight Report (PDF)'}
                     </button>)}
 
-                    {data.length > 0 && mode === 'work' && (
+                    {data.length > 0 && (
                       <button
                         onClick={() => {
                           setShowColumnExtraction(true);
@@ -331,7 +313,7 @@ export default function SpreadsheetNavbar({
                       className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
                     >
                       <Calculator className="w-4 h-4" />
-                      {mode === 'learn' ? 'Get Hint' : 'Formula Assistant'}
+                      Formula Assistant
                     </button>
 
 
@@ -356,16 +338,6 @@ export default function SpreadsheetNavbar({
 
           {/* Right section - Workspace Selector and User Profile */}
           <div className="flex items-center space-x-4">
-
-            {/* Spreadsheet Engine Toggle */}
-            <button
-              onClick={toggleSpreadsheetEngine}
-              className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-md hover:bg-white/10 transition-colors text-sm text-white hover:text-white"
-              title={isUniverEnabled() ? "Switch to Luckysheet" : "Switch to Univer (Beta)"}
-            >
-              <Zap className={`w-4 h-4 ${isUniverEnabled() ? 'text-yellow-400' : 'text-gray-400'}`} />
-              <span className="font-medium">{isUniverEnabled() ? 'Univer' : 'Luckysheet'}</span>
-            </button>
 
             {/* Workspace Selector */}
             <div className="hidden sm:block relative" ref={dropdownRef}>
@@ -470,18 +442,6 @@ export default function SpreadsheetNavbar({
                   </label>
                 )}
                 
-                <button
-                  onClick={() => {
-                    setShowSyntheticDatasetDialog(true);
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md bg-card hover:bg-primary text-xs text-card-foreground hover:text-primary-foreground"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                  Generate Dataset
-                </button>
               </div>
             </div>
 

@@ -1,5 +1,4 @@
 import { API_ENDPOINTS, API_BASE_URL, SUPPORTED_FILE_TYPES, MAX_FILE_SIZE } from '@/config';
-import { LearnQueryResponse, LearningProgress } from '@/types';
 import { DataPreview, QueryResponse, Chat, ChatMessage } from '@/types';
 
 /**
@@ -45,14 +44,12 @@ export async function uploadFile(file: File, workspaceId: string = 'default'): P
     // Add workspace_id as query parameter instead of form data
     const uploadUrl = `${API_ENDPOINTS.upload}?workspace_id=${encodeURIComponent(workspaceId)}`;
 
-    console.log('Sending file upload request...');
     const response = await fetch(uploadUrl, {
         method: 'POST',
         body: formData,
     });
 
     const data = await response.json();
-    console.log('Server response:', data);
 
     if (!response.ok) {
         throw limitRefusal(response, data.detail) || new Error(data.detail || 'Failed to upload file');
@@ -67,35 +64,7 @@ export async function uploadFile(file: File, workspaceId: string = 'default'): P
     return data;
 }
 
-export async function sendClarificationChoice(choiceId: string, originalQuery: string, category: string, workspaceId?: string): Promise<QueryResponse> {
-    console.log('🎯 Sending clarification choice:', { choiceId, originalQuery, category });
-    
-    const response = await fetch(`${API_BASE_URL}/api/clarification-choice`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            choice_id: choiceId,
-            original_query: originalQuery,
-            category: category,
-            workspace_id: workspaceId
-        }),
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('Clarification choice failed:', errorData);
-        throw new Error(errorData.detail || 'Failed to process clarification choice');
-    }
-
-    const data = await response.json();
-    console.log('Clarification choice response:', data);
-    return data;
-}
-
 export async function sendQuery(query: string, chatId: string, options?: { isVoice?: boolean, mode?: string, workspaceId?: string }): Promise<QueryResponse> {
-    console.log('Sending query:', { query, options });
     
     // Check for duplicate removal keywords for debugging
     const duplicatePatterns = [
@@ -106,9 +75,6 @@ export async function sendQuery(query: string, chatId: string, options?: { isVoi
     
     const isDuplicateRemoval = duplicatePatterns.some(pattern => query.toLowerCase().includes(pattern));
     if (isDuplicateRemoval) {
-        console.log('🧹 Duplicate removal detected in query:', query);
-        console.log('🔍 Matched patterns:', duplicatePatterns.filter(p => query.toLowerCase().includes(p)));
-        console.log('📤 Sending duplicate removal request to backend...');
     }
     
     const response = await fetch(API_ENDPOINTS.query, {
@@ -132,31 +98,14 @@ export async function sendQuery(query: string, chatId: string, options?: { isVoi
     }
 
     const data = await response.json();
-    console.log('Query response:', data);
     
     if (isDuplicateRemoval) {
-        console.log('🧹 === DUPLICATE REMOVAL RESPONSE ANALYSIS ===');
-        console.log('🧹 Response object keys:', Object.keys(data));
-        console.log('🔄 Data updated flag:', data.data_updated);
-        console.log('📊 Updated data included:', !!data.updated_data);
         
         if (data.updated_data) {
-            console.log('📈 Updated data rows:', data.updated_data.rows);
-            console.log('📈 Updated data columns:', data.updated_data.columns?.length);
-            console.log('📊 Sample updated data:', data.updated_data.data?.slice(0, 2));
         } else {
             console.warn('⚠️ No updated_data object in response for duplicate removal request');
         }
         
-        if (data.response) {
-            console.log('💬 Response message:', data.response);
-            // Check if response contains success indicators
-            const successIndicators = ['success', 'removed', 'duplicate'];
-            const isSuccessMessage = successIndicators.some(indicator => 
-                data.response.toLowerCase().includes(indicator)
-            );
-            console.log('✅ Response appears to indicate success:', isSuccessMessage);
-        }
     }
     
     return data;
@@ -307,7 +256,6 @@ export async function initializeBackendWithData(data: unknown[], filename?: stri
         }
 
         const result = await response.json();
-        console.log('✅ Backend initialized successfully:', result);
         return {
             success: true,
             message: result.message || 'Backend initialized'
@@ -350,102 +298,6 @@ export async function checkReportStatus(reportId: string): Promise<{ status: 'ge
             status: 'error', 
             error: error instanceof Error ? error.message : 'Unknown error checking report status'
         };
-    }
-}
-
-// ============================================
-// Learn Mode API Helpers
-// ============================================
-
-export async function fetchLearnProgress(workspaceId: string): Promise<LearningProgress[]> {
-    const url = API_ENDPOINTS.learnProgress(workspaceId);
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Failed to load learning progress');
-    const data = await res.json();
-    return data.progress || [];
-}
-
-export async function fetchLearnDatasets(): Promise<unknown[]> {
-    const res = await fetch(API_ENDPOINTS.learnDatasets);
-    if (!res.ok) throw new Error('Failed to load learning datasets');
-    const data = await res.json();
-    return data.datasets || [];
-}
-
-export async function fetchPracticeChallenge(params: { conceptId: string; difficulty?: string; }): Promise<unknown> {
-    const query = new URLSearchParams({
-        concept_id: params.conceptId,
-        difficulty: params.difficulty || 'beginner'
-    });
-    const res = await fetch(`${API_ENDPOINTS.learnPracticeChallenge}?${query.toString()}`, { method: 'POST' });
-    if (!res.ok) throw new Error('Failed to generate practice challenge');
-    return res.json();
-}
-
-export async function sendLearnQuery(payload: {
-  question: string;
-  workspaceId: string;
-  chatId?: string;
-  userProgress?: LearningProgress[];
-  sheetContext?: unknown;
-  isFirstMessage?: boolean;
-  conversationHistory?: unknown[];
-}): Promise<LearnQueryResponse> {
-    console.log('📡 [API] Sending learn query to backend:', {
-        question: payload.question,
-        conversationHistoryLength: payload.conversationHistory?.length || 0,
-        conversationHistory: payload.conversationHistory,
-        chatId: payload.chatId
-    });
-
-    const requestBody = {
-        question: payload.question,
-        workspace_id: payload.workspaceId,
-        chat_id: payload.chatId,
-        user_progress: payload.userProgress || [],
-        sheet_context: payload.sheetContext || null,
-        is_first_message: payload.isFirstMessage || false,
-        conversation_history: payload.conversationHistory || []
-    };
-
-    console.log('📡 [API] Request body:', requestBody);
-
-    const res = await fetch(API_ENDPOINTS.learnQuery, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-    });
-    if (!res.ok) throw new Error('Failed to process learn query');
-    const response = await res.json();
-
-    console.log('📡 [API] Backend response:', response);
-    return response;
-}
-
-// Fetch all reports for a workspace
-export async function fetchReportsForWorkspace(workspaceId: string): Promise<Array<{ id: string; created_at: string; status: 'ready' | 'generating' | 'error' }>> {
-    const response = await fetch(`${API_BASE_URL}/api/reports?workspace_id=${encodeURIComponent(workspaceId)}`);
-    if (!response.ok) {
-        throw new Error('Failed to fetch reports');
-    }
-    return await response.json();
-}
-
-export async function saveChatHistory(workspaceId: string, messages: unknown[]): Promise<void> {
-    await workspaceRequest(API_ENDPOINTS.workspace(workspaceId), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_messages: messages })
-    });
-}
-
-export async function loadChatHistory(workspaceId: string): Promise<unknown[]> {
-    try {
-        const workspace = await workspaceRequest(API_ENDPOINTS.workspace(workspaceId));
-        return workspace.chat_messages || [];
-    } catch (error) {
-        console.error('Error in loadChatHistory:', error);
-        return [];
     }
 }
 
@@ -495,25 +347,12 @@ export async function loadChatMessages(chatId: string): Promise<ChatMessage[]> {
     }
 }
 
-export async function deleteChat(chatId: string): Promise<void> {
-    await workspaceRequest(API_ENDPOINTS.chat(chatId), { method: 'DELETE' });
-}
-
-export async function updateChatTitle(chatId: string, title: string): Promise<void> {
-    await workspaceRequest(API_ENDPOINTS.chat(chatId), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title })
-    });
-}
-
 export async function analyzeWorkspaceInsights(
     workspaceId: string,
     analysisType: 'quick' | 'comprehensive' | 'focused',
     focusArea?: 'anomalies' | 'trends' | 'correlations'
 ): Promise<unknown> {
     try {
-        console.log('🔍 Requesting workspace insights analysis:', { workspaceId, analysisType, focusArea });
 
         const params = new URLSearchParams({
             analysis_type: analysisType
@@ -539,7 +378,6 @@ export async function analyzeWorkspaceInsights(
         }
 
         const data = await response.json();
-        console.log('✅ Analysis complete:', data);
         return data;
     } catch (error) {
         console.error('❌ Error analyzing workspace insights:', error);
@@ -552,7 +390,6 @@ export async function smartFormatWorkspace(
     template: 'professional' | 'financial' | 'minimal' = 'professional'
 ): Promise<unknown> {
     try {
-        console.log('📐 Requesting smart formatting:', { workspaceId, template });
 
         const params = new URLSearchParams({
             template: template
@@ -575,7 +412,6 @@ export async function smartFormatWorkspace(
         }
 
         const data = await response.json();
-        console.log('✅ Smart formatting response:', data);
         return data;
 
     } catch (error) {
@@ -593,7 +429,6 @@ export async function quickDataEntryWorkspace(
     parameters: Record<string, unknown>
 ): Promise<unknown> {
     try {
-        console.log('📝 Requesting quick data entry:', { workspaceId, action, parameters });
 
         const response = await fetch(
             `${API_BASE_URL}/api/workspace/${workspaceId}/quick-data-entry`,
@@ -617,7 +452,6 @@ export async function quickDataEntryWorkspace(
         }
 
         const data = await response.json();
-        console.log('✅ Quick data entry response:', data);
         return data;
 
     } catch (error) {

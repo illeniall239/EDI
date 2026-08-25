@@ -1,16 +1,15 @@
 'use client';
 
 import React from 'react';
-import { Plus, RefreshCw, Save, Check, Zap, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { isUniverEnabled, toggleSpreadsheetEngine } from '@/config/spreadsheetConfig';
+import { Plus, RefreshCw, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, sendLearnQuery, saveWorkspaceData, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, LimitError } from '@/utils/api';
+import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, LimitError } from '@/utils/api';
 import { commandService } from '@/services/commandService';
 import { llmCommandClassifier, CommandClassification } from '@/services/llmCommandClassifier';
 // NEW: Universal Query Router for intelligent routing
 import { universalQueryRouter, ProcessorType, UniversalQueryType } from '@/services/universalQueryRouter';
-import { ChatMessage, Chat, ClarificationResponse } from '@/types';
+import { ChatMessage, Chat } from '@/types';
 import { TypeAnimation } from 'react-type-animation';
 import Image from 'next/image';
 import { API_BASE_URL } from '@/config';
@@ -18,7 +17,6 @@ import ReactMarkdown from 'react-markdown';
 import { ChartRenderer, LegacyChartImage } from '@/components/charts/ChartRenderer';
 import remarkGfm from 'remark-gfm';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
-import { useLearnMode } from '@/contexts/LearnModeContext';
 import AIPrompt from '@/components/AIPrompt';
 import { UniverAdapter } from '@/utils/univerAdapter';
 import { findDuplicateRows, parseColumnSpec } from '@/utils/duplicateDetector';
@@ -101,11 +99,6 @@ interface ChatSidebarProps {
     // Backend initialization for workspace loading
     filename?: string;
     isFromSavedWorkspace?: boolean;
-    minimal?: boolean; // NEW: learn-focused minimal UI
-    mode?: 'work' | 'learn'; // Mode for conditional rendering
-    concept?: string; // Current learning concept
-    currentSelection?: string; // Current cell selection
-    getCurrentData?: () => any[]; // Get current live spreadsheet data
     univerAdapter?: UniverAdapter | null; // Univer spreadsheet adapter for command execution
 }
 
@@ -121,11 +114,6 @@ export default function ChatSidebar({
     onFileUpload,
     filename,
     isFromSavedWorkspace = false,
-    minimal = false,
-    mode = 'work',
-    concept = '',
-    currentSelection = '',
-    getCurrentData,
     univerAdapter = null
 }: ChatSidebarProps) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -146,170 +134,9 @@ export default function ChatSidebar({
     const messageCountRef = useRef(0);
     const [isCreatingChat, setIsCreatingChat] = useState(false);
 
-    // Learning guidance state
-    const [learningTips, setLearningTips] = useState<Array<{
-      id: string;
-      title: string;
-      description: string;
-      example?: string;
-      completed?: boolean;
-    }>>([]);
-    const [currentTipIndex, setCurrentTipIndex] = useState(0);
-
-    // Helpers to format A1 ranges
-    const columnIndexToLetter = useCallback((index: number): string => {
-      let result = '';
-      let i = index;
-      while (i >= 0) {
-        result = String.fromCharCode((i % 26) + 65) + result;
-        i = Math.floor(i / 26) - 1;
-      }
-      return result;
-    }, []);
-
-    const columnNameToLetter = useCallback((name: string, columns: string[]): string => {
-      const idx = columns.indexOf(name);
-      return idx >= 0 ? columnIndexToLetter(idx) : name;
-    }, [columnIndexToLetter]);
-
-    // Analyze sheet data and generate contextual learning tips
-    const generateLearningTips = useCallback((concept: string, sheetData: any[]) => {
-      if (!sheetData || sheetData.length === 0) {
-        return [{
-          id: 'no_data',
-          title: 'No Data Found',
-          description: 'Your sheet appears to be empty. Try uploading some data to get started.',
-          completed: false
-        }];
-      }
-
-      const firstRow = sheetData[0];
-      const columns = Object.keys(firstRow || {});
-      const numericColumns = columns.filter(col => {
-        const values = sheetData.slice(1).map(row => row[col]).filter(val => val !== null && val !== undefined);
-        return values.some(val => typeof val === 'number' || !isNaN(Number(val)));
-      });
-      // Assuming row 1 is headers, data begins at row 2
-      const lastRow = sheetData.length + 1;
-
-      switch (concept.toLowerCase()) {
-        case 'basic_functions':
-        case 'sum':
-          if (numericColumns.length === 0) {
-            return [{
-              id: 'no_numeric',
-              title: 'No Numeric Columns Found',
-              description: `I don't see any columns with numbers. Found columns: ${columns.join(', ')}.`,
-              completed: false
-            }];
-          }
-
-          return [
-            {
-              id: 'select_range',
-              title: 'Select Your Data Range',
-              description: `I see ${numericColumns.length} numeric column${numericColumns.length > 1 ? 's' : ''}: ${numericColumns.join(', ')}. Try selecting one of these columns.`,
-              example: `Select cells in the "${numericColumns[0]}" column`,
-              completed: false
-            },
-            {
-              id: 'enter_formula',
-              title: 'Enter the SUM Formula',
-              description: `Type =SUM( in the formula bar and select the range you want to sum from the "${numericColumns[0]}" column.`,
-              example: `=SUM(${columnNameToLetter(numericColumns[0], columns)}2:${columnNameToLetter(numericColumns[0], columns)}${lastRow})`,
-              completed: false
-            },
-            {
-              id: 'complete_formula',
-              title: 'Complete and Press Enter',
-              description: `Close the parentheses and press Enter to calculate the sum of your "${numericColumns[0]}" data.`,
-              completed: false
-            }
-          ];
-
-        case 'average':
-          if (numericColumns.length === 0) {
-            return [{
-              id: 'no_numeric_avg',
-              title: 'No Numeric Data Available',
-              description: `I need numeric columns to calculate averages. Found columns: ${columns.join(', ')}.`,
-              completed: false
-            }];
-          }
-
-          return [
-            {
-              id: 'select_avg_range',
-              title: 'Select Data for Averaging',
-              description: `I found ${numericColumns.length} numeric column${numericColumns.length > 1 ? 's' : ''}: ${numericColumns.join(', ')}. Choose one to calculate the average.`,
-              example: `Select "${numericColumns[0]}" column data`,
-              completed: false
-            },
-            {
-              id: 'enter_average',
-              title: 'Enter AVERAGE Formula',
-              description: `Type =AVERAGE( to calculate the mean of your "${numericColumns[0]}" selection.`,
-              example: `=AVERAGE(${columnNameToLetter(numericColumns[0], columns)}2:${columnNameToLetter(numericColumns[0], columns)}${lastRow})`,
-              completed: false
-            }
-          ];
-
-        case 'vlookup':
-          const textColumns = columns.filter(col => {
-            const values = sheetData.slice(1).map(row => row[col]).filter(val => val !== null && val !== undefined);
-            return values.some(val => typeof val === 'string' && isNaN(Number(val)));
-          });
-
-          if (textColumns.length === 0) {
-            return [{
-              id: 'no_lookup',
-              title: 'Need Lookup Columns',
-              description: `VLOOKUP requires columns to search in. I found: ${columns.join(', ')}.`,
-              completed: false
-            }];
-          }
-
-          return [
-            {
-              id: 'select_lookup_value',
-              title: 'Choose Lookup Value',
-              description: `I see ${textColumns.length} text column${textColumns.length > 1 ? 's' : ''}: ${textColumns.join(', ')}. Pick a value to look up.`,
-              example: `Select a value from "${textColumns[0]}" column`,
-              completed: false
-            },
-            {
-              id: 'select_table_array',
-              title: 'Select Table Array',
-              description: `Select the range containing both lookup values and results. Include columns like: ${columns.join(', ')}.`,
-              example: `Select A2:${columnIndexToLetter(columns.length - 1)}${lastRow}`,
-              completed: false
-            },
-            {
-              id: 'specify_column_index',
-              title: 'Choose Result Column',
-              description: `Enter which column number contains the result you want from your selected range.`,
-              example: 'Use 3 to get data from the 3rd column',
-              completed: false
-            }
-          ];
-
-        default:
-          return [{
-            id: 'default',
-            title: 'Ready to Learn!',
-            description: `I can see your sheet has ${columns.length} column${columns.length > 1 ? 's' : ''}: ${columns.join(', ')}. Try selecting some cells and entering a formula.`,
-            completed: false
-          }];
-      }
-    }, [columnNameToLetter, columnIndexToLetter]);
-
     // Modal state for expanded image view
     const [expandedImage, setExpandedImage] = useState<string | null>(null);
 
-    // Save state management for learn mode
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-    
     const messagesEndRef = useRef<HTMLDivElement>(null);
     
     // Handle modal body scroll blocking and interaction prevention
@@ -334,142 +161,11 @@ export default function ChatSidebar({
         }
     }, [expandedImage]);
     const { currentWorkspace } = useWorkspace();
-    let learnContext: any = undefined;
-    try { // safe hook call only inside component
-        learnContext = (useLearnMode as any)();
-    } catch {}
-
-    // Generate learning tips when concept or data changes
-    useEffect(() => {
-      if (mode === 'learn' && concept && data) {
-        const tips = generateLearningTips(concept, data);
-        setLearningTips(tips);
-        setCurrentTipIndex(0);
-      }
-    }, [mode, concept, data, generateLearningTips]);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
 
-    // Handle learning mode message sending
-    // NOTE: This function appears to be unused - commenting out to fix linter warnings
-    // If needed in future, uncomment and integrate properly
-    /*
-    const handleSendMessage = async () => {
-        if (!input.trim() || isProcessing) return;
-
-        const messageToSend = input.trim();
-        setInput('');
-
-        try {
-            setIsProcessing(true);
-
-            // Add user message to chat
-            const userMessage: ChatMessage = {
-                id: Date.now().toString(),
-                type: 'user',
-                content: messageToSend,
-                timestamp: new Date()
-            };
-
-            setMessages(prev => [...prev, userMessage]);
-
-            // Send to learning API
-            // Build richer sheet context with headers and A1 mapping for backend
-            const headers = data && data.length > 0 ? Object.keys(data[0]) : [];
-            const columnMap: Record<string, string> = {};
-            headers.forEach((h, idx) => {
-                columnMap[h] = columnIndexToLetter(idx);
-            });
-
-            // Use LearnModeContext's askTutor for proper conversation history management
-            if (learnContext && learnContext.askTutor) {
-                const sheetContext = {
-                    data: data,
-                    headers,
-                    columnMap,
-                    currentSelection: currentSelection
-                };
-                const response = await learnContext.askTutor(messageToSend, sheetContext);
-
-                if (response) {
-                    // Add AI response to chat
-                    const aiMessage: ChatMessage = {
-                        id: (Date.now() + 1).toString(),
-                        type: 'assistant',
-                        content: response.response || '',
-                        timestamp: new Date()
-                    };
-
-                    setMessages(prev => [...prev, aiMessage]);
-                }
-            } else {
-                // Fallback for when learnContext is not available
-                const isFirst = messages.length === 0;
-
-                const response = await sendLearnQuery({
-                    question: messageToSend,
-                    workspaceId: currentWorkspace?.id || 'default',
-                    isFirstMessage: isFirst,
-                    sheetContext: {
-                        data: data,
-                        headers,
-                        columnMap,
-                        currentSelection: currentSelection
-                    },
-                    conversationHistory: messages.map(msg => ({
-                        role: msg.type === 'user' ? 'user' : 'assistant',
-                        content: msg.content,
-                        timestamp: msg.timestamp instanceof Date
-                            ? msg.timestamp.getTime()
-                            : typeof msg.timestamp === 'number'
-                                ? msg.timestamp
-                                : Date.now()
-                    }))
-                });
-
-                if (response.success) {
-                    // Add AI response to chat
-                    const aiMessage: ChatMessage = {
-                        id: (Date.now() + 1).toString(),
-                        type: 'assistant',
-                        content: (response as any).data?.response || (response as any).data || response.response || '',
-                        timestamp: new Date()
-                    };
-
-                    setMessages(prev => [...prev, aiMessage]);
-                } else {
-                    // Add error message
-                    const errorMessage: ChatMessage = {
-                        id: (Date.now() + 1).toString(),
-                        type: 'assistant',
-                        content: `Sorry, I encountered an error: ${(response as any).error || 'Unknown error'}`,
-                        timestamp: new Date()
-                    };
-
-                    setMessages(prev => [...prev, errorMessage]);
-                }
-            }
-        } catch (error) {
-            const errorMessage: ChatMessage = {
-                id: (Date.now() + 1).toString(),
-                type: 'assistant',
-                // A demo limit is not a malfunction, and its message already
-                // explains itself, so it is shown as written rather than
-                // dressed up as an error the user should report.
-                content: error instanceof LimitError
-                    ? error.message
-                    : `Sorry, I encountered an error: ${error instanceof Error ? error.message : String(error)}`,
-                timestamp: new Date()
-            };
-
-            setMessages(prev => [...prev, errorMessage]);
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-    */
 
     useEffect(() => {
         scrollToBottom();
@@ -477,15 +173,6 @@ export default function ChatSidebar({
 
     // Debug: Track when messages change and log their isTyping state
     useEffect(() => {
-        console.log('🔍 DEBUG - Messages state changed. Current messages with typing status:', 
-            messages.map((msg, i) => ({
-                index: i,
-                role: msg.role,
-                hasIsTyping: 'isTyping' in msg,
-                isTypingValue: msg.isTyping,
-                content: msg.content?.substring(0, 30) + '...'
-            }))
-        );
     }, [messages]);
 
     useEffect(() => {
@@ -526,61 +213,6 @@ export default function ChatSidebar({
         }
 
         try {
-            // LEARN MINIMAL ROUTE: use teaching endpoint
-            if (minimal && currentWorkspace?.id) {
-                // Gather light sheet context: selection + headers preview (no full data dump)
-                const sheetContext: any = {};
-
-                // ⚠️ REMOVED: Luckysheet-based sheet context gathering
-                // TODO: Implement with Univer if learn mode needs selection context
-                // For now, learn mode works without selection context
-                try {
-                    // Placeholder for future Univer implementation
-                    // Could use univerAdapter.getSelection() if implemented
-                } catch {}
-
-                // Use LearnModeContext for proper conversation history
-                const latestUserMessage =
-                    [...messages].reverse().find(msg => (msg.role || (msg.type === 'user' ? 'user' : 'assistant')) === 'user')?.content
-                    ?? 'Explain this data';
-                let learnResult;
-                if (learnContext && learnContext.askTutor) {
-                    learnResult = await learnContext.askTutor(latestUserMessage, sheetContext);
-                } else {
-                    // Fallback with conversation history
-                    learnResult = await sendLearnQuery({
-                        question: latestUserMessage,
-                        workspaceId: currentWorkspace.id,
-                        userProgress: learnContext?.progress || [],
-                        sheetContext,
-                        conversationHistory: messages.map(msg => ({
-                            role: msg.role || (msg.type === 'user' ? 'user' : 'assistant'),
-                            content: msg.content,
-                            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
-                        }))
-                    });
-                }
-                const teaching = [
-                    learnResult.response,
-                    (learnResult.guiding_questions || learnResult.guidingQuestions)?.length ? '\n\nGuiding questions:\n- ' + (learnResult.guiding_questions || learnResult.guidingQuestions).join('\n- ') : ''
-                ].join('');
-                setMessages(prev => {
-                    const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                    const assistantMessage: ChatMessage = {
-                        id: (Date.now() + 1).toString(),
-                        role: 'assistant',
-                        type: 'assistant',
-                        content: teaching,
-                        timestamp: new Date()
-                    };
-                    const updated = [...newMessages, assistantMessage];
-                    saveChatMessagesToActiveChat(updated);
-                    return updated;
-                });
-                setIsProcessing(false);
-                return;
-            }
-            console.log('🔄 Initializing backend for saved workspace...');
             
             // Convert data array to CSV string
             const headers = Object.keys(data[0]).join(',');
@@ -598,7 +230,6 @@ export default function ChatSidebar({
             // Upload to backend to initialize data handler
             await uploadFile(file, currentWorkspace.id);
             setIsBackendInitialized(true);
-            console.log('✅ Backend initialized successfully');
         } catch (error) {
             console.error('❌ Failed to initialize backend:', error);
             throw error;
@@ -607,8 +238,6 @@ export default function ChatSidebar({
 
     // LLM-guided conditional formatting handler
     const handleLLMConditionalFormatting = async (classification: CommandClassification): Promise<boolean> => {
-        console.log('🎨 [CF Handler] Processing conditional formatting command');
-        console.log('📋 Classification:', classification);
 
         try {
             // Check if Univer is available
@@ -635,7 +264,6 @@ export default function ChatSidebar({
             // Handle different CF actions
             switch (action) {
                 case 'highlight_duplicates':
-                    console.log('[CF Handler] Creating duplicate values rule');
                     success = univerAdapter.createDuplicateValuesRule(range);
                     message = success
                         ? `✅ Duplicate values highlighted${range ? ` in ${range}` : ''}`
@@ -652,7 +280,6 @@ export default function ChatSidebar({
                     if (gtValue === undefined || Number.isNaN(gtValue)) {
                         throw new Error('Missing value/threshold for greater than rule');
                     }
-                    console.log(`[CF Handler] Creating greater than rule: > ${gtValue}`);
                     success = univerAdapter.createGreaterThanRule(range || 'A:Z', gtValue);
                     message = success
                         ? `✅ Cells greater than ${gtValueRaw} highlighted`
@@ -670,7 +297,6 @@ export default function ChatSidebar({
                     if (ltValue === undefined || Number.isNaN(ltValue)) {
                         throw new Error('Missing value/threshold for less than rule');
                     }
-                    console.log(`[CF Handler] Creating less than rule: < ${ltValue}`);
                     success = univerAdapter.createLessThanRule(range || 'A:Z', ltValue);
                     message = success
                         ? `✅ Cells less than ${ltValueRaw} highlighted`
@@ -688,7 +314,6 @@ export default function ChatSidebar({
                     if (eqValue === undefined || Number.isNaN(eqValue)) {
                         throw new Error('Missing value for equals rule');
                     }
-                    console.log(`[CF Handler] Creating equals rule: = ${eqValue}`);
                     success = univerAdapter.createEqualsRule(range || 'A:Z', eqValue);
                     message = success
                         ? `✅ Cells equal to ${eqValueRaw} highlighted`
@@ -705,7 +330,6 @@ export default function ChatSidebar({
                     if (!text) {
                         throw new Error('Missing text for contains rule');
                     }
-                    console.log(`[CF Handler] Creating text contains rule: contains "${text}"`);
                     success = univerAdapter.createTextContainsRule(range || 'A:Z', text);
                     message = success
                         ? `✅ Cells containing "${text}" highlighted`
@@ -714,7 +338,6 @@ export default function ChatSidebar({
                 }
 
                 case 'highlight_unique':
-                    console.log('[CF Handler] Creating unique values rule');
                     success = univerAdapter.createUniqueValuesRule(range);
                     message = success
                         ? `✅ Unique values highlighted${range ? ` in ${range}` : ''}`
@@ -722,7 +345,6 @@ export default function ChatSidebar({
                     break;
 
                 case 'clear_conditional_formatting':
-                    console.log('[CF Handler] Clearing all CF rules');
                     success = univerAdapter.clearConditionalFormatRules();
                     message = success
                         ? '✅ All conditional formatting rules cleared'
@@ -769,8 +391,6 @@ export default function ChatSidebar({
     const handleHyperlinkOperation = async (
         classification: CommandClassification
     ): Promise<boolean> => {
-        console.log('🔗 [Hyperlink Handler] Processing hyperlink command');
-        console.log('📋 Classification:', classification);
 
         try {
             if (!univerAdapter || !univerAdapter.isReady()) {
@@ -838,7 +458,6 @@ export default function ChatSidebar({
                     break;
 
                 default:
-                    console.log('⚠️ Unhandled hyperlink action:', action);
                     return false;
             }
 
@@ -880,7 +499,6 @@ export default function ChatSidebar({
     const handleDataValidation = async (
         classification: CommandClassification
     ): Promise<boolean> => {
-        console.log('✅ [Validation Handler] Processing data validation command');
 
         try {
             if (!univerAdapter || !univerAdapter.isReady()) {
@@ -1033,7 +651,6 @@ export default function ChatSidebar({
                     break;
 
                 default:
-                    console.log('⚠️ Unhandled validation action:', action);
                     return false;
             }
 
@@ -1075,7 +692,6 @@ export default function ChatSidebar({
     const handleCommentOperation = async (
         classification: CommandClassification
     ): Promise<boolean> => {
-        console.log('💬 [Comment Handler] Processing comment operation');
 
         try {
             if (!univerAdapter || !univerAdapter.isReady()) {
@@ -1128,7 +744,6 @@ export default function ChatSidebar({
                     break;
 
                 default:
-                    console.log('⚠️ Unhandled comment action:', action);
                     return false;
             }
 
@@ -1170,7 +785,6 @@ export default function ChatSidebar({
     const handleImageOperation = async (
         classification: CommandClassification
     ): Promise<boolean> => {
-        console.log('🖼️ [Image Handler] Processing image/drawing operation');
 
         try {
             if (!univerAdapter || !univerAdapter.isReady()) {
@@ -1229,7 +843,6 @@ export default function ChatSidebar({
                     break;
 
                 default:
-                    console.log('⚠️ Unhandled image action:', action);
                     return false;
             }
 
@@ -1272,7 +885,6 @@ export default function ChatSidebar({
         classification: CommandClassification,
         userMessage: string
     ): Promise<boolean> => {
-        console.log('🗑️ [Remove Duplicates] Processing duplicate removal');
 
         try {
             if (!univerAdapter || !univerAdapter.isReady()) {
@@ -1329,7 +941,6 @@ export default function ChatSidebar({
                 return true;
             }
 
-            console.log(`🗑️ Found ${duplicateIndices.length} duplicate row(s) at indices:`, duplicateIndices);
 
             // 4. Delete rows in REVERSE order (to avoid index shifting)
             const failedDeletions: number[] = [];
@@ -1337,13 +948,11 @@ export default function ChatSidebar({
 
             for (let i = duplicateIndices.length - 1; i >= 0; i--) {
                 const rowIndex = duplicateIndices[i];
-                console.log(`🗑️ Attempting to delete row ${rowIndex}`);
 
                 const deleted = univerAdapter.deleteRow(rowIndex, 1);
 
                 if (deleted) {
                     successfulDeletions++;
-                    console.log(`✅ Successfully deleted row ${rowIndex}`);
                 } else {
                     failedDeletions.push(rowIndex);
                     console.error(`❌ Failed to delete row ${rowIndex}`);
@@ -1395,7 +1004,6 @@ export default function ChatSidebar({
         classification: CommandClassification,
         userMessage: string
     ): Promise<boolean> => {
-        console.log('🔍 [Find & Replace] Processing find and replace operation');
 
         try {
             if (!univerAdapter || !univerAdapter.isReady()) {
@@ -1444,24 +1052,20 @@ export default function ChatSidebar({
                 return false;
             }
 
-            console.log(`🔍 Finding: "${findText}", Replacing with: "${replaceText}"`);
 
             // Parse options from message (case sensitivity, whole cell, etc.)
             const options = parseFindReplaceOptions(userMessage);
 
-            console.log('🔧 About to call univerAdapter.findAndReplace');
 
             // Execute find and replace with timeout protection
             let count: number;
             try {
                 count = await univerAdapter.findAndReplace(findText, replaceText, options);
-                console.log('🔧 univerAdapter.findAndReplace returned:', count);
             } catch (adapterError) {
                 console.error('❌ Adapter method threw error:', adapterError);
                 count = -1;
             }
 
-            console.log('🔧 Determining message based on count:', count);
 
             let message = '';
             let success = false;
@@ -1514,7 +1118,6 @@ export default function ChatSidebar({
             return false;
         } finally {
             // ALWAYS runs, even if there's an uncaught error or promise never resolves
-            console.log('🔧 FINALLY BLOCK: Setting isProcessing to false');
             setIsProcessing(false);
         }
     };
@@ -1522,7 +1125,6 @@ export default function ChatSidebar({
     const handleNamedRangeOperation = async (
         classification: CommandClassification
     ): Promise<boolean> => {
-        console.log('📛 [Named Range] Processing operation:', classification.action);
 
         try {
             if (!univerAdapter || !univerAdapter.isReady()) {
@@ -1653,8 +1255,6 @@ export default function ChatSidebar({
     const handleIntelligentAnalysis = async (
         classification: CommandClassification
     ): Promise<boolean> => {
-        console.log('🧠 [Intelligent Analysis] Starting analysis');
-        console.log('🔍 Action:', classification.action);
 
         try {
             // Determine analysis type based on action
@@ -1699,7 +1299,6 @@ export default function ChatSidebar({
                 return updatedMessages;
             });
 
-            console.log('✅ [Intelligent Analysis] Complete');
             return true;
 
         } catch (error) {
@@ -1730,8 +1329,6 @@ export default function ChatSidebar({
     const handleSmartFormat = async (
         classification: CommandClassification
     ): Promise<boolean> => {
-        console.log('📐 [Smart Format] Starting auto-formatting');
-        console.log('🔍 Template:', classification.parameters?.template || 'professional');
 
         try {
             // Get template from parameters
@@ -1758,7 +1355,6 @@ export default function ChatSidebar({
             }
 
             const formatting = response.formatting;
-            console.log('📋 Formatting instructions received:', formatting);
 
             // Apply formatting via UniverAdapter
             if (!univerAdapter) {
@@ -1769,7 +1365,6 @@ export default function ChatSidebar({
             const columns = Object.keys(formatting.column_formats);
             const dataRows = Array.isArray(data) ? data.length : 0;  // Exclude header row
 
-            let formattedCount = 0;
 
             // 1. Apply number formats to data columns
             for (let colIndex = 0; colIndex < columns.length; colIndex++) {
@@ -1792,8 +1387,6 @@ export default function ChatSidebar({
                 if (width) {
                     univerAdapter.setColumnWidth(colIndex, width);
                 }
-
-                formattedCount++;
             }
 
             // 2. Apply header row formatting
@@ -1820,7 +1413,6 @@ export default function ChatSidebar({
                 }
             }
 
-            console.log(`✅ [Smart Format] Applied formatting to ${formattedCount} columns`);
 
             // Update message with success
             setMessages(prev => {
@@ -1867,9 +1459,6 @@ export default function ChatSidebar({
     const handleQuickDataEntry = async (
         classification: CommandClassification
     ): Promise<boolean> => {
-        console.log('📝 [Quick Data Entry] Starting data entry operation');
-        console.log('🔍 Action:', classification.action);
-        console.log('🔍 Parameters:', classification.parameters);
 
         try {
             const action = classification.action;
@@ -1928,7 +1517,6 @@ export default function ChatSidebar({
             }
 
             const resultData = response.data;
-            console.log('📋 Data entry result:', resultData);
 
             // Apply changes via UniverAdapter
             if (!univerAdapter) {
@@ -1940,9 +1528,6 @@ export default function ChatSidebar({
                 const rowValues = resultData.row_values;
                 const position = resultData.actual_position;
 
-                console.log('[Quick Data Entry] Row values:', rowValues);
-                console.log('[Quick Data Entry] Position:', position);
-                console.log('[Quick Data Entry] Is array?', Array.isArray(rowValues));
 
                 // Ensure rowValues is a proper array
                 if (!Array.isArray(rowValues)) {
@@ -1992,7 +1577,6 @@ export default function ChatSidebar({
                 univerAdapter.freezePanes(1, 0);
             }
 
-            console.log(`✅ [Quick Data Entry] Operation completed successfully`);
 
             // Create success message based on action
             let successMessage = '';
@@ -2329,33 +1913,13 @@ export default function ChatSidebar({
         setMessages(prev => {
             const newMessages = prev.filter(msg => !msg.isAnalyzing);
             
-            // Check if response contains clarification
-            let parsedClarification = null;
-            if (typeof response.response === 'string' && response.response.trim().startsWith('{')) {
-                try {
-                    const jsonResponse = JSON.parse(response.response);
-                    if (jsonResponse.type === 'clarification') {
-                        parsedClarification = jsonResponse;
-                    } else if (jsonResponse.type === 'regular' && jsonResponse.message &&
-                               jsonResponse.message.includes('I can help you with') &&
-                               jsonResponse.message.includes('in several ways')) {
-                        // This is a conversational clarification - treat as regular message
-                        // Override response content with the conversational text
-                        response.response = jsonResponse.message;
-                    }
-                } catch {
-                    // Not JSON, proceed normally
-                }
-            }
-            
             const assistantMessage: ChatMessage = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
                 type: 'assistant',
-                content: parsedClarification ? '' : response.response,
+                content: response.response,
                 timestamp: new Date(),
-                isTyping: false,  // No typing animation for clarifications
-                clarification: parsedClarification || undefined,
+                isTyping: false,
                 visualization: response.visualization ? {
                     type: response.visualization.type,
                     path: response.visualization.path,
@@ -2374,7 +1938,6 @@ export default function ChatSidebar({
     // Helper function to handle filtering logic with Univer
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const handleUniverFiltering = async (classification: any, _query: string) => {
-        console.log('[🔷 Univer Filter] Processing:', classification.action, classification.parameters);
 
         try {
             if (!univerAdapter || !univerAdapter.isReady()) {
@@ -2428,7 +1991,6 @@ export default function ChatSidebar({
                 const value = params.value;
                 const comparison = params.comparison || 'equals';
 
-                console.log('[🔷 Univer Filter] Value-based filter:', { column, value, comparison });
 
                 if (!column || !value) {
                     throw new Error('Missing column or value for filtering');
@@ -2437,7 +1999,6 @@ export default function ChatSidebar({
                 // Ensure filter exists
                 let filter = univerAdapter.getFilter();
                 if (!filter) {
-                    console.log('[🔷 Univer Filter] No filter exists, creating one...');
                     const created = univerAdapter.createFilter();
                     if (!created) {
                         throw new Error('Failed to create filter');
@@ -2513,211 +2074,26 @@ export default function ChatSidebar({
         }
     };
 
-    // Helper function to handle filtering logic (Luckysheet fallback)
+    // Filtering is Univer's job. A Luckysheet fallback used to sit behind this,
+    // left over from the migration; it could not have run, because Luckysheet
+    // has not been loaded since.
     const handleFilteringLogic = async (classification: any, query: string) => {
-        // If Univer is available, use Univer filtering
         if (univerAdapter && univerAdapter.isReady()) {
-            console.log('[🔷 Router] Routing to Univer filtering');
             return handleUniverFiltering(classification, query);
         }
 
-        // Fallback to Luckysheet filtering
-        console.log('[🔷 Router] Falling back to Luckysheet filtering');
-
-        if (classification.action === 'filter_value_based') {
-            console.log('🎯 Processing value-based filter with row hiding');
-            if (typeof window !== 'undefined' && (window as any).luckysheet?.getSheetData && (window as any).luckysheet?.hideRow) {
-                const sheetData = (window as any).luckysheet.getSheetData();
-                if (sheetData && sheetData.length > 1) {
-                    const headers = sheetData[0] || [];
-                    const rawFilterColumn = classification.parameters?.column;
-                    const filterColumn: string = typeof rawFilterColumn === 'string' ? rawFilterColumn : '';
-                    const rawFilterValue = classification.parameters?.value;
-                    const filterValue = typeof rawFilterValue === 'string' ? rawFilterValue : `${rawFilterValue ?? ''}`;
-                    const comparison = typeof classification.parameters?.comparison === 'string'
-                        ? classification.parameters.comparison
-                        : 'equals';
-                    
-                    // Helper function to extract text from cells
-                    const extractCellText = (cell: any): string => {
-                        if (!cell) return '';
-                        if (typeof cell === 'string') return cell;
-                        if (typeof cell === 'object') {
-                            return cell.m || cell.v || '';
-                        }
-                        return String(cell);
-                    };
-                    const filterColumnLower = filterColumn.toLowerCase();
-                    
-                    console.log('🔍 Filter parameters:', { filterColumn, filterValue, comparison });
-                    console.log('🔍 Headers available:', headers.map((h, i) => `${i}: ${extractCellText(h)}`));
-                    
-                    // Find column index by name (case-insensitive)
-                    let columnIndex = -1;
-                    
-                    for (let i = 0; i < headers.length; i++) {
-                        const headerText = extractCellText(headers[i]).toLowerCase();
-                        if (headerText === filterColumnLower || headerText.includes(filterColumnLower)) {
-                            columnIndex = i;
-                            break;
-                        }
-                    }
-                    
-                    if (columnIndex === -1) {
-                        // Try to find by column letter (A, B, C, etc.)
-                        const colLetter = filterColumn.toUpperCase();
-                        if (colLetter.match(/^[A-Z]$/)) {
-                            columnIndex = colLetter.charCodeAt(0) - 65;
-                            console.log(`🔤 Column letter "${colLetter}" converted to index ${columnIndex}`);
-                        }
-                    }
-                    
-                    if (columnIndex >= 0 && columnIndex < headers.length) {
-                        const columnName = extractCellText(headers[columnIndex]);
-                        console.log(`✅ Found column "${columnName}" at index ${columnIndex}`);
-                        
-                        // Analyze rows and collect those that don't match
-                        const rowsToHide: number[] = [];
-                        let matchCount = 0;
-                        
-                        for (let rowIndex = 1; rowIndex < sheetData.length; rowIndex++) {
-                            const row = sheetData[rowIndex];
-                            if (row && row[columnIndex] !== undefined) {
-                                const cellValue = extractCellText(row[columnIndex]).toLowerCase();
-                                let matches = false;
-                                
-                                switch (comparison) {
-                                    case 'equals':
-                                        matches = cellValue === filterValue.toLowerCase();
-                                        break;
-                                    case 'contains':
-                                        matches = cellValue.includes(filterValue.toLowerCase());
-                                        break;
-                                    case 'starts_with':
-                                        matches = cellValue.startsWith(filterValue.toLowerCase());
-                                        break;
-                                    default:
-                                        matches = cellValue.includes(filterValue.toLowerCase());
-                                }
-                                
-                                if (matches) {
-                                    matchCount++;
-                                } else {
-                                    rowsToHide.push(rowIndex);
-                                }
-                            } else {
-                                rowsToHide.push(rowIndex);
-                            }
-                        }
-                        
-                        console.log(`🔍 Analysis: ${matchCount} rows match, ${rowsToHide.length} rows to hide`);
-                        
-                        // Hide non-matching rows in groups for better performance
-                        if (rowsToHide.length > 0) {
-                            const groups: number[][] = [];
-                            if (rowsToHide.length > 0) {
-                                let currentGroup: number[] = [rowsToHide[0]];
-                                
-                                for (let i = 1; i < rowsToHide.length; i++) {
-                                    if (rowsToHide[i] === rowsToHide[i-1] + 1) {
-                                        currentGroup.push(rowsToHide[i]);
-                                    } else {
-                                        groups.push(currentGroup);
-                                        currentGroup = [rowsToHide[i]];
-                                    }
-                                }
-                                groups.push(currentGroup);
-                            }
-                            
-                            console.log(`🎯 Hiding ${groups.length} row range(s):`, groups);
-                            
-                            groups.forEach(group => {
-                                if (group.length === 1) {
-                                    (window as any).luckysheet.hideRow([group[0], group[0]]);
-                                } else {
-                                    (window as any).luckysheet.hideRow([group[0], group[group.length - 1]]);
-                                }
-                            });
-                        }
-                        
-                        // Update message with results
-                        setMessages(prev => {
-                            const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                            const updatedMessages = [...newMessages, { 
-                                id: (Date.now() + 1).toString(),
-                                role: 'assistant', 
-                                type: 'assistant',
-                                content: `✅ Filtered ${sheetData.length - 1} rows, showing ${matchCount} where ${columnName} contains "${filterValue}"`,
-                                isTyping: false,
-                                timestamp: new Date()
-                            } as ChatMessage];
-                            
-                            // Save to active chat
-                            saveChatMessagesToActiveChat(updatedMessages);
-                            
-                            return updatedMessages;
-                        });
-                        return;
-                        
-                    } else {
-                        console.error(`❌ Column "${filterColumn}" not found`);
-                        setMessages(prev => {
-                            const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                            const updatedMessages = [...newMessages, { 
-                                id: (Date.now() + 1).toString(),
-                                role: 'assistant', 
-                                type: 'assistant',
-                                content: `❌ Column "${filterColumn}" not found. Available columns: ${headers.map((h) => extractCellText(h)).join(', ')}`,
-                                isTyping: false,
-                                timestamp: new Date()
-                            } as ChatMessage];
-                            
-                            // Save to active chat
-                            saveChatMessagesToActiveChat(updatedMessages);
-                            
-                            return updatedMessages;
-                        });
-                        return;
-                    }
-                } else {
-                    console.error('❌ No sheet data available or sheet is empty');
-                    setMessages(prev => {
-                        const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                        const updatedMessages = [...newMessages, { 
-                            id: (Date.now() + 1).toString(),
-                            role: 'assistant', 
-                            type: 'assistant',
-                            content: '❌ No spreadsheet data available to filter. Please make sure data is loaded.',
-                            isTyping: false,
-                            timestamp: new Date()
-                        } as ChatMessage];
-                        
-                        // Save to active chat
-                        saveChatMessagesToActiveChat(updatedMessages);
-                        
-                        return updatedMessages;
-                    });
-                    return;
-                }
-            }
-        }
-        
-        // Handle other filter types here if needed
-        console.log('⚠️ Unhandled filter action:', classification.action);
+        console.warn('[🔷 Router] Filter requested before the spreadsheet was ready');
         setMessages(prev => {
             const newMessages = prev.filter(msg => !msg.isAnalyzing);
-            const updatedMessages = [...newMessages, { 
+            const updatedMessages = [...newMessages, {
                 id: (Date.now() + 1).toString(),
-                role: 'assistant', 
+                role: 'assistant',
                 type: 'assistant',
-                content: `Sorry, I couldn't process that filtering request: ${classification.action}`,
+                content: '❌ The spreadsheet is still loading. Try that again in a moment.',
                 isTyping: false,
                 timestamp: new Date()
             } as ChatMessage];
-            
-            // Save to active chat
             saveChatMessagesToActiveChat(updatedMessages);
-            
             return updatedMessages;
         });
     };
@@ -2726,18 +2102,15 @@ export default function ChatSidebar({
     const processClassificationResult = async (classification: any, query: string) => {
         if (!classification || classification.confidence < 0.8) {
             // Low confidence - route to backend
-            console.log('⚠️ Low frontend confidence, routing to backend');
             const response = await sendQuery(query, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
             handleQueryResponse(response);
             return;
         }
 
-        console.log('✅ High confidence frontend routing:', classification.intent);
 
         // Handle high-confidence classifications
         switch (classification.intent) {
             case 'conditional_format':
-                console.log('🎨 LLM-guided conditional formatting:', classification.action);
                 const success = await handleLLMConditionalFormatting(classification);
                 if (success) {
                     return; // Exit early after successful LLM handling
@@ -2745,7 +2118,6 @@ export default function ChatSidebar({
                 break;
 
             case 'hyperlink_operation':
-                console.log('🔗 Hyperlink operation detected:', classification.action);
                 const hyperlinkSuccess = await handleHyperlinkOperation(classification);
                 if (hyperlinkSuccess) {
                     return;
@@ -2753,7 +2125,6 @@ export default function ChatSidebar({
                 break;
 
             case 'data_validation':
-                console.log('✅ Data validation operation:', classification.action);
                 const validationSuccess = await handleDataValidation(classification);
                 if (validationSuccess) {
                     return;
@@ -2761,7 +2132,6 @@ export default function ChatSidebar({
                 break;
 
             case 'comment_operation':
-                console.log('💬 Comment operation detected:', classification.action);
                 const commentSuccess = await handleCommentOperation(classification);
                 if (commentSuccess) {
                     return;
@@ -2769,7 +2139,6 @@ export default function ChatSidebar({
                 break;
 
             case 'image_operation':
-                console.log('🖼️ Image/drawing operation detected:', classification.action);
                 const imageSuccess = await handleImageOperation(classification);
                 if (imageSuccess) {
                     return;
@@ -2779,7 +2148,6 @@ export default function ChatSidebar({
             // data_modification removed - now handled by handleSubmit for proper dataUpdate dispatch
 
             case 'named_range_operation':
-                console.log('📛 Named range operation detected:', classification.action);
                 const namedRangeSuccess = await handleNamedRangeOperation(classification);
                 if (namedRangeSuccess) {
                     return;
@@ -2787,14 +2155,12 @@ export default function ChatSidebar({
                 break;
 
             case 'filter':
-                console.log('🔍 LLM detected filtering - analyzing action:', classification.action);
                 // Execute filtering logic (existing code from handleSubmit)
                 await handleFilteringLogic(classification, query);
                 return;
         }
         
         // Fallback to backend if not handled
-        console.log('🔄 Falling back to backend processing');
         const response = await sendQuery(query, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
         handleQueryResponse(response);
     };
@@ -2804,7 +2170,6 @@ export default function ChatSidebar({
         return new Promise((resolve, reject) => {
             // Event handler
             const eventHandler = (event: Event) => {
-                console.log(`📡 Received ${eventName} event:`, (event as CustomEvent).detail);
                 cleanup();
                 resolve((event as CustomEvent).detail);
             };
@@ -2824,18 +2189,15 @@ export default function ChatSidebar({
 
             // Add event listener
             window.addEventListener(eventName, eventHandler);
-            console.log(`👂 Listening for ${eventName} event (timeout: ${timeoutMs}ms)`);
         });
     };
     
     // 🔄 SPREADSHEET REFRESH SYNCHRONIZATION
     const waitForSpreadsheetRefresh = async (): Promise<void> => {
         try {
-            console.log('👂 Waiting for dataUpdateComplete event...');
             const eventDetail = await waitForEvent('dataUpdateComplete', 15000);
             
             if (eventDetail.success) {
-                console.log('✅ Spreadsheet refresh completed successfully');
             } else {
                 console.warn('⚠️ Spreadsheet refresh reported failure:', eventDetail.error);
                 // Continue anyway - don't let refresh failures stop compound queries
@@ -2848,272 +2210,20 @@ export default function ChatSidebar({
 
     // 🎯 MANUAL HIGHLIGHT EXECUTION FOR COMPOUND QUERIES
     const executeManualHighlight = async (command: string): Promise<{ success: boolean; error?: string }> => {
-        // ⚠️ DEPRECATED: This function used Luckysheet for manual highlighting
-        // TODO: Reimplement with Univer conditional formatting API when available
-        console.warn('⚠️ executeManualHighlight called but is deprecated');
-        console.warn('⚠️ Manual highlighting commands not yet supported in Univer');
+        // Highlighting was implemented against Luckysheet's conditional-format
+        // API and has not been ported. The orchestrator still emits
+        // manual_highlight steps, so this reports the gap rather than pretending
+        // to have done something. UniverAdapter has the rules it would need --
+        // createGreaterThanRule and friends, already used by the direct
+        // conditional-formatting path in this file.
+        console.warn('⚠️ Manual highlighting has not been ported to Univer:', command);
 
         return {
             success: false,
             error: 'Manual highlighting is not yet supported. This feature will be re-implemented with Univer soon.'
         };
-
-        // ALL CODE BELOW IS UNREACHABLE - Old Luckysheet implementation (~250 lines removed)
-        try {
-            console.log('🎯 Executing manual highlight command:', command);
-
-            if (typeof window === 'undefined' || !(window as any).luckysheet) {
-                return { success: false, error: 'Spreadsheet not available' };
-            }
-
-            // Parse the command to extract condition and column
-            // Expected format: "highlight [condition] [value] in column [column]"
-            // Examples: "highlight greater than 5000 in column M", "highlight duplicates in column A"
-
-            const sheetData = (window as any).luckysheet.getSheetData();
-            if (!sheetData || sheetData.length === 0) {
-                return { success: false, error: 'No spreadsheet data available' };
-            }
-            
-            // Parse different highlight patterns
-            let conditionName: string;
-            let conditionValues: number[] = [];
-            let columnIdentifier: string;
-            
-            // Pattern 1: Greater than, less than, equal to
-            const numericMatch = command.match(/highlight\s+(greater\s+than|less\s+than|equal\s+to|between)\s+([0-9.]+)(?:\s+and\s+([0-9.]+))?\s+in\s+column\s+([A-Z]+|[\w\s]+)/i);
-            if (numericMatch) {
-                const match = numericMatch as RegExpMatchArray;
-                const comparison = (match[1] || '').toLowerCase().replace(/\s+/g, '');
-                const value1 = parseFloat(match[2] || '');
-                const value2 = match[3] ? parseFloat(match[3]) : undefined;
-                columnIdentifier = (match[4] || '').trim();
-                
-                if (comparison === 'greaterthan') {
-                    conditionName = 'greaterThan';
-                    conditionValues = [value1];
-                } else if (comparison === 'lessthan') {
-                    conditionName = 'lessThan';
-                    conditionValues = [value1];
-                } else if (comparison === 'equalto') {
-                    conditionName = 'equal';
-                    conditionValues = [value1];
-                } else if (comparison === 'between' && value2 !== undefined) {
-                    conditionName = 'betweenness';
-                    conditionValues = [value1, value2 as number];
-                }
-            }
-            
-            // Pattern 2: Duplicates
-            const duplicateMatch = command.match(/highlight\s+duplicates?\s+in\s+column\s+([A-Z]+|[\w\s]+)/i);
-            if (duplicateMatch) {
-                const dupMatch = duplicateMatch as RegExpMatchArray;
-                conditionName = 'duplicateValue';
-                conditionValues = [0]; // 0 = highlight duplicates, 1 = highlight unique
-                columnIdentifier = (dupMatch[1] || '').trim();
-            }
-            
-            if (!conditionName || !columnIdentifier) {
-                return { success: false, error: 'Could not parse highlight command format' };
-            }
-            
-            console.log('🔍 Parsed highlight parameters:', {
-                conditionName,
-                conditionValues,
-                columnIdentifier
-            });
-            
-            // Find column index
-            let colIndex = -1;
-            if (columnIdentifier.match(/^[A-Z]$/)) {
-                // Single letter column (A, B, C, etc.)
-                colIndex = columnIdentifier.charCodeAt(0) - 65;
-            } else {
-                // Named column - search headers
-                const headers = sheetData[0] || [];
-                for (let i = 0; i < headers.length; i++) {
-                    const headerText = headers[i] && typeof headers[i] === 'object' ? 
-                                     (headers[i].m || headers[i].v || '') : (headers[i] || '');
-                    if (headerText.toString().toLowerCase().trim() === columnIdentifier.toLowerCase()) {
-                        colIndex = i;
-                        break;
-                    }
-                }
-            }
-            
-            if (colIndex === -1) {
-                return { success: false, error: `Column '${columnIdentifier}' not found` };
-            }
-            
-            const colLetter = String.fromCharCode(65 + colIndex);
-            console.log(`📍 Found column ${columnIdentifier} at index ${colIndex} (${colLetter})`);
-            
-            // Apply the highlighting logic based on condition type
-            if (conditionName === 'duplicateValue') {
-                // Handle duplicates using existing logic
-                const counts: Record<string, number> = {};
-                const startRow = 1; // Skip header
-                const endRow = sheetData.length - 1;
-                
-                // Count occurrences
-                for (let r = startRow; r <= endRow; r++) {
-                    const cell = sheetData[r]?.[colIndex];
-                    const value = extractCellText(cell);
-                    if (value !== '') counts[value] = (counts[value] || 0) + 1;
-                }
-                
-                // Find rows to highlight
-                const targetRows: number[] = [];
-                for (let r = startRow; r <= endRow; r++) {
-                    const cell = sheetData[r]?.[colIndex];
-                    const value = extractCellText(cell);
-                    const count = value === '' ? 0 : (counts[value] || 0);
-                    if (value !== '' && count > 1) {
-                        targetRows.push(r + 1); // Convert to 1-based
-                    }
-                }
-                
-                // Apply highlighting
-                return applyHighlightToRows(targetRows, colLetter);
-                
-            } else if (['greaterThan', 'lessThan', 'equal', 'betweenness'].includes(conditionName)) {
-                // Handle numeric conditions
-                const targetRows: number[] = [];
-                
-                for (let r = 1; r < sheetData.length; r++) { // Skip header row
-                    const cell = sheetData[r]?.[colIndex];
-                    const numValue = getCellNumericValue(cell);
-                    const numericValue = typeof numValue === 'number' ? numValue : null;
-                    
-                    if (numericValue !== null) {
-                        const value = Number(numericValue);
-                        let matches = false;
-                        
-                        switch (conditionName) {
-                            case 'greaterThan':
-                                matches = value > conditionValues[0];
-                                break;
-                            case 'lessThan':
-                                matches = value < conditionValues[0];
-                                break;
-                            case 'equal':
-                                matches = Math.abs(value - conditionValues[0]) < 0.0001;
-                                break;
-                            case 'betweenness':
-                                if (conditionValues.length >= 2) {
-                                    const min = Math.min(conditionValues[0], conditionValues[1]);
-                                    const max = Math.max(conditionValues[0], conditionValues[1]);
-                                    matches = value >= min && value <= max;
-                                }
-                                break;
-                        }
-                        
-                        if (matches) {
-                            targetRows.push(r + 1); // Convert to 1-based for Luckysheet
-                        }
-                    }
-                }
-                
-                // Apply highlighting
-                return applyHighlightToRows(targetRows, colLetter);
-            }
-            
-            return { success: false, error: 'Unsupported condition type' };
-            
-        } catch (error) {
-            console.error('❌ Manual highlight execution failed:', error);
-            return { success: false, error: error instanceof Error ? error.message : String(error) };
-        }
     };
     
-    // Helper function to extract cell text (reused from existing code)
-    const extractCellText = (cell: any): string => {
-        if (cell === null || cell === undefined) return '';
-        if (typeof cell === 'object' && cell !== null) {
-            const directM = (cell as any).m;
-            const directV = (cell as any).v;
-            if (directM !== undefined && directM !== null) return String(directM).trim();
-            if (directV !== undefined && directV !== null) {
-                if (typeof directV === 'object') {
-                    const nestedM = (directV as any).m;
-                    const nestedV = (directV as any).v;
-                    if (nestedM !== undefined && nestedM !== null) return String(nestedM).trim();
-                    if (nestedV !== undefined && nestedV !== null) return String(nestedV).trim();
-                    return String(directV).trim();
-                }
-                return String(directV).trim();
-            }
-            return '';
-        }
-        return String(cell).trim();
-    };
-    
-    // Helper function to extract numeric value from cell (reused from existing code)
-    const getCellNumericValue = (cell: any): number | null => {
-        if (cell === null || cell === undefined) return null;
-        
-        let rawValue: any = cell;
-        if (typeof cell === 'object' && cell !== null) {
-            const directM = (cell as any).m;
-            const directV = (cell as any).v;
-            if (directM !== undefined && directM !== null) rawValue = directM;
-            else if (directV !== undefined && directV !== null) {
-                if (typeof directV === 'object') {
-                    const nestedM = (directV as any).m;
-                    const nestedV = (directV as any).v;
-                    if (nestedM !== undefined && nestedM !== null) rawValue = nestedM;
-                    else if (nestedV !== undefined && nestedV !== null) rawValue = nestedV;
-                    else rawValue = directV;
-                } else {
-                    rawValue = directV;
-                }
-            } else {
-                return null;
-            }
-        }
-        
-        const numValue = typeof rawValue === 'number' ? rawValue : parseFloat(String(rawValue));
-        return isNaN(numValue) ? null : numValue;
-    };
-    
-    // Helper function to apply highlighting to rows
-    const applyHighlightToRows = (targetRows: number[], colLetter: string): { success: boolean; error?: string } => {
-        try {
-            if (targetRows.length === 0) {
-                return { success: true }; // No rows to highlight is not an error
-            }
-            
-            console.log(`🎨 Applying highlight to ${targetRows.length} cells in column ${colLetter}:`, targetRows);
-            
-            // Group contiguous rows into blocks for efficient highlighting
-            let s = targetRows[0];
-            let p = targetRows[0];
-            const blocks: Array<{ s: number; e: number }> = [];
-            for (let k = 1; k < targetRows.length; k++) {
-                if (targetRows[k] === p + 1) p = targetRows[k];
-                else { blocks.push({ s, e: p }); s = p = targetRows[k]; }
-            }
-            blocks.push({ s, e: p });
-            
-            // Apply background color to each block
-            blocks.forEach(block => {
-                const blockRange = `${colLetter}${block.s}:${colLetter}${block.e}`;
-                try {
-                    (window as any).luckysheet.setRangeFormat('bg', '#ffcccc', { range: blockRange });
-                    console.log(`✅ Applied highlight to range: ${blockRange}`);
-                } catch (error) {
-                    console.warn('⚠️ Failed to highlight range:', blockRange, error);
-                }
-            });
-            
-            return { success: true };
-            
-        } catch (error) {
-            console.error('❌ Failed to apply highlighting:', error);
-            return { success: false, error: error instanceof Error ? error.message : String(error) };
-        }
-    };
-
     // 🎭 NEW: UNIVERSAL QUERY ROUTING (replaces compound detection)
     const routeQueryUniversally = async (query: string): Promise<{
         processorType: ProcessorType;
@@ -3123,7 +2233,6 @@ export default function ChatSidebar({
         confidence: number;
         reasoning: string;
     }> => {
-        console.log('🧠 Universal Query Router: Analyzing query:', query);
         
         try {
             const executionPlan = await universalQueryRouter.route(query, {
@@ -3134,13 +2243,6 @@ export default function ChatSidebar({
             
             const routing = executionPlan.routing;
             
-            console.log('🧠 Universal routing decision:', {
-                query: query.slice(0, 50) + '...',
-                queryType: routing.queryType,
-                processorType: routing.processorType,
-                confidence: routing.confidence,
-                reasoning: routing.reasoning
-            });
             
             return {
                 processorType: routing.processorType,
@@ -3169,7 +2271,6 @@ export default function ChatSidebar({
     
     // 🔄 LEGACY: Keep old compound detection as fallback only
     const detectCompoundQuery = async (query: string): Promise<boolean> => {
-        console.log('⚠️ Using legacy compound query detection (fallback only)');
         
         try {
             // Use the orchestrator in preview mode to intelligently detect compound queries
@@ -3196,13 +2297,6 @@ export default function ChatSidebar({
             const stepCount = orchestrationResult.estimated_steps || orchestrationResult.total_steps || 0;
             const isCompound = orchestrationResult.success && stepCount >= 2;
             
-            console.log('🎭 Legacy compound query detection result:', {
-                query: query.slice(0, 50) + '...',
-                success: orchestrationResult.success,
-                stepCount: stepCount,
-                isCompound: isCompound,
-                operations: orchestrationResult.operations?.map(op => op.step_type + ': ' + op.description) || []
-            });
             
             return isCompound;
             
@@ -3213,9 +2307,6 @@ export default function ChatSidebar({
     };
 
     const handleCompoundQuery = async (query: string, workspaceId: string): Promise<any> => {
-        console.log('🎭 === HANDLING COMPOUND QUERY ===');
-        console.log('📝 Query:', query);
-        console.log('🔷 Workspace ID:', workspaceId);
         
         try {
             // Get execution steps from orchestrator
@@ -3236,7 +2327,6 @@ export default function ChatSidebar({
             }
             
             const orchestrationResult = await orchestrateResponse.json();
-            console.log('🎭 Orchestration result:', orchestrationResult);
             
             if (!orchestrationResult.success) {
                 return {
@@ -3247,7 +2337,6 @@ export default function ChatSidebar({
             }
             
             // Execute steps using existing single query flows
-            console.log('🔄 === EXECUTING STEPS USING EXISTING FLOWS ===');
             const executedSteps: string[] = [];
             const failedSteps: string[] = [];
             
@@ -3256,9 +2345,6 @@ export default function ChatSidebar({
             
             for (let i = 0; i < allSteps.length; i++) {
                 const step = allSteps[i];
-                console.log(`🎯 === Executing Step ${i + 1}/${allSteps.length}: ${step.step_id} (${step.step_type}) ===`);
-                console.log(`📝 Command: ${step.command}`);
-                console.log(`📋 Description: ${step.description}`);
                 
                 try {
                     let stepResult;
@@ -3272,20 +2358,21 @@ export default function ChatSidebar({
                         while (!isSpreadsheetReady && attempts < maxAttempts) {
                             attempts++;
                             
-                            if (typeof window !== 'undefined' && (window as any).luckysheet?.getSheetData) {
-                                const currentData = (window as any).luckysheet.getSheetData();
+                            // This asked the old engine, gone since the Univer migration,
+                            // so every spreadsheet step in a compound query failed here
+                            // after three attempts.
+                            if (univerAdapter?.isReady()) {
+                                const currentData = univerAdapter.getAllData();
                                 if (currentData && currentData.length > 0) {
-                                    console.log(`✅ Spreadsheet validation passed (attempt ${attempts}) - ${currentData.length} rows available`);
                                     isSpreadsheetReady = true;
                                 } else {
                                     console.warn(`⚠️ Spreadsheet has no data (attempt ${attempts})`);
                                 }
                             } else {
-                                console.warn(`⚠️ Luckysheet not available (attempt ${attempts})`);
+                                console.warn(`⚠️ Spreadsheet not ready (attempt ${attempts})`);
                             }
                             
                             if (!isSpreadsheetReady && attempts < maxAttempts) {
-                                console.log(`⏳ Retrying spreadsheet validation in 300ms...`);
                                 await new Promise(resolve => setTimeout(resolve, 300));
                             }
                         }
@@ -3306,7 +2393,6 @@ export default function ChatSidebar({
                             const execResult = await executeUniversalCommand({ action: 'natural_language', payload: { command: step.command } } as any);
                             if (execResult?.success) {
                                 executedSteps.push(`${step.description}`);
-                                console.log(`✅ Frontend operation completed: ${step.description}`);
                             } else {
                                 console.warn(`⚠️ Frontend operation failed: ${execResult?.message || 'Unknown error'}`);
                                 failedSteps.push(`${step.description}: ${execResult?.message || 'Execution failed'}`);
@@ -3322,16 +2408,13 @@ export default function ChatSidebar({
                         
                         // Handle data updates
                         if (stepResult.data_updated && stepResult.updated_data?.data) {
-                            console.log('📊 Backend operation modified data - dispatching update event');
                             const dataUpdateEvent = new CustomEvent('dataUpdate', { 
                                 detail: { data: stepResult.updated_data.data } 
                             });
                             window.dispatchEvent(dataUpdateEvent);
                             
                             // 🔄 RELIABLE SYNCHRONIZATION: Wait for spreadsheet refresh to complete
-                            console.log('⏳ Waiting for spreadsheet refresh to complete...');
                             await waitForSpreadsheetRefresh();
-                            console.log('✅ Spreadsheet refresh complete - ready for next step');
                         }
                         
                         executedSteps.push(step.description);
@@ -3342,8 +2425,7 @@ export default function ChatSidebar({
                         executedSteps.push(step.description);
                         
                     } else if (step.step_type === 'manual_highlight') {
-                        // Use manual highlighting logic to bypass problematic Luckysheet API
-                        console.log('🎯 Executing manual highlight step:', step.command);
+                        // Highlighting steps from the orchestrator
                         
                         try {
                             const highlightResult = await executeManualHighlight(step.command);
@@ -3379,11 +2461,9 @@ export default function ChatSidebar({
                     failedSteps.push(`${step.description}: ${error instanceof Error ? error.message : String(error)}`);
                     
                     // 🔄 EXECUTION CONTINUITY: Log failure but continue to next step
-                    console.log(`🔄 Continuing to next step despite failure (${failedSteps.length} failed so far)`);
                 }
                 
                 // Progress logging after each step
-                console.log(`📊 Progress: ${executedSteps.length} completed, ${failedSteps.length} failed, ${allSteps.length - i - 1} remaining`);
             }
             
             // Generate user-friendly summary
@@ -3409,245 +2489,32 @@ export default function ChatSidebar({
         }
     };
 
-    // 🎬 UNIVER COMMAND EXECUTION HELPER
-    const executeUniverCommand = async (actionPayload: any, adapter: UniverAdapter): Promise<{ success: boolean; message?: string }> => {
-        try {
-            if (!actionPayload || !adapter || !adapter.isReady()) {
-                return { success: false, message: 'Spreadsheet not available' };
-            }
-
-            console.log('🌌 [Univer] Executing command:', actionPayload);
-
-            if (actionPayload.type === 'luckysheet_api') {
-                // Single API call - map to Univer
-                const { method, params } = actionPayload.payload || {};
-                const result = mapLuckysheetMethodToUniver(method, params || [], adapter);
-                return result;
-
-            } else if (actionPayload.type === 'multiple_luckysheet_api') {
-                // Multiple API calls in sequence
-                const { calls } = actionPayload.payload || {};
-                if (!calls || !Array.isArray(calls)) {
-                    return { success: false, message: 'No API calls found' };
-                }
-
-                console.log(`🌌 [Univer] Executing ${calls.length} commands in sequence`);
-                for (let i = 0; i < calls.length; i++) {
-                    const call = calls[i];
-                    const { method, params } = call;
-
-                    console.log(`🌌 [Univer] [${i + 1}/${calls.length}] Calling ${method}`);
-                    const result = mapLuckysheetMethodToUniver(method, params || [], adapter);
-
-                    if (!result.success) {
-                        return { success: false, message: `Command ${i + 1} failed: ${result.message}` };
-                    }
-                }
-                return { success: true, message: `Executed ${calls.length} commands` };
-            }
-
-            return { success: false, message: 'Unknown action type' };
-        } catch (error) {
-            console.error('❌ Error executing Univer command:', error);
-            return { success: false, message: `Execution failed: ${error instanceof Error ? error.message : String(error)}` };
-        }
-    };
-
-    // 🔄 MAP LUCKYSHEET API METHODS TO UNIVER ADAPTER
-    const mapLuckysheetMethodToUniver = (method: string, params: any[], adapter: UniverAdapter): { success: boolean; message?: string } => {
-        try {
-            console.log(`🔄 [Mapping] ${method}(${params.join(', ')})`);
-
-            switch (method) {
-                // Cell value operations
-                case 'setCellValue':
-                    if (params.length >= 3) {
-                        const [row, col, value] = params;
-                        return adapter.setCellValue(row, col, value)
-                            ? { success: true, message: `Set cell ${row},${col} = ${value}` }
-                            : { success: false, message: 'Failed to set cell value' };
-                    }
-                    break;
-
-                case 'setRangeValue':
-                    if (params.length >= 5) {
-                        const [startRow, startCol, numRows, numCols, value] = params;
-                        const values = Array(numRows).fill(null).map(() => Array(numCols).fill(value));
-                        return adapter.setRangeValues(startRow, startCol, values)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to set range value' };
-                    }
-                    break;
-
-                // Formatting operations
-                case 'setRangeBackgroundColor':
-                case 'setBackgroundColor':
-                    if (params.length >= 5) {
-                        const [startRow, startCol, numRows, numCols, color] = params;
-                        return adapter.setBackgroundColor(startRow, startCol, numRows, numCols, color)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to set background color' };
-                    }
-                    break;
-
-                case 'setRangeFontColor':
-                case 'setFontColor':
-                    if (params.length >= 5) {
-                        const [startRow, startCol, numRows, numCols, color] = params;
-                        return adapter.setFontColor(startRow, startCol, numRows, numCols, color)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to set font color' };
-                    }
-                    break;
-
-                case 'setRangeFontBold':
-                case 'setFontWeight':
-                    if (params.length >= 5) {
-                        const [startRow, startCol, numRows, numCols, bold] = params;
-                        const weight = bold ? 'bold' : 'normal';
-                        return adapter.setFontWeight(startRow, startCol, numRows, numCols, weight)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to set font weight' };
-                    }
-                    break;
-
-                case 'setNumberFormat':
-                    if (params.length >= 5) {
-                        const [startRow, startCol, numRows, numCols, format] = params;
-                        return adapter.setNumberFormat(startRow, startCol, numRows, numCols, format)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to set number format' };
-                    }
-                    break;
-
-                // Clear operations
-                case 'clearRange':
-                    if (params.length >= 4) {
-                        const [startRow, startCol, numRows, numCols] = params;
-                        return adapter.clearRange(startRow, startCol, numRows, numCols)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to clear range' };
-                    }
-                    break;
-
-                case 'clearSheet':
-                    return adapter.clearSheet()
-                        ? { success: true }
-                        : { success: false, message: 'Failed to clear sheet' };
-
-                // Formula operations
-                case 'setCellFormula':
-                    if (params.length >= 3) {
-                        const [row, col, formula] = params;
-                        return adapter.setFormula(row, col, formula)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to set formula' };
-                    }
-                    break;
-
-                // Column width operations
-                case 'setColumnWidth':
-                    if (params.length >= 2) {
-                        const [columnIndex, width] = params;
-                        return adapter.setColumnWidth(columnIndex, width)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to set column width' };
-                    }
-                    break;
-
-                case 'setColumnWidths':
-                    if (params.length >= 3) {
-                        const [startCol, numCols, width] = params;
-                        return adapter.setColumnWidths(startCol, numCols, width)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to set column widths' };
-                    }
-                    break;
-
-                case 'autoResizeColumns':
-                case 'autoFitColumns':
-                case 'autofitColumns':
-                    if (params.length >= 2) {
-                        const [startCol, numCols] = params;
-                        return adapter.autoResizeColumns(startCol, numCols)
-                            ? { success: true, message: `Auto-fit columns ${startCol} to ${startCol + numCols - 1}` }
-                            : { success: false, message: 'Failed to auto-resize columns' };
-                    }
-                    break;
-
-                // Row height operations
-                case 'setRowHeight':
-                    if (params.length >= 2) {
-                        const [rowIndex, height] = params;
-                        return adapter.setRowHeight(rowIndex, height)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to set row height' };
-                    }
-                    break;
-
-                case 'setRowHeights':
-                    if (params.length >= 3) {
-                        const [startRow, numRows, height] = params;
-                        return adapter.setRowHeights(startRow, numRows, height)
-                            ? { success: true }
-                            : { success: false, message: 'Failed to set row heights' };
-                    }
-                    break;
-
-                case 'autoResizeRows':
-                case 'autoFitRows':
-                case 'autofitRows':
-                    if (params.length >= 2) {
-                        const [startRow, numRows] = params;
-                        return adapter.autoResizeRows(startRow, numRows)
-                            ? { success: true, message: `Auto-fit rows ${startRow} to ${startRow + numRows - 1}` }
-                            : { success: false, message: 'Failed to auto-resize rows' };
-                    }
-                    break;
-
-                default:
-                    console.warn(`⚠️ [Mapping] Unsupported method: ${method}`);
-                    return { success: false, message: `Method '${method}' not yet mapped to Univer` };
-            }
-
-            return { success: false, message: `Invalid parameters for ${method}` };
-        } catch (error) {
-            console.error(`❌ Error mapping ${method}:`, error);
-            return { success: false, message: `Mapping failed: ${error instanceof Error ? error.message : String(error)}` };
-        }
-    };
-
-    // 🌐 UNIVERSAL COMMAND EXECUTOR (Univer only)
+    // A compound query hands each "spreadsheet" step here as natural language.
+    // Nothing on the frontend executes that. What used to stand here was a
+    // translation table from the backend's Luckysheet-shaped action payloads
+    // (setCellValue, setRangeFormat, setRangeSortMulti, ...) onto UniverAdapter
+    // -- but its only caller passes { action: 'natural_language' }, with no type
+    // field for the table to switch on, so every step already failed here with
+    // "Unknown action type". This says what is actually missing instead.
     const executeUniversalCommand = async (actionPayload: any): Promise<{ success: boolean; message?: string }> => {
-        // Check if Univer is active
-        if (univerAdapter && univerAdapter.isReady()) {
-            console.log('🌌 Using Univer engine for command execution');
-            return await executeUniverCommand(actionPayload, univerAdapter);
-        }
-
-        // ⚠️ DEPRECATED: Luckysheet fallback removed
-        // All operations now require Univer to be active
-        console.warn('⚠️ Univer not available - Luckysheet fallback disabled');
-
-        return { success: false, message: 'Univer spreadsheet engine not available. Please ensure Univer is loaded.' };
+        console.warn('⚠️ No frontend executor for spreadsheet step:', actionPayload);
+        return {
+            success: false,
+            message: 'Spreadsheet steps inside a compound request are not executed on the frontend yet.'
+        };
     };
 
 
     const handleSubmit = async (e: React.FormEvent) => {
-        console.log('🚀 === HANDLESUBMIT FUNCTION STARTED ===');
-        console.log('📝 Input value:', input.trim());
-        console.log('🔄 Is processing:', isProcessing);
         
         e.preventDefault();
         if (!input.trim() || isProcessing) {
-            console.log('❌ Early return - empty input or processing');
             return;
         }
 
         // If no active chat exists, create one first
         if (!activeChat && currentWorkspace?.id) {
             try {
-                console.log('🆕 No active chat found, creating default chat...');
                 const newChat = await createNewChat(currentWorkspace.id, 'Chat 1');
                 setChats([newChat]);
                 setActiveChat(newChat);
@@ -3682,9 +2549,6 @@ export default function ChatSidebar({
             }
 
             if (isSpreadsheetOperation) {
-                console.log('🔍 === DETECTED SPREADSHEET OPERATION ===');
-                console.log('📝 Command:', userMessage);
-                console.log('🎯 Attempting local execution...');
 
                 try {
                     // Quick path removed - let LLM classifier handle all column operations
@@ -3756,7 +2620,6 @@ export default function ChatSidebar({
                         if (naturalRangeMatch) {
                             const start = naturalRangeMatch[1].toUpperCase();
                             const end = naturalRangeMatch[2].toUpperCase();
-                            console.log(`📝 Converted natural range "${naturalRangeMatch[0]}" to ${start}:${end}`);
                             return `${start}:${end}`;
                         }
 
@@ -3765,7 +2628,6 @@ export default function ChatSidebar({
                         if (fromToMatch) {
                             const start = fromToMatch[1].toUpperCase();
                             const end = fromToMatch[2].toUpperCase();
-                            console.log(`📝 Converted natural range "from ${fromToMatch[1]} to ${fromToMatch[2]}" to ${start}:${end}`);
                             return `${start}:${end}`;
                         }
 
@@ -3781,25 +2643,22 @@ export default function ChatSidebar({
                             if (!range) {
                                 throw new Error(`Invalid cell reference: ${cellRef}`);
                             }
-                            console.log('📍 Using cell reference:', cellRef, range);
                             return range;
                         } else {
                             const range = univerAdapter.getCurrentActiveRange();
                             if (!range) {
                                 throw new Error('No cell selection and no cell reference provided');
                             }
-                            console.log('📍 Using current selection:', range);
                             return range;
                         }
                     };
 
                     // ===================================================================
-                    // SIMPLE COMMAND PATTERNS (No LLM - just regex like NativeSpreadsheet)
+                    // SIMPLE COMMAND PATTERNS (No LLM - just regex)
                     // ===================================================================
 
                     // Autofit columns - wide pattern net
                     if (/(?:can you |please |could you )?(?:auto\s*fit|autofit|fit|resize|adjust)\s*(?:the\s+)?columns?(?:\s+to\s+content)?/i.test(userMessage)) {
-                        console.log('📊 Detected: Autofit columns');
                         const success = univerAdapter.autofitColumns();
                         if (success) {
                             setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), {
@@ -3817,7 +2676,6 @@ export default function ChatSidebar({
 
                     // Autofit rows - wide pattern net
                     if (/(?:can you |please |could you )?(?:auto\s*fit|autofit|fit|resize|adjust)\s*(?:the\s+)?rows?(?:\s+to\s+content)?/i.test(userMessage)) {
-                        console.log('📊 Detected: Autofit rows');
                         const success = univerAdapter.autofitRows();
                         if (success) {
                             setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), {
@@ -4093,7 +2951,7 @@ export default function ChatSidebar({
                         const dims = univerAdapter.getSheetDimensions();
                         const lastColLetter = String.fromCharCode(65 + Math.max(0, dims.cols - 1));
                         const range = `A1:${lastColLetter}${Math.max(1, dims.rows)}`;
-                        const ok = univerAdapter.autoFilter(range) || univerAdapter.createFilter(range as any);
+                        const ok = univerAdapter.autoFilter(range) || univerAdapter.createFilter();
                         if (ok) {
                             setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), { role: 'assistant', content: '✅ Filter enabled.', timestamp: Date.now() }]);
                             setIsProcessing(false);
@@ -4214,7 +3072,6 @@ export default function ChatSidebar({
 
                     // Bold - wide pattern net
                     if (/(?:can you |please |could you |make |set )?(?:make\s+)?(?:cells?\s+)?(?:[A-Z]+\d+(?::[A-Z]+\d+)?\s+)?bold/i.test(userMessage)) {
-                        console.log('🔤 Detected: Bold');
                         const cellRef = extractCellReference(userMessage);
                         const range = getRange(cellRef);
                         const success = univerAdapter.setFontWeight(range.startRow, range.startCol, range.numRows, range.numCols, 'bold');
@@ -4232,7 +3089,6 @@ export default function ChatSidebar({
 
                     // Italic - wide pattern net
                     if (/(?:can you |please |could you |make |set )?(?:make\s+)?(?:cells?\s+)?(?:[A-Z]+\d+(?::[A-Z]+\d+)?\s+)?italic/i.test(userMessage)) {
-                        console.log('🔤 Detected: Italic');
                         const cellRef = extractCellReference(userMessage);
                         const range = getRange(cellRef);
                         const success = univerAdapter.setFontStyle(range.startRow, range.startCol, range.numRows, range.numCols, 'italic');
@@ -4250,7 +3106,6 @@ export default function ChatSidebar({
 
                     // Underline - wide pattern net
                     if (/(?:can you |please |could you |make |set )?(?:make\s+)?(?:cells?\s+)?(?:[A-Z]+\d+(?::[A-Z]+\d+)?\s+)?underline/i.test(userMessage)) {
-                        console.log('🔤 Detected: Underline');
                         const cellRef = extractCellReference(userMessage);
                         const range = getRange(cellRef);
                         const success = univerAdapter.setFontLine(range.startRow, range.startCol, range.numRows, range.numCols, 'underline');
@@ -4268,7 +3123,6 @@ export default function ChatSidebar({
 
                     // Background/Highlight color - wide pattern net
                     if (/(?:can you |please |could you |make |set )?(?:highlight|background|bg)(?:\s+(?:cells?\s+)?(?:[A-Z]+\d+(?::[A-Z]+\d+)?\s+)?)?(?:to\s+)?(?:color\s+)?(\w+)?/i.test(userMessage)) {
-                        console.log('🎨 Detected: Background color');
                         const color = extractColor(userMessage);
                         if (!color) {
                             throw new Error('No color specified. Try: "highlight red" or "make A2 background yellow"');
@@ -4290,7 +3144,6 @@ export default function ChatSidebar({
 
                     // Font color - wide pattern net
                     if (/(?:can you |please |could you |make |set )?(?:font\s+)?(?:text\s+)?color(?:\s+(?:cells?\s+)?(?:[A-Z]+\d+(?::[A-Z]+\d+)?\s+)?)?(?:to\s+)?(\w+)?/i.test(userMessage) && !/background|highlight|bg/i.test(userMessage)) {
-                        console.log('🎨 Detected: Font color');
                         const color = extractColor(userMessage);
                         if (!color) {
                             throw new Error('No color specified. Try: "font color red" or "make text blue"');
@@ -4311,7 +3164,6 @@ export default function ChatSidebar({
                     }
 
                     // If no pattern matched, fall through to backend
-                    console.log('🔄 No simple command matched, falling through to backend...');
 
                     } catch (error) {
                         console.error('❌ Simple command execution failed:', error);
@@ -4328,87 +3180,8 @@ export default function ChatSidebar({
                     }
                 }
 
-            // Learn mode: route directly to learn API - let AI tutor handle conversation flow naturally
-            if (mode === 'learn') {
-                console.log('📚 Learn mode detected — sending to learn API with sheet context');
-                try {
-                    // No intent detection needed - AI tutor will handle conversation flow intelligently
-
-                    const headers = data && data.length > 0 ? Object.keys(data[0]) : [];
-                    const columnMap: Record<string, string> = {};
-                    headers.forEach((h, idx) => {
-                        // A1 letters
-                        let result = '';
-                        let i = idx;
-                        while (i >= 0) {
-                            result = String.fromCharCode((i % 26) + 65) + result;
-                            i = Math.floor(i / 26) - 1;
-                        }
-                        columnMap[h] = result;
-                    });
-
-                    // Use LearnModeContext for proper conversation history
-                    let learnRes;
-                    if (learnContext && learnContext.askTutor) {
-                        const sheetContext = {
-                            data: data,
-                            headers,
-                            columnMap,
-                            currentSelection: currentSelection
-                        };
-                        learnRes = await learnContext.askTutor(userMessage, sheetContext);
-                    } else {
-                        // Fallback with conversation history
-                        learnRes = await sendLearnQuery({
-                            question: userMessage,
-                            workspaceId: currentWorkspace?.id || 'default',
-                            isFirstMessage: messages.length === 1,
-                            sheetContext: {
-                                data: data,
-                                headers,
-                                columnMap,
-                                currentSelection: currentSelection
-                            },
-                            conversationHistory: messages.map(msg => ({
-                                role: msg.role || (msg.type === 'user' ? 'user' : 'assistant'),
-                                content: msg.content,
-                                timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now()
-                            }))
-                        });
-                    }
-
-                    setMessages(prev => {
-                        const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                        const updatedMessages = [...newMessages, {
-                            id: (Date.now() + 1).toString(),
-                            role: 'assistant' as const,
-                            type: 'assistant' as const,
-                            content: (learnRes as any)?.response || (learnRes as any)?.data?.response || 'Ready to help you learn.',
-                            isLearn: true,
-                            timestamp: new Date()
-                        } as ChatMessage];
-                        saveChatMessagesToActiveChat(updatedMessages);
-                        return updatedMessages;
-                    });
-                    return;
-                } catch (err) {
-                    console.error('❌ Learn API call failed, falling back to message:', err);
-                    setMessages(prev => {
-                        const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                        return [...newMessages, { role: 'assistant', content: 'Sorry, I had trouble accessing the learn assistant. Please try again.' }];
-                    });
-                    return;
-                } finally {
-                    setIsProcessing(false);
-                }
-            }
-
-            console.log('🎯 === ABOUT TO CALL UNIFIED SYSTEM ===');
-            console.log('📝 User message for unified system:', userMessage);
-            console.log('🔑 API key available:', !!process.env.NEXT_PUBLIC_GROQ_API_KEY);
             
             // 🎯 DIRECT CLASSIFICATION (Ambiguity detection removed)
-            console.log('🎯 === DIRECT CLASSIFICATION ===');
             let classification: CommandClassification | null = null;
             let response: any | null = null;
             const newFeatureIntents: Array<CommandClassification['intent']> = [];
@@ -4416,20 +3189,10 @@ export default function ChatSidebar({
             // Use LLM classifier directly
             try {
                 classification = await llmCommandClassifier.classifyCommand(userMessage);
-                console.log('🎯 Classification result:', classification);
-                console.log('🧠 [DEBUG] LLM Classification Details:', {
-                    intent: classification?.intent,
-                    action: classification?.action,
-                    confidence: classification?.confidence,
-                    parameters: classification?.parameters,
-                    target: classification?.target
-                });
 
                 // CHECK FOR NEW FEATURE INTENTS FIRST - Route to frontend handlers
                 if (classification && classification.confidence >= 0.8) {
                     if (newFeatureIntents.includes(classification.intent)) {
-                        console.log('✅ High confidence new feature detected, routing to frontend handler');
-                        console.log('🔍 Intent:', classification.intent, 'Action:', classification.action);
                         await processClassificationResult(classification, userMessage);
                         return; // Exit early - don't call Universal Router
                     }
@@ -4438,8 +3201,6 @@ export default function ChatSidebar({
                     // Intercept BEFORE Universal Query Router to ensure proper analysis routing
                     if (classification.intent === 'intelligent_analysis' &&
                         classification.confidence >= 0.8) {
-                        console.log('🧠 LLM detected intelligent_analysis - routing to analysis handler');
-                        console.log('🔍 Intent:', classification.intent, 'Action:', classification.action);
                         await handleIntelligentAnalysis(classification);
                         return; // Exit early - don't call Universal Router or backend
                     }
@@ -4447,7 +3208,6 @@ export default function ChatSidebar({
                     // SPECIAL CASE: Smart Formatting
                     // Intercept BEFORE Universal Query Router for auto-formatting
                     if (classification.intent === 'smart_format' && classification.confidence >= 0.8) {
-                        console.log('🔍 Template:', classification.parameters?.template || 'professional');
                         setIsProcessing(true);
                         await handleSmartFormat(classification);
                         return; // Exit early - don't call Universal Router or backend
@@ -4456,8 +3216,6 @@ export default function ChatSidebar({
                     // SPECIAL CASE: Quick Data Entry
                     // Intercept BEFORE Universal Query Router for data entry operations
                     if (classification.intent === 'data_entry' && classification.confidence >= 0.8) {
-                        console.log('🔍 Action:', classification.action);
-                        console.log('🔍 Parameters:', classification.parameters);
                         setIsProcessing(true);
                         await handleQuickDataEntry(classification);
                         return; // Exit early - don't call Universal Router or backend
@@ -4468,8 +3226,6 @@ export default function ChatSidebar({
                     if (classification.intent === 'data_modification' &&
                         classification.action === 'remove_duplicates' &&
                         classification.confidence >= 0.8) {
-                        console.log('🧹 LLM detected remove_duplicates - routing to duplicates handler');
-                        console.log('🔍 Intent:', classification.intent, 'Action:', classification.action);
                         await handleRemoveDuplicates(classification, userMessage);
                         return; // Exit early - don't call Universal Router or backend
                     }
@@ -4479,8 +3235,6 @@ export default function ChatSidebar({
                     if (classification.intent === 'data_modification' &&
                         classification.action === 'find_and_replace' &&
                         classification.confidence >= 0.8) {
-                        console.log('🔍 LLM detected find_and_replace - routing to find/replace handler');
-                        console.log('🔍 Intent:', classification.intent, 'Action:', classification.action);
                         await handleFindReplace(classification, userMessage);
                         return; // Exit early - don't call Universal Router or backend
                     }
@@ -4491,22 +3245,12 @@ export default function ChatSidebar({
 
             // Only reach Universal Router if NOT a new feature intent
             // 🧠 NEW: UNIVERSAL QUERY ROUTING SYSTEM
-            console.log('🧠 === USING UNIVERSAL QUERY ROUTER ===');
             
             const routingDecision = await routeQueryUniversally(userMessage);
             
-            console.log('🧠 Universal routing decision:', {
-                query: userMessage.slice(0, 50) + '...',
-                queryType: routingDecision.queryType,
-                processorType: routingDecision.processorType,
-                confidence: routingDecision.confidence,
-                reasoning: routingDecision.reasoning
-            });
             
             // Route based on Universal Query Router decision
             if (routingDecision.processorType === ProcessorType.DIRECT_BACKEND) {
-                console.log('🎯 DIRECT BACKEND ROUTE: Sending directly to AgentServices');
-                console.log(`📊 Query Type: ${routingDecision.queryType} (e.g., comparative analysis, statistical analysis)`);
                 
                 // YOUR CASE: "Compare average playtime..." goes here directly!
                 const result = await sendQuery(userMessage, activeChat?.id || 'default', { 
@@ -4515,7 +3259,6 @@ export default function ChatSidebar({
                     workspaceId: currentWorkspace?.id
                 });
                 
-                console.log('✅ Direct backend result:', result);
                 
                 // Process result same as before
                 setMessages(prev => {
@@ -4536,37 +3279,30 @@ export default function ChatSidebar({
                 
                 // Handle visualization if present
                 if (result.visualization) {
-                    console.log('📊 Visualization generated from direct backend route');
                 }
                 
                 return; // Done - no need for orchestration!
                 
             } else if (routingDecision.processorType === ProcessorType.DIRECT_FRONTEND) {
-                console.log('🖥️ DIRECT FRONTEND ROUTE: Checking if handled by LLM classification');
-                console.log('🖥️ [DEBUG] Current classification at DIRECT_FRONTEND:', classification);
 
                 // Check if this operation is handled by our new LLM classification system
                 const hasClassification = !!classification;
                 const confidenceCheck = ((classification as any)?.confidence ?? 0) >= 0.8;
-                const whitelist = ['freeze_operation', 'range_operation', 'row_operation', 'column_operation', 'table_operation'];
+                // Intents the switch below can actually carry out. filter, sort,
+                // cell_operation and conditional_format were dropped from this list
+                // when their implementations stopped working -- they drove the old
+                // engine -- and are back now that each runs through UniverAdapter.
+                const whitelist = [
+                    'freeze_operation', 'range_operation', 'row_operation', 'column_operation',
+                    'table_operation', 'filter', 'sort', 'cell_operation', 'conditional_format'
+                ];
                 const inWhitelist = whitelist.includes((classification as any)?.intent || '');
                 const isHandledByLLM = hasClassification && confidenceCheck && inWhitelist;
 
-                console.log('🔍 [DEBUG] Whitelist Check Breakdown:', {
-                    hasClassification,
-                    intent: classification?.intent,
-                    confidence: classification?.confidence,
-                    confidenceCheck,
-                    whitelist,
-                    inWhitelist,
-                    isHandledByLLM
-                });
 
                 if (isHandledByLLM) {
-                    console.log(`✅ [DEBUG] Operation "${(classification as any)?.intent}" PASSED whitelist - will reach switch statement`);
                     // Let it fall through to the LLM switch statement below
                 } else {
-                    // ⚠️ DEPRECATED: Old spreadsheet processor fallback disabled
                     console.error('❌ [DEBUG] Whitelist check FAILED - entering error block');
                     console.error('❌ [DEBUG] Failure reason:', {
                         hasClassification: !hasClassification ? 'FAIL: No classification' : 'PASS',
@@ -4592,22 +3328,16 @@ export default function ChatSidebar({
                     });
                     setIsProcessing(false);
                     return;
-
-                    // ALL CODE BELOW IS UNREACHABLE - Old commandService fallback (~35 lines removed)
-                    /* REMOVED: commandService.processSpreadsheetCommand() fallback */
                 }
                 
             } else if (routingDecision.processorType === ProcessorType.ORCHESTRATED) {
-                console.log('🎭 ORCHESTRATED ROUTE: True compound query detected');
                 
             } else if (routingDecision.processorType === ProcessorType.FALLBACK_LEGACY) {
-                console.log('🔄 LEGACY FALLBACK ROUTE: Using existing system routing');
                 
                 // Use existing compound query detection as fallback
                 const isCompoundQuery = await detectCompoundQuery(userMessage);
                 
                 if (isCompoundQuery) {
-                    console.log('🎭 Legacy: Compound query detected - using orchestrator');
                 }
             }
             
@@ -4653,11 +3383,9 @@ export default function ChatSidebar({
             } else {
                 // 🎯 NEW: Non-orchestrated queries (should be direct backend for analytics)
                 console.log('🎯 NON-ORCHESTRATED QUERY: Processing as simple query');
-                console.log(`📊 Router suggested: ${routingDecision.processorType} for ${routingDecision.queryType}`);
                 
                 if (routingDecision.processorType === ProcessorType.FALLBACK_LEGACY) {
                     // Use existing processing logic for unknown queries
-                    console.log('🔄 Using legacy fallback processing');
                     // The existing logic below will handle this
                 }
                 // Note: Other processor types (like DIRECT_FRONTEND) will be handled by high-confidence classification below
@@ -4668,7 +3396,6 @@ export default function ChatSidebar({
                 // Handle unified system routing by mapped intent
                 const mappedIntent = (classification as any)?.intent;
                 if (mappedIntent === 'backend') {
-                    console.log('🚀 Unified system routing to BACKEND');
                     response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
                     
                     // Handle data updates if present
@@ -4677,7 +3404,6 @@ export default function ChatSidebar({
                             detail: { data: response.updated_data.data } 
                         });
                         window.dispatchEvent(dataUpdateEvent);
-                        console.log('📊 DataUpdate event dispatched from unified backend routing');
                     }
                     
                     // Process and display response
@@ -4700,7 +3426,6 @@ export default function ChatSidebar({
                 }
                 
                 if (mappedIntent === 'frontend') {
-                    console.log('🚀 Unified system routing to FRONTEND');
                     // Handle frontend operations (spreadsheet manipulation)
                     // For now, fall through to existing frontend logic
                 }
@@ -4709,7 +3434,6 @@ export default function ChatSidebar({
                 switch ((classification as any).intent) {
                     case 'conditional_format':
                         // Handle conditional formatting through LLM guidance
-                        console.log('🎨 LLM-guided conditional formatting:', classification.action);
                             const success = await handleLLMConditionalFormatting(classification);
                             if (success) {
                                 return; // Exit early after successful LLM handling
@@ -4720,334 +3444,56 @@ export default function ChatSidebar({
                     case 'data_modification':
                         // Check if it's remove_duplicates action - handle in frontend
                         if (classification.action === 'remove_duplicates') {
-                            console.log('🗑️ LLM detected remove_duplicates - handling in frontend');
                             await handleRemoveDuplicates(classification, userMessage);
                             return; // Don't route to backend
                         }
 
                         // For other data modifications, route to backend
-                        console.log('🗑️ LLM detected data modification - routing to backend');
                         response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
                         
                         // Handle data updates immediately (since main dataUpdate dispatch isn't reached)
-                        console.log('🔍 === DATA_MODIFICATION DATAUPDATE DISPATCH DEBUG ===');
-                        console.log('🔍 Response object keys:', Object.keys(response || {}));
-                        console.log('🔍 response.data_updated:', response.data_updated, typeof response.data_updated);
-                        console.log('🔍 response.updated_data:', !!response.updated_data, typeof response.updated_data);
                         
                         if (response.data_updated && response.updated_data) {
-                            console.log('✅ First condition passed: response.data_updated && response.updated_data');
-                            console.log('🔍 response.updated_data keys:', Object.keys(response.updated_data || {}));
-                            console.log('🔍 response.updated_data.data:', !!response.updated_data.data, typeof response.updated_data.data);
-                            console.log('🔍 Array.isArray(response.updated_data.data):', Array.isArray(response.updated_data.data));
                             
                             if (response.updated_data.data && Array.isArray(response.updated_data.data)) {
-                                console.log('✅ Second condition passed: response.updated_data.data && Array.isArray');
                                 const newData = response.updated_data.data;
-                                console.log('🔍 newData.length:', newData.length);
-                                console.log('🔍 newData sample:', newData.slice(0, 2));
                                 
                                 if (newData.length > 0) {
-                                    console.log('✅ Third condition passed: newData.length > 0');
-                                    console.log('🚀 SUCCESS: Dispatching dataUpdate event with', newData.length, 'rows');
                                     
                                     const dataUpdateEvent = new CustomEvent('dataUpdate', { 
                                         detail: { data: newData } 
                                     });
                                     window.dispatchEvent(dataUpdateEvent);
-                                    console.log('📊 DataUpdate event dispatched successfully from data_modification case!');
                                 } else {
-                                    console.log('❌ Third condition FAILED: newData.length is 0');
                                 }
                             } else {
-                                console.log('❌ Second condition FAILED: response.updated_data.data missing or not array');
                             }
                         } else {
-                            console.log('❌ First condition FAILED: Missing data_updated or updated_data');
                             if (!response.data_updated) {
-                                console.log('❌ response.data_updated is falsy:', response.data_updated);
                             }
                             if (!response.updated_data) {
-                                console.log('❌ response.updated_data is falsy:', response.updated_data);
                             }
                         }
                         break;
                     
                     case 'filter':
-                        console.log('🔍 LLM detected filtering - analyzing action:', classification.action);
-                        try {
-                            // Handle value-based filtering with row hiding
-                            if (classification.action === 'filter_value_based') {
-                                console.log('🎯 Processing value-based filter with row hiding');
-                                if (typeof window !== 'undefined' && (window as any).luckysheet?.getSheetData && (window as any).luckysheet?.hideRow) {
-                                    const sheetData = (window as any).luckysheet.getSheetData();
-                                    if (sheetData && sheetData.length > 1) {
-                                        const headers = sheetData[0] || [];
-                                        const rawFilterColumn = classification.parameters?.column;
-                                        const filterColumn: string = typeof rawFilterColumn === 'string' ? rawFilterColumn : '';
-                                        const filterValue = typeof classification.parameters?.value === 'string'
-                                            ? classification.parameters.value
-                                            : `${classification.parameters?.value ?? ''}`;
-                                        const comparison = typeof classification.parameters?.comparison === 'string'
-                                            ? classification.parameters.comparison
-                                            : 'equals';
-                                        
-                                        // Helper function to extract text from cells
-                                        const extractCellText = (cell: any): string => {
-                                            if (!cell) return '';
-                                            if (typeof cell === 'string') return cell;
-                                            if (typeof cell === 'object') {
-                                                return cell.m || cell.v || '';
-                                            }
-                                            return String(cell);
-                                        };
-                                        
-                                        console.log('🔍 Filter parameters:', { filterColumn, filterValue, comparison });
-                                        console.log('🔍 Headers available:', headers.map((h, i) => `${i}: ${extractCellText(h)}`));
-                                        
-                                        // Find column index by name (case-insensitive)
-                                        let columnIndex = -1;
-                                        
-                                        const filterColumnLower = filterColumn.toLowerCase();
-                                        for (let i = 0; i < headers.length; i++) {
-                                            const headerText = extractCellText(headers[i]).toLowerCase();
-                                            if (headerText === filterColumnLower || headerText.includes(filterColumnLower)) {
-                                                columnIndex = i;
-                                                break;
-                                            }
-                                        }
-                                        
-                                        if (columnIndex === -1) {
-                                            // Try to find by column letter (A, B, C, etc.)
-                                            const colLetter = filterColumn.toUpperCase();
-                                            if (colLetter.match(/^[A-Z]$/)) {
-                                                columnIndex = colLetter.charCodeAt(0) - 65;
-                                                console.log(`🔤 Column letter "${colLetter}" converted to index ${columnIndex}`);
-                                            }
-                                        }
-                                        
-                                        if (columnIndex >= 0 && columnIndex < headers.length) {
-                                            const columnName = extractCellText(headers[columnIndex]);
-                                            console.log(`✅ Found column "${columnName}" at index ${columnIndex}`);
-                                            
-                                            // Analyze rows and collect those that don't match
-                                            const rowsToHide: number[] = [];
-                                            let matchCount = 0;
-                                            
-                                            for (let rowIndex = 1; rowIndex < sheetData.length; rowIndex++) {
-                                                const row = sheetData[rowIndex] || [];
-                                                const cellValue = extractCellText(row[columnIndex]).toLowerCase();
-                                                const searchValue = filterValue.toLowerCase();
-                                                
-                                                let matches = false;
-                                                if (comparison === 'equals') {
-                                                    matches = cellValue === searchValue;
-                                                } else if (comparison === 'contains') {
-                                                    matches = cellValue.includes(searchValue);
-                                                } else {
-                                                    // Default to equals
-                                                    matches = cellValue === searchValue;
-                                                }
-                                                
-                                                if (matches) {
-                                                    matchCount++;
-                                                } else {
-                                                    rowsToHide.push(rowIndex);
-                                                }
-                                            }
-                                            
-                                            console.log(`🔍 Analysis: ${matchCount} rows match, ${rowsToHide.length} rows to hide`);
-                                            
-                                            // Group consecutive rows for efficient hiding
-                                            const groupConsecutive = (indices: number[]): Array<{start: number, end: number}> => {
-                                                if (indices.length === 0) return [];
-                                                
-                                                indices.sort((a, b) => a - b);
-                                                const ranges: Array<{ start: number; end: number }> = [];
-                                                let start = indices[0];
-                                                let end = indices[0];
-                                                
-                                                for (let i = 1; i < indices.length; i++) {
-                                                    if (indices[i] === end + 1) {
-                                                        end = indices[i];
-                                                    } else {
-                                                        ranges.push({ start, end });
-                                                        start = indices[i];
-                                                        end = indices[i];
-                                                    }
-                                                }
-                                                ranges.push({ start, end });
-                                                return ranges;
-                                            };
-                                            
-                                            const rowRanges = groupConsecutive(rowsToHide);
-                                            console.log(`🎯 Hiding ${rowRanges.length} row range(s):`, rowRanges);
-                                            
-                                            // Hide non-matching rows
-                                            for (const range of rowRanges) {
-                                                (window as any).luckysheet.hideRow(range.start, range.end);
-                                            }
-                                            
-                                            setMessages(prev => {
-                                                const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                                const updatedMessages = [...newMessages, { 
-                                                    id: (Date.now() + 1).toString(),
-                                                    role: 'assistant', 
-                                                    type: 'assistant',
-                                                    content: `✅ Filtered ${rowsToHide.length} rows, showing ${matchCount} where ${columnName} ${comparison === 'contains' ? 'contains' : 'equals'} "${filterValue}"`, 
-                                                    isTyping: true,
-                                                    timestamp: new Date()
-                                                } as ChatMessage];
-                                                saveChatMessagesToActiveChat(updatedMessages);
-                                                return updatedMessages;
-                                            });
-                                            
-                                        } else {
-                                            setMessages(prev => {
-                                                const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                                const availableColumns = headers.map((h, i) => extractCellText(h) || `Column ${i+1}`).join(', ');
-                                                const updatedMessages = [...newMessages, { 
-                                                    id: (Date.now() + 1).toString(),
-                                                    role: 'assistant', 
-                                                    type: 'assistant',
-                                                    content: `❌ Column "${filterColumn}" not found. Available columns: ${availableColumns}`, 
-                                                    isTyping: true,
-                                                    timestamp: new Date()
-                                                } as ChatMessage];
-                                                saveChatMessagesToActiveChat(updatedMessages);
-                                                return updatedMessages;
-                                            });
-                                        }
-                                    }
-                                }
-                                setIsProcessing(false);
-                                return; // Exit early
-                            }
-                            
-                            // Handle clear filters
-                            if (classification.action === 'clear_filters') {
-                                console.log('🧹 Clearing all filters by showing all rows');
-                                if (typeof window !== 'undefined' && (window as any).luckysheet?.showRow) {
-                                    // Show all rows (using a large range to cover all possible rows)
-                                    (window as any).luckysheet.showRow(0, 9999);
-                                    
-                                    setMessages(prev => {
-                                        const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                        const updatedMessages = [...newMessages, { 
-                                            id: (Date.now() + 1).toString(),
-                                            role: 'assistant', 
-                                            type: 'assistant',
-                                            content: `✅ Cleared filters, showing all rows`, 
-                                            isTyping: true,
-                                            timestamp: new Date()
-                                        } as ChatMessage];
-                                        saveChatMessagesToActiveChat(updatedMessages);
-                                        return updatedMessages;
-                                    });
-                                }
-                                setIsProcessing(false);
-                                return; // Exit early
-                            }
-                            
-                            // Fallback to existing dropdown filter logic
-                            console.log('🔍 Falling back to dropdown filter logic');
-                            const filterAction = (classification.parameters?.action || (/(open|enable|turn on|put on)/i.test(userMessage) ? 'open' : /(close|clear|remove|reset|turn off|disable|get rid of)/i.test(userMessage) ? 'close' : 'open')) as 'open' | 'close';
-                            const doLocalOpenClose = async () => {
-                                if (typeof window !== 'undefined' && (window as any).luckysheet?.getSheetData && (window as any).luckysheet?.setRangeFilter) {
-                                    const sheetData = (window as any).luckysheet.getSheetData();
-                                    if (sheetData && sheetData.length > 0) {
-                                        // Detect used range
-                                        const cellHasValue = (cell: any): boolean => {
-                                            if (cell === null || cell === undefined) return false;
-                                            if (typeof cell === 'object') {
-                                                const m = (cell as any).m; const v = (cell as any).v;
-                                                if (m !== undefined && m !== null && String(m).trim() !== '') return true;
-                                                if (v !== undefined && v !== null) {
-                                                    if (typeof v === 'object') {
-                                                        const nm = (v as any).m; const nv = (v as any).v;
-                                                        if (nm !== undefined && nm !== null && String(nm).trim() !== '') return true;
-                                                        if (nv !== undefined && nv !== null && String(nv).trim() !== '') return true;
-                                                        return String(v).trim() !== '';
-                                                    }
-                                                    return String(v).trim() !== '';
-                                                }
-                                                return false;
-                                            }
-                                            return String(cell).trim() !== '';
-                                        };
-                                        let lastUsedCol = 0;
-                                        for (let r = 0; r < sheetData.length; r++) {
-                                            const row = sheetData[r] || [];
-                                            for (let c = row.length - 1; c >= 0; c--) {
-                                                if (cellHasValue(row[c])) { lastUsedCol = Math.max(lastUsedCol, c); break; }
-                                            }
-                                        }
-                                        let lastUsedRow = 1;
-                                        for (let r = sheetData.length - 1; r >= 1; r--) {
-                                            const row = sheetData[r] || [];
-                                            let has = false;
-                                            for (let c = 0; c <= lastUsedCol; c++) { if (cellHasValue(row[c])) { has = true; break; } }
-                                            if (has) { lastUsedRow = r; break; }
-                                        }
-                                        const lastColLetter = String.fromCharCode(65 + lastUsedCol);
-                                        const range = `A1:${lastColLetter}${lastUsedRow + 1}`; // include header row
-                                        (window as any).luckysheet.setRangeFilter(filterAction, { range, order: 0 });
-                                        setMessages(prev => {
-                                            const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                            return [...newMessages, { role: 'assistant', content: filterAction === 'open' ? `✅ Filter enabled` : `✅ Filters cleared`, isTyping: true }];
-                                        });
-                                        if (saveChatMessagesToActiveChat) {
-                                            saveChatMessagesToActiveChat([]);
-                                        }
-                                        setIsProcessing(false);
-                                        return true;
-                                    }
-                                }
-                                return false;
-                            };
+                        // Delegated: this route used to carry its own filter
+                        // implementation, against an engine that is no longer loaded,
+                        // so a filter arriving here silently did nothing.
+                        await handleFilteringLogic(classification, userMessage);
+                        setIsProcessing(false);
+                        return;
 
-                            // Prefer local open/close for filters to avoid backend coupling
-                            const localDone = await doLocalOpenClose();
-                            if (localDone) return;
-
-                            // Remove deprecated backend fallback; guide user if local path unavailable
-                            setMessages(prev => {
-                                const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                return [...newMessages, { role: 'assistant', content: `⚠️ Spreadsheet not ready for filter operation. Click the sheet to activate it and try again.`, isTyping: true }];
-                            });
-                            setIsProcessing(false);
-                            return;
-                        } catch {
-                            console.error('❌ LLM filter execution failed:', e);
-                            // Ultimate fallback for clear filters
-                            if (/(close|clear|remove|reset|turn off|disable|get rid of)/i.test(userMessage) && typeof window !== 'undefined') {
-                                try {
-                                    if ((window as any).luckysheet?.setRangeFilter) {
-                                        (window as any).luckysheet.setRangeFilter('close', {});
-                                        setMessages(prev => {
-                                            const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                            return [...newMessages, { role: 'assistant', content: `✅ Filters cleared`, isTyping: true }];
-                                        });
-                                        if (saveChatMessagesToActiveChat) { saveChatMessagesToActiveChat([]); }
-                                        setIsProcessing(false);
-                                        return;
-                                    }
-                                } catch {}
-                            }
-                        }
-                        break;
-                    
-                    case 'sort':
-                        console.log('🔃 LLM detected sorting - executing sort');
+                    case 'sort': {
                         try {
-                            if (typeof window !== 'undefined' && (window as any).luckysheet?.getSheetData) {
-                                const sheetData = (window as any).luckysheet.getSheetData();
+                            if (univerAdapter?.isReady()) {
+                                const sheetData = univerAdapter.getAllData();
                                 if (sheetData && sheetData.length > 1) {
                                     const headers = (sheetData[0] || []).map((h: any, i: number) => typeof h === 'object' ? (h?.v ?? h?.m ?? `Column ${i + 1}`) : (h ?? `Column ${i + 1}`));
                                     const colIdentRaw = (classification.target?.identifier || '').toString();
                                     const dirRaw = (classification.parameters?.direction || 'asc').toString().toLowerCase();
-                                    const dir = /desc|z-?a|down|decreasing/.test(dirRaw) ? 'des' : 'asc';
-                                    
+                                    const ascending = !/desc|z-?a|down|decreasing/.test(dirRaw);
+
                                     const findColIndexByName = (nameRaw: string): number => {
                                         const name = nameRaw.trim().toLowerCase();
                                         for (let i = 0; i < headers.length; i++) {
@@ -5058,36 +3504,44 @@ export default function ChatSidebar({
                                         }
                                         return -1;
                                     };
-                                    let colIndex = -1;
-                                    if (/^[A-Za-z]$/.test(colIdentRaw)) {
-                                        colIndex = colIdentRaw.toUpperCase().charCodeAt(0) - 65;
-                                    } else {
-                                        colIndex = findColIndexByName(colIdentRaw);
-                                    }
+
+                                    const colIndex = /^[A-Za-z]$/.test(colIdentRaw)
+                                        ? colIdentRaw.toUpperCase().charCodeAt(0) - 65
+                                        : findColIndexByName(colIdentRaw);
+
                                     if (colIndex >= 0) {
-                                        const lastRow1Based = sheetData.length;
-                                        const lastColIndex = Math.max(0, headers.length - 1);
-                                        const lastColLetter = String.fromCharCode(65 + lastColIndex);
-                                        const range = `A2:${lastColLetter}${lastRow1Based}`;
-                                        (window as any).luckysheet.setRangeShow?.(range);
-                                        (window as any).luckysheet.setRangeSortMulti?.(false, [{ i: colIndex, sort: dir }]);
+                                        // Sort the data rows only, leaving the header row alone.
+                                        const lastColLetter = String.fromCharCode(65 + Math.max(0, headers.length - 1));
+                                        const sorted = univerAdapter.sort(`A2:${lastColLetter}${sheetData.length}`, colIndex, ascending);
+                                        const columnName = /^[A-Za-z]$/.test(colIdentRaw) ? colIdentRaw.toUpperCase() : headers[colIndex];
                                         setMessages(prev => {
                                             const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                            return [...newMessages, { role: 'assistant', content: `✅ Sorted by ${/^[A-Za-z]$/.test(colIdentRaw) ? colIdentRaw.toUpperCase() : headers[colIndex]} ${dir === 'asc' ? 'A-Z' : 'Z-A'}`, isTyping: true }];
+                                            const updatedMessages = [...newMessages, {
+                                                id: (Date.now() + 1).toString(),
+                                                role: 'assistant',
+                                                type: 'assistant',
+                                                content: sorted
+                                                    ? `✅ Sorted by ${columnName} ${ascending ? 'A-Z' : 'Z-A'}`
+                                                    : `❌ Could not sort by ${columnName}`,
+                                                isTyping: false,
+                                                timestamp: new Date()
+                                            } as ChatMessage];
+                                            saveChatMessagesToActiveChat(updatedMessages);
+                                            return updatedMessages;
                                         });
-                                        if (saveChatMessagesToActiveChat) { saveChatMessagesToActiveChat([]); }
                                         setIsProcessing(false);
                                         return;
                                     }
                                 }
                             }
-                        } catch {
-                            console.error('❌ LLM sort execution failed:', e);
+                        } catch (sortError) {
+                            console.error('❌ LLM sort execution failed:', sortError);
                         }
                         break;
-                    
+                    }
+
+
                     case 'column_operation':
-                        console.log('📏 LLM detected column operation - executing:', classification.action);
                         try {
                             const action = classification.action;
                             const colIdentRaw = (classification.target?.identifier || '').toString();
@@ -5098,7 +3552,6 @@ export default function ChatSidebar({
 
                             // Try Univer first if available
                             if (univerAdapter && univerAdapter.isReady()) {
-                                console.log('📐 Using Univer for column operations');
 
                                 // Convert column letter to index if needed
                                 let colIndex = -1;
@@ -5150,7 +3603,6 @@ export default function ChatSidebar({
                                     const columns = Array.isArray(columnsParam) ? columnsParam : [];
 
                                     if (columns.length > 0) {
-                                        console.log('📐 Deleting multiple non-consecutive columns:', columns);
 
                                         // Convert to indices and sort in DESCENDING order
                                         // Delete from highest index to lowest to avoid index shifting issues
@@ -5158,12 +3610,10 @@ export default function ChatSidebar({
                                             .map((col: string) => col.toUpperCase().charCodeAt(0) - 65)
                                             .sort((a: number, b: number) => b - a); // Highest first
 
-                                        console.log('📐 Deletion order (highest to lowest):', indices);
 
                                         // Delete each column from highest index to lowest
                                         let successCount = 0;
                                         for (const idx of indices) {
-                                            console.log(`🗑️ Deleting column at index ${idx}`);
                                             const success = univerAdapter.deleteColumn(idx, 1);
                                             if (success) {
                                                 successCount++;
@@ -5287,7 +3737,6 @@ export default function ChatSidebar({
                         break;
                     
                     case 'row_operation':
-                        console.log('📏 LLM detected row operation - executing:', classification.action);
                         try {
                             const action = classification.action;
                             const rowParam = classification.parameters?.row;
@@ -5300,7 +3749,6 @@ export default function ChatSidebar({
 
                             // Try Univer first if available
                             if (univerAdapter && univerAdapter.isReady()) {
-                                console.log('📏 Using Univer for row operations');
 
                                 if (action === 'insert_row' && rowParam) {
                                     // Convert to 0-based index
@@ -5410,83 +3858,71 @@ export default function ChatSidebar({
                         return; // Exit early to prevent fallback patterns
                         break;
                     
-                    case 'cell_operation':
-                        console.log('📝 LLM detected cell operation - executing:', classification.action);
+                    case 'cell_operation': {
+                        // Runs against UniverAdapter. It used to call the old engine,
+                        // which meant set/clear/format cell quietly did nothing.
+                        const sayCellDone = (text: string) => {
+                            setMessages(prev => {
+                                const newMessages = prev.filter(msg => !msg.isAnalyzing);
+                                const updatedMessages = [...newMessages, {
+                                    id: (Date.now() + 1).toString(),
+                                    role: 'assistant',
+                                    type: 'assistant',
+                                    content: text,
+                                    isTyping: false,
+                                    timestamp: new Date()
+                                } as ChatMessage];
+                                saveChatMessagesToActiveChat(updatedMessages);
+                                return updatedMessages;
+                            });
+                        };
+
                         try {
-                            if (typeof window !== 'undefined' && (window as any).luckysheet?.getSheetData) {
+                            if (univerAdapter?.isReady()) {
                                 const action = classification.action;
-                                const cellId = classification.target?.identifier || '';
+                                const cellId = (classification.target?.identifier || '').toString();
                                 const value = classification.parameters?.value;
                                 const format = classification.parameters?.format;
-                                
+
                                 // Parse cell reference (e.g., "B3" -> row:2, col:1)
                                 const cellMatch = cellId.match(/([A-Z]+)(\d+)/i);
                                 if (cellMatch) {
                                     const colLetter = cellMatch[1].toUpperCase();
-                                    const rowNum = parseInt(cellMatch[2]);
-                                    const colIndex = colLetter.charCodeAt(0) - 65; // A=0, B=1, etc.
-                                    const rowIndex = rowNum - 1; // Convert to 0-based
-                                    
+                                    const colIndex = colLetter.charCodeAt(0) - 65; // A=0, B=1, ...
+                                    const rowIndex = parseInt(cellMatch[2], 10) - 1; // to 0-based
+
                                     if (action === 'set_cell_value' && value !== undefined) {
-                                        (window as any).luckysheet.setCellValue?.(rowIndex, colIndex, value);
-                                        setMessages(prev => {
-                                            const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                            const updatedMessages = [...newMessages, { 
-                                                id: (Date.now() + 1).toString(),
-                                                role: 'assistant', 
-                                                type: 'assistant',
-                                                content: `✅ Set cell ${cellId} to "${value}"`, 
-                                                isTyping: true,
-                                                timestamp: new Date()
-                                            } as ChatMessage];
-                                            saveChatMessagesToActiveChat(updatedMessages);
-                                            return updatedMessages;
-                                        });
+                                        const ok = univerAdapter.setCellValue(rowIndex, colIndex, value);
+                                        sayCellDone(ok ? `✅ Set cell ${cellId} to "${value}"` : `❌ Could not set cell ${cellId}`);
                                     } else if (action === 'clear_cell') {
-                                        (window as any).luckysheet.clearCell?.(rowIndex, colIndex);
-                                        setMessages(prev => {
-                                            const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                            const updatedMessages = [...newMessages, { 
-                                                id: (Date.now() + 1).toString(),
-                                                role: 'assistant', 
-                                                type: 'assistant',
-                                                content: `✅ Cleared cell ${cellId}`, 
-                                                isTyping: true,
-                                                timestamp: new Date()
-                                            } as ChatMessage];
-                                            saveChatMessagesToActiveChat(updatedMessages);
-                                            return updatedMessages;
-                                        });
+                                        const ok = univerAdapter.clearRange(rowIndex, colIndex, 1, 1);
+                                        sayCellDone(ok ? `✅ Cleared cell ${cellId}` : `❌ Could not clear cell ${cellId}`);
                                     } else if (action === 'format_cell' && format) {
-                                        // Handle basic formatting
+                                        let ok = false;
                                         if (format === 'bold') {
-                                            (window as any).luckysheet.setCellFormat?.(rowIndex, colIndex, 'bl', 1);
+                                            ok = univerAdapter.setFontWeight(rowIndex, colIndex, 1, 1, 'bold');
+                                        } else if (format === 'italic') {
+                                            ok = univerAdapter.setFontStyle(rowIndex, colIndex, 1, 1, 'italic');
+                                        } else if (format === 'underline') {
+                                            ok = univerAdapter.setFontLine(rowIndex, colIndex, 1, 1, 'underline');
                                         }
-                                        setMessages(prev => {
-                                            const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                            const updatedMessages = [...newMessages, { 
-                                                id: (Date.now() + 1).toString(),
-                                                role: 'assistant', 
-                                                type: 'assistant',
-                                                content: `✅ Applied ${format} formatting to cell ${cellId}`, 
-                                                isTyping: true,
-                                                timestamp: new Date()
-                                            } as ChatMessage];
-                                            saveChatMessagesToActiveChat(updatedMessages);
-                                            return updatedMessages;
-                                        });
+                                        sayCellDone(ok
+                                            ? `✅ Applied ${format} formatting to cell ${cellId}`
+                                            : `❌ ${format} formatting is not supported yet`);
                                     }
                                 }
+                            } else {
+                                console.warn('⚠️ UniverAdapter not available for cell operation');
                             }
-                        } catch {
-                            console.error('❌ LLM cell operation execution failed:', e);
+                        } catch (cellError) {
+                            console.error('❌ LLM cell operation execution failed:', cellError);
                         }
                         setIsProcessing(false);
                         return; // Exit early to prevent fallback patterns
-                        break;
-                    
+                    }
+
+
                     case 'range_operation':
-                        console.log('📋 LLM detected range operation - executing:', classification.action);
                         try {
                         const action = classification.action;
                         const range = typeof classification.parameters?.range === 'string'
@@ -5497,7 +3933,6 @@ export default function ChatSidebar({
 
                             // Try Univer first if available
                             if (univerAdapter && univerAdapter.isReady()) {
-                                console.log('📋 Using Univer for range operations');
 
                                 if (action === 'merge_range' && range) {
                                     // Parse range (e.g., "A1:C3" -> startRow: 0, startCol: 0, numRows: 3, numCols: 3)
@@ -5655,7 +4090,6 @@ export default function ChatSidebar({
                         break;
                     
                     case 'freeze_operation':
-                        console.log('🧊 LLM detected freeze operation - executing:', classification.action);
                         try {
                             const action = classification.action;
                             const rowParam = classification.parameters?.row;
@@ -5664,7 +4098,6 @@ export default function ChatSidebar({
                             const column = typeof columnParam === 'number' ? columnParam : parseInt(String(columnParam ?? '0'), 10);
 
                             if (univerAdapter && univerAdapter.isReady()) {
-                                console.log('🧊 Using Univer for freeze operations');
 
                                 if (action === 'freeze_horizontal' && row) {
                                     const success = univerAdapter.freezeRows(row);
@@ -5733,18 +4166,15 @@ export default function ChatSidebar({
                         break;
                     
                     case 'general_query':
-                        console.log('💬 LLM detected general query - routing to backend');
                         response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
                         break;
 
                     case 'compound_operation':
-                        console.log('🎭 Compound operation detected - executing multiple operations');
                         try {
                             const operationsParam = classification.parameters?.operations;
                             const operations = Array.isArray(operationsParam) ? operationsParam : [];
 
                             if (operations.length > 0) {
-                                console.log(`🔄 Executing ${operations.length} operations in sequence:`, operations);
 
                                 const results: string[] = [];
                                 let allSuccessful = true;
@@ -5752,12 +4182,10 @@ export default function ChatSidebar({
                                 // Execute each sub-operation sequentially
                                 for (let i = 0; i < operations.length; i++) {
                                     const subOperation = operations[i];
-                                    console.log(`\n🔄 [${i + 1}/${operations.length}] Executing: "${subOperation}"`);
 
                                     try {
                                         // Re-classify the sub-operation
                                         const subClassification = await llmCommandClassifier.classifyCommand(subOperation);
-                                        console.log(`📋 Sub-operation classified as: ${subClassification.intent} -> ${subClassification.action}`);
 
                                         // Execute based on intent using a simplified handler
                                         let subResult = '';
@@ -5856,7 +4284,6 @@ export default function ChatSidebar({
                                         }
 
                                         results.push(`${i + 1}. ${subResult}`);
-                                        console.log(`✅ Sub-operation ${i + 1} completed:`, subResult);
 
                                     } catch (subError) {
                                         console.error(`❌ Sub-operation ${i + 1} failed:`, subError);
@@ -5892,7 +4319,6 @@ export default function ChatSidebar({
                         break;
 
                     default:
-                        console.log('🔄 LLM classification complete, continuing with existing patterns');
                         break;
                 }
                 
@@ -5932,210 +4358,9 @@ export default function ChatSidebar({
                 }
             }
 
-            console.log('🔧 === FALLBACK TO EXISTING PATTERNS ===');
-            // DIRECT NUMERIC CONDITIONAL FORMATTING - Execute immediately for numeric conditions
-            const numericConditionMatch = userMessage.match(/(?:highlight|show|mark|color)\s+(?:all\s+)?(?:(?:cells?|values?(?:\s+in\s+cells?)?|numbers?|data)\s+)?(?:(?:with|that\s+(?:are|have|contain)|having)\s+)?(?:values?\s+)?(?:that\s+(?:are|have)\s+)?(greater(?:\s+than)?|less(?:\s+than)?|equal(?:\s+to)?|equals?|between|>=|<=|>|<|=)\s+(?:than\s+)?([+-]?\d*\.?\d+)(?:\s+and\s+([+-]?\d*\.?\d+))?(?:\s+(?:in|on|for|within)\s+(?:column\s+)?([A-Za-z]+))?/i);
-            
-            if (numericConditionMatch && (window as any).luckysheet && typeof (window as any).luckysheet.getSheetData === 'function') {
-                console.log('🔢 DIRECT NUMERIC CONDITIONAL FORMATTING detected:', userMessage);
-                
-                // Add brief delay to show analyzing state
-                await new Promise(resolve => setTimeout(resolve, 300));
-                const operation = numericConditionMatch[1].toLowerCase();
-                const value1 = parseFloat(numericConditionMatch[2]);
-                const value2 = numericConditionMatch[3] ? parseFloat(numericConditionMatch[3]) : undefined;
-                const columnSpec = numericConditionMatch[4] ? numericConditionMatch[4].toUpperCase() : null;
-                
-                // Determine condition type
-                let conditionType = 'greaterThan';
-                if (/less(?:\s*than)?|<|<=/.test(operation)) {
-                    conditionType = 'lessThan';
-                } else if (/equal|equals?|=/.test(operation)) {
-                    conditionType = 'equal';
-                } else if (/between/.test(operation)) {
-                    conditionType = 'betweenness';
-                }
-                
-                // Get current sheet data
-                const sheetData = (window as any).luckysheet.getSheetData();
-                if (sheetData && sheetData.length > 1) {
-                    // Determine range based on column specification
-                    const lastRow = sheetData.length;
-                    const lastCol = Math.max(...sheetData.map((row: any) => row ? row.length : 0));
-                    
-                    let targetRange: string;
-                    let startCol: number;
-                    let endCol: number;
-                    
-                    if (columnSpec) {
-                        // Column specified - work only on that column
-                        const columnIndex = columnSpec.charCodeAt(0) - 65; // A=0, B=1, etc.
-                        if (columnIndex >= 0 && columnIndex < lastCol) {
-                            startCol = columnIndex;
-                            endCol = columnIndex;
-                            targetRange = `${columnSpec}2:${columnSpec}${lastRow}`;
-                        } else {
-                            // Invalid column specified
-                            setMessages(prev => {
-                                const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                                return [...newMessages, {
-                                    role: 'assistant',
-                                    content: `❌ Column ${columnSpec} does not exist in the spreadsheet`,
-                                    isTyping: true
-                                }];
-                            });
-                            setIsProcessing(false);
-                            return;
-                        }
-                    } else {
-                        // No column specified - use full data range
-                        startCol = 0;
-                        endCol = lastCol - 1;
-                        const lastColLetter = String.fromCharCode(64 + lastCol); // A=1, so 64+1=65='A'
-                        targetRange = `A2:${lastColLetter}${lastRow}`;
-                    }
-                    
-                    console.log('🎯 Applying direct numeric CF:', {
-                        condition: conditionType,
-                        values: value2 !== undefined ? [value1, value2] : [value1],
-                        column: columnSpec || 'all',
-                        range: targetRange,
-                        scanCols: [startCol, endCol],
-                        dataRows: lastRow - 1,
-                        dataCols: lastCol
-                    });
-                    
-                    // Helper function to extract numeric value from cell
-                    const getCellNumericValue = (cell: any): number | null => {
-                        if (cell === null || cell === undefined) return null;
-                        
-                        let rawValue: any = cell;
-                        if (typeof cell === 'object' && cell !== null) {
-                            const directM = (cell as any).m;
-                            const directV = (cell as any).v;
-                            if (directM !== undefined && directM !== null) rawValue = directM;
-                            else if (directV !== undefined && directV !== null) {
-                                if (typeof directV === 'object') {
-                                    const nestedM = (directV as any).m;
-                                    const nestedV = (directV as any).v;
-                                    if (nestedM !== undefined && nestedM !== null) rawValue = nestedM;
-                                    else if (nestedV !== undefined && nestedV !== null) rawValue = nestedV;
-                                    else rawValue = directV;
-                                } else {
-                                    rawValue = directV;
-                                }
-                            } else {
-                                return null;
-                            }
-                        }
-                        
-                        const numValue = typeof rawValue === 'number' ? rawValue : parseFloat(String(rawValue));
-                        return isNaN(numValue) ? null : numValue;
-                    };
-                    
-                    const matchingCells: Array<{row: number, col: number}> = [];
-                    
-                    // Check each cell in data range (exclude header row)
-                    for (let row = 1; row < lastRow; row++) { // Start from row 1 (0-based, so row 2 in sheet)
-                        for (let col = startCol; col <= endCol; col++) {
-                            const cell = sheetData[row]?.[col];
-                            const numValue = getCellNumericValue(cell);
-                            
-                            if (numValue !== null) {
-                                let matches = false;
-                                
-                                // Apply condition logic
-                                switch (conditionType) {
-                                    case 'greaterThan':
-                                        matches = numValue > value1;
-                                        break;
-                                    case 'lessThan':
-                                        matches = numValue < value1;
-                                        break;
-                                    case 'equal':
-                                        matches = Math.abs(numValue - value1) < 0.0001;
-                                        break;
-                                    case 'betweenness':
-                                        if (value2 !== undefined) {
-                                            const min = Math.min(value1, value2);
-                                            const max = Math.max(value1, value2);
-                                            matches = numValue >= min && numValue <= max;
-                                        }
-                                        break;
-                                }
-                                
-                                if (matches) {
-                                    matchingCells.push({row: row + 1, col}); // Convert to 1-based for range
-                                }
-                            }
-                        }
-                    }
-                    
-                    console.log(`✅ Found ${matchingCells.length} matching cells for ${conditionType}`);
-                    
-                    // Apply background highlighting to matching cells
-                    if (matchingCells.length > 0) {
-                        matchingCells.forEach(cellPos => {
-                            const colLetter = String.fromCharCode(65 + cellPos.col);
-                            const cellRange = `${colLetter}${cellPos.row}:${colLetter}${cellPos.row}`;
-                            try {
-                                (window as any).luckysheet.setRangeFormat('bg', '#ffcccc', { range: cellRange });
-                            } catch {
-                                console.warn('Direct CF setRangeFormat failed for cell', cellRange, e);
-                            }
-                        });
-                        
-                        // Update UI with success message
-                        const conditionDescription = conditionType === 'betweenness' && value2 !== undefined ? 
-                            `between ${value1} and ${value2}` : 
-                            `${operation} ${value1}`;
-                        
-                        const locationDescription = columnSpec ? ` in column ${columnSpec}` : '';
-                        
-                        setMessages(prev => {
-                            const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                            const updatedMessages = [...newMessages, {
-                                id: (Date.now() + 1).toString(),
-                                role: 'assistant',
-                                type: 'assistant',
-                                content: `✅ Highlighted ${matchingCells.length} cells with values ${conditionDescription}${locationDescription}`,
-                                isTyping: true,
-                                timestamp: new Date()
-                            } as ChatMessage];
-                            // Save chat history for conditional formatting
-                            saveChatMessagesToActiveChat(updatedMessages);
-                            return updatedMessages;
-                        });
-                        setIsProcessing(false);
-                        return; // Exit early - don't process through backend
-                    } else {
-                        // No matches found
-                        const conditionDescription = conditionType === 'betweenness' && value2 !== undefined ? 
-                            `between ${value1} and ${value2}` : 
-                            `${operation} ${value1}`;
-                        
-                        const locationDescription = columnSpec ? ` in column ${columnSpec}` : '';
-                        
-                        setMessages(prev => {
-                            const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                            const updatedMessages = [...newMessages, {
-                                id: (Date.now() + 1).toString(),
-                                role: 'assistant',
-                                type: 'assistant',
-                                content: `ℹ️ No cells found with values ${conditionDescription}${locationDescription}`,
-                                isTyping: true,
-                                timestamp: new Date()
-                            } as ChatMessage];
-                            // Save chat history for conditional formatting
-                            saveChatMessagesToActiveChat(updatedMessages);
-                            return updatedMessages;
-                        });
-                        setIsProcessing(false);
-                        return; // Exit early - don't process through backend
-                    }
-                }
-            }
-            // END DIRECT NUMERIC CONDITIONAL FORMATTING
+            // A regex-driven cell-by-cell highlighter used to sit here, running
+            // against window.luckysheet. Conditional formatting now goes through
+            // handleLLMConditionalFormatting, which asks Univer for a real rule.
             
             // Initialize backend if this is the first query from a saved workspace
             if (!isBackendInitialized) {
@@ -6154,24 +4379,17 @@ export default function ChatSidebar({
               && !highlightDupRowsPattern.test(userMessage)
               && !highlightDupRowsPattern2.test(userMessage);
             
-            // ⚠️ REMOVED: Old filter command fallback (lines 5174-5365)
             // Filter commands now handled by LLM Classification → handleUniverFiltering()
 
-            // ⚠️ REMOVED: Old isSpreadsheetCommand regex check
             // All spreadsheet operations now handled by Universal Query Router → LLM Classification → UniverAdapter
 
-            console.log('🎯 === CHATSIDEBAR COMMAND ANALYSIS ===');
-            console.log('💬 User message:', userMessage);
-            console.log('🔄 Is duplicate command:', isDuplicateCommand);
 
             if (isDuplicateCommand) {
-                console.log('🔄 Routing to duplicate processing via data analysis service...');
                 
                 // Route duplicate commands to the regular data analysis service
                 // This ensures proper backend routing to DUPLICATE_CHECK category
                 try {
                     const duplicateResponse = await commandService.analyzeData(userMessage, []);
-                    console.log('✅ Duplicate command raw response:', duplicateResponse);
                     
                     // Normalize response format to match expected ChatSidebar format
                     // IMPORTANT: Preserve data_updated and updated_data for spreadsheet refresh
@@ -6181,11 +4399,6 @@ export default function ChatSidebar({
                         data_updated: duplicateResponse.data_updated,
                         updated_data: duplicateResponse.updated_data
                     };
-                    console.log('✅ Normalized duplicate response:', response);
-                    console.log('🔍 Data update fields preserved:', { 
-                        data_updated: response.data_updated, 
-                        has_updated_data: !!response.updated_data 
-                    });
                 } catch (error) {
                     console.error('❌ Error in duplicate command processing:', error);
                     response = {
@@ -6196,106 +4409,36 @@ export default function ChatSidebar({
                 
             } else {
                 // Not a spreadsheet command, use regular query processing
-                console.log('🌐 Routing to regular query service...');
                 response = await sendQuery(userMessage, activeChat?.id || 'default', { isVoice: false, mode: queryMode, workspaceId: currentWorkspace?.id });
             }
             
             // Handle data updates from the backend
-            console.log('🔍 === CHATSIDEBAR DATAUPDATE DISPATCH DEBUG ===');
-            console.log('🔍 Response object keys:', Object.keys(response || {}));
-            console.log('🔍 response.data_updated:', response.data_updated, typeof response.data_updated);
-            console.log('🔍 response.updated_data:', !!response.updated_data, typeof response.updated_data);
             
             if (response.data_updated && response.updated_data) {
-                console.log('✅ First condition passed: response.data_updated && response.updated_data');
-                console.log('🔍 response.updated_data keys:', Object.keys(response.updated_data || {}));
-                console.log('🔍 response.updated_data.data:', !!response.updated_data.data, typeof response.updated_data.data);
-                console.log('🔍 Array.isArray(response.updated_data.data):', Array.isArray(response.updated_data.data));
                 
                 if (response.updated_data.data && Array.isArray(response.updated_data.data)) {
-                    console.log('✅ Second condition passed: response.updated_data.data && Array.isArray');
                     const newData = response.updated_data.data;
-                    console.log('🔍 newData.length:', newData.length);
-                    console.log('🔍 newData sample:', newData.slice(0, 2));
                     
                     if (newData.length > 0) {
-                        console.log('✅ Third condition passed: newData.length > 0');
-                        console.log('🚀 SUCCESS: Dispatching dataUpdate event with', newData.length, 'rows');
                         
                         const dataUpdateEvent = new CustomEvent('dataUpdate', { 
                             detail: { data: newData } 
                         });
                         window.dispatchEvent(dataUpdateEvent);
-                        console.log('📊 DataUpdate event dispatched successfully!');
                     } else {
-                        console.log('❌ Third condition FAILED: newData.length is 0');
                     }
                 } else {
-                    console.log('❌ Second condition FAILED: response.updated_data.data missing or not array');
                 }
             } else {
-                console.log('❌ First condition FAILED: Missing data_updated or updated_data');
                 if (!response.data_updated) {
-                    console.log('❌ response.data_updated is falsy:', response.data_updated);
                 }
                 if (!response.updated_data) {
-                    console.log('❌ response.updated_data is falsy:', response.updated_data);
                 }
             }
             
-            // Check if response is a clarification request
-            let clarificationData: ClarificationResponse | null = null;
-            let isConversationalClarification = false;
-            try {
-                const responseContent = response.response || response.message || '';
-                if (responseContent.includes('"type": "clarification"') || responseContent.includes('"type":"clarification"')) {
-                    clarificationData = JSON.parse(responseContent) as ClarificationResponse;
-                    console.log('🤔 Clarification detected:', clarificationData);
-                } else if (responseContent.includes('"type": "regular"') || responseContent.includes('"type":"regular"')) {
-                    // Check if this is a conversational clarification response
-                    const jsonResponse = JSON.parse(responseContent);
-                    if (jsonResponse.message && jsonResponse.message.includes('I can help you with') && jsonResponse.message.includes('in several ways')) {
-                        isConversationalClarification = true;
-                        console.log('🤔 Conversational clarification detected');
-                    }
-                }
-            } catch {
-                // Not a JSON clarification response, continue normally
-            }
-
             // Remove the analyzing message and add the real response
             setMessages(prev => {
                 const newMessages = prev.filter(msg => !msg.isAnalyzing);
-                
-                if (clarificationData) {
-                    // Handle traditional clarification response with buttons
-                    const updatedMessages = [...newMessages, { 
-                        id: (Date.now() + 1).toString(),
-                        role: 'assistant', 
-                        type: 'assistant',
-                        content: clarificationData.message,
-                        clarification: clarificationData,
-                        isTyping: false,
-                        timestamp: new Date()
-                    } as ChatMessage];
-                    saveChatMessagesToActiveChat(updatedMessages);
-                    return updatedMessages;
-                }
-                
-                if (isConversationalClarification) {
-                    // Handle conversational clarification as a regular message
-                    const jsonResponse = JSON.parse(response.response || response.message || '');
-                    const updatedMessages = [...newMessages, { 
-                        id: (Date.now() + 1).toString(),
-                        role: 'assistant', 
-                        type: 'assistant',
-                        content: jsonResponse.message,
-                        isTyping: false,  // Display immediately, no typing animation for clarity
-                        timestamp: new Date()
-                    } as ChatMessage];
-                    saveChatMessagesToActiveChat(updatedMessages);
-                    return updatedMessages;
-                }
                 
                 // Detect structured responses that should display immediately with proper formatting
                 const rawResponseText = response.response || response.message || '';
@@ -6331,7 +4474,12 @@ export default function ChatSidebar({
                     id: (Date.now() + 1).toString(),
                     role: 'assistant',
                     type: 'assistant',
-                    content: 'Sorry, I encountered an error processing your request.',
+                    // A demo limit is not a malfunction, and its message
+                    // already explains itself, so it is shown as written
+                    // rather than dressed up as an error worth reporting.
+                    content: error instanceof LimitError
+                        ? error.message
+                        : 'Sorry, I encountered an error processing your request.',
                     timestamp: new Date()
                 } as ChatMessage];
                 
@@ -6353,7 +4501,6 @@ export default function ChatSidebar({
             // Re-sync backend with current frontend data to restore data context
             if (isDataLoaded && data && data.length > 0 && currentWorkspace?.id) {
                 try {
-                    console.log('🔄 Re-syncing backend with current data after chat reset...');
                     
                     // Convert current data back to CSV format
                     const headers = Object.keys(data[0]).join(',');
@@ -6370,7 +4517,6 @@ export default function ChatSidebar({
                     
                     // Re-upload to backend to restore data handler state
                     await uploadFile(file, currentWorkspace.id);
-                    console.log('✅ Backend data context restored after chat reset');
                 } catch (error) {
                     console.error('❌ Failed to re-sync backend data after reset:', error);
                     // Don't throw - chat reset should still work even if re-sync fails
@@ -6407,25 +4553,17 @@ export default function ChatSidebar({
             const workspaceChats = await loadChats(currentWorkspace.id);
             setChats(workspaceChats);
             
-            console.log('🔍 DEBUG - loadWorkspaceChats:', {
-                workspaceId: currentWorkspace.id,
-                chatsFound: workspaceChats.length,
-                currentActiveChat: activeChat?.id,
-                currentMessagesCount: messageCountRef.current
-            });
 
             // Always load the most recent chat if we have chats and no messages are currently loaded
             // This ensures consistent behavior on page reload regardless of activeChat state
             if (workspaceChats.length > 0 && messageCountRef.current === 0) {
                 const mostRecentChat = workspaceChats[0]; // Already sorted by updated_at DESC
-                console.log('📂 Loading most recent chat:', mostRecentChat.id, 'Messages:', mostRecentChat.messages?.length || 0);
                 
                 setActiveChat(mostRecentChat);
                 // Load messages using the dedicated loadChatMessages function for consistency
                 const chatMessages = await loadChatMessages(mostRecentChat.id);
                 setMessages(chatMessages);
                 
-                console.log('✅ Loaded most recent chat on workspace load:', mostRecentChat.id);
                 
                 // Keep loading state active until messages are loaded to prevent welcome screen flash
                 // setIsLoadingChats(false) is called in the finally block after everything is complete
@@ -6433,7 +4571,6 @@ export default function ChatSidebar({
                 // No chats exist, ensure clean state
                 setActiveChat(null);
                 setMessages([]);
-                console.log('📭 No chats found for workspace, showing welcome screen');
             }
             // Note: Don't set isLoadingChats = false here, let finally block handle it
         } catch (error) {
@@ -6450,9 +4587,7 @@ export default function ChatSidebar({
         // here re-created this callback after every single message, which
         // re-fired the effect below and refetched the chat list mid-conversation
         // -- blanking the sidebar to "Loading chats..." right after each answer
-        // appeared. The message count is read through a ref instead, and
-        // `activeChat` was only ever used by the debug log above.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // appeared. The message count is read through a ref instead.
     }, [currentWorkspace]);
 
     // Create a new chat
@@ -6470,62 +4605,11 @@ export default function ChatSidebar({
             setActiveChat(newChat);
             setMessages([]);
 
-            console.log('✅ New chat created and switched to:', newChat.id);
         } catch (error) {
             console.error('❌ Failed to create new chat:', error);
             alert('Failed to create new chat. Please try again.');
         } finally {
             setIsCreatingChat(false);
-        }
-    };
-
-    // Save worksheet data (learn mode)
-    const handleSaveWorksheet = async () => {
-        if (!currentWorkspace?.id || isSaving || mode !== 'learn') return;
-
-        setIsSaving(true);
-        setSaveStatus('saving');
-
-        try {
-            // Get current live data from spreadsheet (not the stale prop)
-            const currentData = (getCurrentData ? getCurrentData() : data) || [];
-            const currentDataLength = Array.isArray(currentData) ? currentData.length : 0;
-            console.log('💾 [Save] Saving worksheet data...', currentDataLength, 'rows');
-            if (Array.isArray(currentData)) {
-                console.log('💾 [Save] First 2 rows of data being saved:', JSON.stringify(currentData.slice(0, 2), null, 2));
-            }
-            
-            // Capture full sheet snapshot for exact restore
-            let sheetState: any = undefined;
-            try {
-                if (typeof window !== 'undefined' && (window as any).luckysheet?.getAllSheets) {
-                    const sheets = (window as any).luckysheet.getAllSheets();
-                    if (Array.isArray(sheets) && sheets.length > 0) {
-                        sheetState = sheets;
-                        console.log('💾 [Save] Captured sheet_state snapshot');
-                    }
-                }
-            } catch {}
-            
-            await saveWorkspaceData(currentWorkspace.id, currentData, filename, sheetState);
-            console.log('✅ [Save] Worksheet saved successfully');
-
-            setSaveStatus('saved');
-
-            // Reset to idle after 2 seconds
-            setTimeout(() => {
-                setSaveStatus('idle');
-            }, 2000);
-        } catch (error) {
-            console.error('❌ [ChatSidebar] Failed to save worksheet:', error);
-            setSaveStatus('error');
-
-            // Reset to idle after 3 seconds
-            setTimeout(() => {
-                setSaveStatus('idle');
-            }, 3000);
-        } finally {
-            setIsSaving(false);
         }
     };
 
@@ -6536,7 +4620,6 @@ export default function ChatSidebar({
         try {
             // Save current chat messages before switching
             if (activeChat && messages.length > 0) {
-                console.log('💾 Saving current chat messages before cycling...');
                 await saveChatMessages(activeChat.id, messages);
             }
 
@@ -6554,7 +4637,6 @@ export default function ChatSidebar({
             const chatMessages = await loadChatMessages(nextChat.id);
             setMessages(chatMessages);
             
-            console.log('🔄 Cycled to chat:', nextChat.id, 'Messages loaded:', chatMessages.length);
         } catch (error) {
             console.error('❌ Failed to cycle chat:', error);
             alert('Failed to cycle chat. Please try again.');
@@ -6656,38 +4738,6 @@ export default function ChatSidebar({
                                 <span className="text-sm">New Chat</span>
                             </button>
 
-                            {/* Save Button (Learn Mode Only) */}
-                            {mode === 'learn' && (
-                                <button
-                                    onClick={handleSaveWorksheet}
-                                    disabled={isSaving || !currentWorkspace?.id}
-                                    className="bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-2 rounded-md font-medium transition-all duration-200 border border-primary/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title="Save your practice work"
-                                >
-                                    {saveStatus === 'saving' ? (
-                                        <div className="w-4 h-4 border border-current border-t-transparent rounded-full animate-spin"></div>
-                                    ) : saveStatus === 'saved' ? (
-                                        <Check className="w-4 h-4" />
-                                    ) : saveStatus === 'error' ? (
-                                        <span className="text-xs">✗</span>
-                                    ) : (
-                                        <Save className="w-4 h-4" />
-                                    )}
-                                    <span className="text-sm">
-                                        {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : saveStatus === 'error' ? 'Error' : 'Save'}
-                                    </span>
-                                </button>
-                            )}
-
-                            {/* Spreadsheet Engine Toggle */}
-                            <button
-                                onClick={toggleSpreadsheetEngine}
-                                className="flex items-center justify-center w-6 h-6 text-sidebar-foreground hover:text-sidebar-foreground/80 transition-colors"
-                                title={isUniverEnabled() ? "Switch to Luckysheet" : "Switch to Univer (Beta)"}
-                            >
-                                <Zap className={`w-4 h-4 ${isUniverEnabled() ? 'text-yellow-400' : 'text-gray-400'}`} />
-                            </button>
-
                             {/* Cycle Arrow */}
                             <button
                                 onClick={() => handleCycleChat()}
@@ -6776,12 +4826,10 @@ export default function ChatSidebar({
                                     className="edi-rise text-[12.5px] leading-relaxed text-white/45 mb-6 max-w-[290px]"
                                     style={{ animationDelay: '180ms' }}
                                 >
-                                    {minimal
-                                        ? 'Work through spreadsheet skills one step at a time.'
-                                        : 'Filter it, clean it, chart it, or have it explained back to you — in plain English.'}
+                                    Filter it, clean it, chart it, or have it explained back to you — in plain English.
                                 </p>
 
-                                {!minimal && (
+                                {(
                                     <div className="space-y-2">
                                         <div className="edi-kicker edi-rise mb-3" style={{ animationDelay: '240ms' }}>
                                             Try asking
@@ -6805,86 +4853,6 @@ export default function ChatSidebar({
                                     </div>
                                 )}
                             </div>
-
-                            {/* Learn-mode onboarding tooltip */}
-                            {mode === 'learn' && (
-                                <div className="rounded-lg border border-primary/40 bg-primary/10 p-3 text-xs text-primary">
-                                    Say &quot;hi&quot; to EDI.ai to start your learning journey. I&apos;ll ask a couple of quick questions about your level and goals, then guide you step by step.
-                                </div>
-                            )}
-
-                            {/* Learning Guide (moved above instructions) */}
-                            {mode === 'learn' && learningTips.length > 0 && (
-                                <div className="rounded-lg border border-border bg-card/50">
-                                    <div className="p-4">
-                                        <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-                                            <div className="w-2 h-2 bg-primary rounded-full"></div>
-                                            Learning Guide
-                                        </h3>
-
-                                        <div className="space-y-3">
-                                            {learningTips.map((tip, index) => (
-                                                <div
-                                                    key={tip.id}
-                                                    className={`p-3 rounded-lg border transition-all ${
-                                                        index === currentTipIndex
-                                                            ? 'border-primary bg-primary/10'
-                                                            : 'border-border bg-background/50'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-start gap-2">
-                                                        <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                                                            tip.completed ? 'bg-green-500' : 'bg-primary'
-                                                        }`} />
-                                                        <div className="flex-1 min-w-0">
-                                                            <h4 className="text-sm font-medium text-foreground">
-                                                                {tip.title}
-                                                            </h4>
-                                                            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                                                                {tip.description}
-                                                            </p>
-                                                            {tip.example && (
-                                                                <div className="mt-2 p-2 bg-muted/30 rounded text-xs">
-                                                                    <code className="text-foreground">{tip.example}</code>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        {learningTips.length > 1 && (
-                                            <div className="flex items-center gap-2 mt-3">
-                                                <button
-                                                    onClick={() => setCurrentTipIndex(Math.max(0, currentTipIndex - 1))}
-                                                    disabled={currentTipIndex === 0}
-                                                    className="px-2 py-1 text-xs bg-muted hover:bg-muted/80 text-muted-foreground rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    Previous
-                                                </button>
-                                                <div className="flex-1 flex justify-center gap-1">
-                                                    {learningTips.map((_, index) => (
-                                                        <div
-                                                            key={index}
-                                                            className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                                                                index === currentTipIndex ? 'bg-primary' : 'bg-muted-foreground/30'
-                                                            }`}
-                                                        />
-                                                    ))}
-                                                </div>
-                                                <button
-                                                    onClick={() => setCurrentTipIndex(Math.min(learningTips.length - 1, currentTipIndex + 1))}
-                                                    disabled={currentTipIndex === learningTips.length - 1}
-                                                    className="px-2 py-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    Next
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
 
                             {/* Instructions removed per request */}
 
@@ -7007,7 +4975,7 @@ export default function ChatSidebar({
                             const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
                             handleSubmit(fakeEvent);
                         }}
-                        onFileUpload={minimal ? undefined : () => {
+                        onFileUpload={() => {
                             if (onFileUpload) {
                                 // Create a hidden file input and trigger it
                                 const fileInput = document.createElement('input');
@@ -7037,9 +5005,9 @@ export default function ChatSidebar({
                         }}
                         disabled={!isDataLoaded}
                         isProcessing={isProcessing}
-                        placeholder={minimal ? "Ask your Learn Assistant..." : (isDataLoaded ? "Ask about your data or use voice command..." : "Upload data first...")}
-                        selectedMode={minimal ? 'Simple' : (queryMode === 'simple' ? 'Simple' : 'Advanced')}
-                        onModeChange={minimal ? undefined : (mode) => {
+                        placeholder={isDataLoaded ? "Ask about your data or use voice command..." : "Upload data first..."}
+                        selectedMode={queryMode === 'simple' ? 'Simple' : 'Advanced'}
+                        onModeChange={(mode) => {
                             const modeMap: Record<string, 'simple' | 'complex'> = {
                                 'Simple': 'simple',
                                 'Advanced': 'complex',
@@ -7047,8 +5015,7 @@ export default function ChatSidebar({
                             };
                             setQueryMode(modeMap[mode] || 'simple');
                         }}
-                        minimal={minimal}
-                        additionalButtons={minimal ? undefined : (
+                        additionalButtons={(
                             <>
                                 {/* Voice Button */}
                                 {onStartVoiceRecognition && onStopVoiceRecognition && (
@@ -7115,7 +5082,6 @@ export default function ChatSidebar({
                 </div>
             )}
 
-            {/* Learning Tips Section moved above; removed bottom duplicate */}
 
             {/* Expanded Image Modal - Using React Portal */}
             {expandedImage && typeof document !== 'undefined' && createPortal(

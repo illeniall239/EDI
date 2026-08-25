@@ -2,7 +2,7 @@
  * Univer API Adapter
  *
  * Provides a unified API interface that wraps Univer's FacadeAPI
- * to maintain compatibility with existing Luckysheet-based AI commands
+ * so the AI command layer has one stable surface to call
  * and provide a consistent interface for spreadsheet operations.
  *
  * All operations use Univer's FacadeAPI directly (FWorkbook, FWorksheet, FRange).
@@ -78,33 +78,23 @@ export class UniverAdapter {
     this.refresh();
     try {
       if (!this.worksheet) {
-        console.log('[UniverAdapter] getAllData() - no worksheet');
         return [];
       }
-
-      // Debug: log available methods to understand what APIs are actually present
-      const methods = Object.keys(this.worksheet).filter(k => typeof this.worksheet[k] === 'function');
-      console.log('[UniverAdapter] getAllData() - worksheet has', methods.length, 'methods');
-      console.log('[UniverAdapter] getAllData() - sample methods:', methods.slice(0, 10).join(', '));
 
       // Use large fixed range since getRange().getValues() is known to work
       // We'll trim empty rows/columns afterwards to find actual data extent
       const MAX_ROWS = 2000;
       const MAX_COLS = 100;
 
-      console.log(`[UniverAdapter] getAllData() - fetching ${MAX_ROWS}x${MAX_COLS} range`);
       const range = this.worksheet.getRange(0, 0, MAX_ROWS, MAX_COLS);
 
       if (!range) {
-        console.log('[UniverAdapter] getAllData() - getRange returned null');
         return [];
       }
 
       const rawData = range.getValues();
-      console.log('[UniverAdapter] getAllData() - raw data:', rawData ? `${rawData.length} rows` : 'null');
 
       if (!rawData || rawData.length === 0) {
-        console.log('[UniverAdapter] getAllData() - no data returned');
         return [];
       }
 
@@ -119,7 +109,6 @@ export class UniverAdapter {
       }
 
       if (lastNonEmptyRow === -1) {
-        console.log('[UniverAdapter] getAllData() - all rows are empty');
         return [];
       }
 
@@ -137,14 +126,12 @@ export class UniverAdapter {
       }
 
       if (lastNonEmptyCol === -1) {
-        console.log('[UniverAdapter] getAllData() - all columns are empty');
         return [];
       }
 
       // Trim the data to actual extent
       const trimmedData = rawData.slice(0, lastNonEmptyRow + 1).map(row => row.slice(0, lastNonEmptyCol + 1));
 
-      console.log(`[UniverAdapter] getAllData() - trimmed to ${trimmedData.length} rows x ${trimmedData[0]?.length || 0} cols`);
 
       return trimmedData;
     } catch (error) {
@@ -216,15 +203,9 @@ export class UniverAdapter {
    */
   loadData(data: any[][], clearExisting: boolean = true): boolean {
     try {
-      console.log('[UniverAdapter] loadData called with:', {
-        rows: data.length,
-        cols: data[0]?.length || 0,
-        clearExisting
-      });
 
       this.refresh();
       
-      console.log('[UniverAdapter] Worksheet available:', !!this.worksheet);
       
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available!');
@@ -232,7 +213,6 @@ export class UniverAdapter {
       }
 
       if (clearExisting) {
-        console.log('[UniverAdapter] Clearing existing data...');
         this.worksheet.clear();
       }
 
@@ -241,10 +221,8 @@ export class UniverAdapter {
         return false;
       }
 
-      console.log('[UniverAdapter] Setting data...');
       // Set all data at once
       const range = this.worksheet.getRange(0, 0, data.length, data[0].length);
-      console.log('[UniverAdapter] Range obtained:', !!range);
       
       if (!range) {
         console.error('[UniverAdapter] Could not get range!');
@@ -252,7 +230,6 @@ export class UniverAdapter {
       }
 
       range.setValues(data);
-      console.log(`✅ [UniverAdapter] Successfully loaded ${data.length} rows x ${data[0].length} columns`);
       
       return true;
     } catch (error) {
@@ -365,8 +342,6 @@ export class UniverAdapter {
         return false;
       }
 
-      console.log(`[UniverAdapter] Inserting row at index ${rowIndex}`);
-      console.log(`[UniverAdapter] rowValues:`, rowValues);
 
       // Ensure rowValues is a valid array
       if (!Array.isArray(rowValues) || rowValues.length === 0) {
@@ -378,7 +353,6 @@ export class UniverAdapter {
       const maxRows = this.worksheet.getMaxRows();
       const maxCols = Math.max(this.worksheet.getMaxColumns(), rowValues.length);
 
-      console.log(`[UniverAdapter] Current dimensions: ${maxRows} rows x ${maxCols} cols`);
 
       // Build the new data array manually to avoid splice issues
       const newData: any[][] = [];
@@ -418,7 +392,6 @@ export class UniverAdapter {
         newData.push(row);
       }
 
-      console.log(`[UniverAdapter] Built new data array with ${newData.length} rows`);
 
       // Clear the worksheet
       if (maxRows > 0 && maxCols > 0) {
@@ -439,7 +412,6 @@ export class UniverAdapter {
         }
       }
 
-      console.log(`[UniverAdapter] Successfully inserted row at index ${rowIndex}`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error inserting row:', error);
@@ -459,7 +431,6 @@ export class UniverAdapter {
         return false;
       }
 
-      console.log(`[UniverAdapter] Inserting ${rowsData.length} rows at index ${startRowIndex}`);
 
       // Ensure rowsData is valid
       if (!Array.isArray(rowsData) || rowsData.length === 0) {
@@ -478,7 +449,6 @@ export class UniverAdapter {
         }
       }
 
-      console.log(`[UniverAdapter] Current dimensions: ${maxRows} rows x ${maxCols} cols`);
 
       // Build the new data array manually to avoid splice issues
       const newData: any[][] = [];
@@ -520,7 +490,6 @@ export class UniverAdapter {
         newData.push(row);
       }
 
-      console.log(`[UniverAdapter] Built new data array with ${newData.length} rows`);
 
       // Clear the worksheet
       if (maxRows > 0 && maxCols > 0) {
@@ -541,7 +510,6 @@ export class UniverAdapter {
         }
       }
 
-      console.log(`[UniverAdapter] Successfully inserted ${rowsData.length} rows at index ${startRowIndex}`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error inserting multiple rows:', error);
@@ -641,13 +609,10 @@ export class UniverAdapter {
 
       if (typeof this.worksheet.autoResizeColumns !== 'function') {
         console.error('[UniverAdapter] autoResizeColumns method not available on worksheet');
-        console.log('[UniverAdapter] Available methods:', Object.keys(this.worksheet).filter(k => typeof this.worksheet[k] === 'function'));
         return false;
       }
 
-      console.log(`[UniverAdapter] Calling autoResizeColumns(${startCol}, ${numCols})`);
       this.worksheet.autoResizeColumns(startCol, numCols);
-      console.log('[UniverAdapter] autoResizeColumns completed successfully');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error auto-resizing columns:', error);
@@ -700,9 +665,7 @@ export class UniverAdapter {
         return false;
       }
 
-      console.log(`[UniverAdapter] Calling autoResizeRows(${startRow}, ${numRows})`);
       this.worksheet.autoResizeRows(startRow, numRows);
-      console.log('[UniverAdapter] autoResizeRows completed successfully');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error auto-resizing rows:', error);
@@ -715,16 +678,13 @@ export class UniverAdapter {
    */
   autofitColumns(): boolean {
     try {
-      console.log('[UniverAdapter] autofitColumns() started');
       const dimensions = this.getSheetDimensions();
-      console.log('[UniverAdapter] Dimensions:', dimensions);
 
       if (dimensions.cols === 0) {
         console.error('[UniverAdapter] autofitColumns failed: cols = 0');
         return false;
       }
 
-      console.log(`[UniverAdapter] Calling autoResizeColumns(0, ${dimensions.cols})`);
       return this.autoResizeColumns(0, dimensions.cols);
     } catch (error) {
       console.error('[UniverAdapter] Error autofitting columns:', error);
@@ -737,16 +697,13 @@ export class UniverAdapter {
    */
   autofitRows(): boolean {
     try {
-      console.log('[UniverAdapter] autofitRows() started');
       const dimensions = this.getSheetDimensions();
-      console.log('[UniverAdapter] Dimensions:', dimensions);
 
       if (dimensions.rows === 0) {
         console.error('[UniverAdapter] autofitRows failed: rows = 0');
         return false;
       }
 
-      console.log(`[UniverAdapter] Calling autoResizeRows(0, ${dimensions.rows})`);
       return this.autoResizeRows(0, dimensions.rows);
     } catch (error) {
       console.error('[UniverAdapter] Error autofitting rows:', error);
@@ -791,7 +748,14 @@ export class UniverAdapter {
   sort(range: string, columnIndex: number, ascending: boolean = true): boolean {
     try {
       this.refresh();
-      this.worksheet?.sort(range, columnIndex, ascending);
+      // FRange.sort takes the column index relative to the range, so this holds
+      // only while callers pass a range starting at column A.
+      const target = this.worksheet?.getRange(range);
+      if (!target || typeof target.sort !== 'function') {
+        console.error('[UniverAdapter] Sort is unavailable - is @univerjs/sheets-sort/facade imported?');
+        return false;
+      }
+      target.sort({ column: columnIndex, ascending });
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error sorting:', error);
@@ -891,7 +855,6 @@ export class UniverAdapter {
         const row = activeRange.getRow?.() ?? 0;
         const col = activeRange.getColumn?.() ?? 0;
 
-        console.log('[UniverAdapter] Current selection:', { row, col });
         return { row, col };
       }
 
@@ -926,7 +889,6 @@ export class UniverAdapter {
         const numRows = activeRange.getNumRows?.() ?? 1;
         const numCols = activeRange.getNumColumns?.() ?? 1;
 
-        console.log('[UniverAdapter] Active range:', { startRow, startCol, numRows, numCols });
         return { startRow, startCol, numRows, numCols };
       }
 
@@ -952,7 +914,6 @@ export class UniverAdapter {
   mergeCells(startRow: number, startCol: number, numRows: number, numCols: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Merging cells: (${startRow}, ${startCol}) size ${numRows}x${numCols}`);
 
       const range = this.worksheet?.getRange(startRow, startCol, numRows, numCols);
 
@@ -962,7 +923,6 @@ export class UniverAdapter {
       }
 
       range.merge();
-      console.log('[UniverAdapter] ✅ Cells merged successfully');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error merging cells:', error);
@@ -981,7 +941,6 @@ export class UniverAdapter {
   unmergeCells(startRow: number, startCol: number, numRows: number, numCols: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Unmerging cells: (${startRow}, ${startCol}) size ${numRows}x${numCols}`);
 
       const range = this.worksheet?.getRange(startRow, startCol, numRows, numCols);
 
@@ -991,7 +950,6 @@ export class UniverAdapter {
       }
 
       range.breakApart();
-      console.log('[UniverAdapter] ✅ Cells unmerged successfully');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error unmerging cells:', error);
@@ -1013,7 +971,6 @@ export class UniverAdapter {
   insertCells(startRow: number, startCol: number, numRows: number, numCols: number, shiftDirection: 'right' | 'down' = 'down'): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Inserting cells: (${startRow}, ${startCol}) size ${numRows}x${numCols}, shift ${shiftDirection}`);
 
       const range = this.worksheet?.getRange(startRow, startCol, numRows, numCols);
 
@@ -1025,7 +982,6 @@ export class UniverAdapter {
       // Univer's insertCells expects a dimension parameter
       const dimension = shiftDirection === 'down' ? 0 : 1; // 0 = rows (shift down), 1 = cols (shift right)
       range.insertCells(dimension);
-      console.log('[UniverAdapter] ✅ Cells inserted successfully');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error inserting cells:', error);
@@ -1045,7 +1001,6 @@ export class UniverAdapter {
   deleteCells(startRow: number, startCol: number, numRows: number, numCols: number, shiftDirection: 'left' | 'up' = 'up'): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Deleting cells: (${startRow}, ${startCol}) size ${numRows}x${numCols}, shift ${shiftDirection}`);
 
       const range = this.worksheet?.getRange(startRow, startCol, numRows, numCols);
 
@@ -1057,7 +1012,6 @@ export class UniverAdapter {
       // Univer's deleteCells expects a dimension parameter
       const dimension = shiftDirection === 'up' ? 0 : 1; // 0 = rows (shift up), 1 = cols (shift left)
       range.deleteCells(dimension);
-      console.log('[UniverAdapter] ✅ Cells deleted successfully');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error deleting cells:', error);
@@ -1068,14 +1022,15 @@ export class UniverAdapter {
   // ==================== ENHANCED FILTER OPERATIONS ====================
 
   /**
-   * Create a filter on a range
-   * @param range Range in A1 notation (e.g., "A1:D10") or empty for auto-detect
+   * Create a filter over the sheet's used range.
+   *
+   * Univer decides the range itself, so there is nothing to pass; the argument
+   * this used to accept was accepted and ignored.
    * @returns Success boolean
    */
-  createFilter(range?: string): boolean {
+  createFilter(): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Creating filter on range: ${range || 'auto-detect'}`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available for creating filter');
@@ -1089,7 +1044,6 @@ export class UniverAdapter {
         return false;
       }
 
-      console.log('[UniverAdapter] ✅ Filter created successfully');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error creating filter:', error);
@@ -1111,7 +1065,6 @@ export class UniverAdapter {
       }
 
       const filter = this.worksheet.getFilter();
-      console.log('[UniverAdapter] Filter retrieved:', filter ? 'exists' : 'none');
       return filter;
     } catch (error) {
       console.error('[UniverAdapter] Error getting filter:', error);
@@ -1126,19 +1079,16 @@ export class UniverAdapter {
   clearFilter(): boolean {
     try {
       this.refresh();
-      console.log('[UniverAdapter] Clearing filter');
 
       const filter = this.getFilter();
 
       if (!filter) {
-        console.log('[UniverAdapter] No filter to clear');
         return true; // Not an error - just no filter exists
       }
 
       // Remove the filter using Univer's remove() method
       if (typeof filter.remove === 'function') {
         filter.remove();
-        console.log('[UniverAdapter] ✅ Filter cleared successfully');
         return true;
       } else {
         console.warn('[UniverAdapter] Filter remove method not available');
@@ -1160,7 +1110,6 @@ export class UniverAdapter {
     try {
       this.refresh();
       const colIndex = typeof column === 'string' ? this.columnLetterToIndex(column) : column;
-      console.log(`[UniverAdapter] Setting filter criteria for column ${column} (index ${colIndex}):`, values);
 
       const filter = this.getFilter();
 
@@ -1175,7 +1124,6 @@ export class UniverAdapter {
           colId: colIndex,
           filters: { filters: values }
         });
-        console.log('[UniverAdapter] ✅ Filter criteria applied successfully');
         return true;
       } else {
         console.error('[UniverAdapter] setColumnFilterCriteria method not available on filter object');
@@ -1196,18 +1144,15 @@ export class UniverAdapter {
     try {
       this.refresh();
       const colIndex = typeof column === 'string' ? this.columnLetterToIndex(column) : column;
-      console.log(`[UniverAdapter] Removing filter criteria for column ${column} (index ${colIndex})`);
 
       const filter = this.getFilter();
 
       if (!filter) {
-        console.log('[UniverAdapter] No filter exists');
         return true;
       }
 
       if (typeof filter.removeColumnFilterCriteria === 'function') {
         filter.removeColumnFilterCriteria(colIndex);
-        console.log('[UniverAdapter] ✅ Column filter criteria removed successfully');
         return true;
       } else {
         console.error('[UniverAdapter] removeColumnFilterCriteria method not available on filter object');
@@ -1226,18 +1171,15 @@ export class UniverAdapter {
   removeAllFilterCriteria(): boolean {
     try {
       this.refresh();
-      console.log('[UniverAdapter] Removing all filter criteria');
 
       const filter = this.getFilter();
 
       if (!filter) {
-        console.log('[UniverAdapter] No filter exists');
         return true;
       }
 
       if (typeof filter.removeFilterCriteria === 'function') {
         filter.removeFilterCriteria();
-        console.log('[UniverAdapter] ✅ All filter criteria removed successfully');
         return true;
       } else {
         console.error('[UniverAdapter] removeFilterCriteria method not available on filter object');
@@ -1260,13 +1202,11 @@ export class UniverAdapter {
       const filter = this.getFilter();
 
       if (!filter) {
-        console.log('[UniverAdapter] No filter exists');
         return [];
       }
 
       if (typeof filter.getFilteredOutRows === 'function') {
         const filteredRows = filter.getFilteredOutRows();
-        console.log('[UniverAdapter] Filtered out rows:', filteredRows);
         return filteredRows || [];
       } else {
         console.error('[UniverAdapter] getFilteredOutRows method not available on filter object');
@@ -1308,7 +1248,6 @@ export class UniverAdapter {
       }
 
       const builder = this.worksheet.newConditionalFormattingRule();
-      console.log('[UniverAdapter] Created CF rule builder');
       return builder;
     } catch (error) {
       console.error('[UniverAdapter] Error creating CF rule builder:', error);
@@ -1336,7 +1275,6 @@ export class UniverAdapter {
       }
 
       this.worksheet.addConditionalFormattingRule(rule);
-      console.log('[UniverAdapter] ✅ CF rule added successfully');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error adding CF rule:', error);
@@ -1358,7 +1296,6 @@ export class UniverAdapter {
       }
 
       const rules = this.worksheet.getConditionalFormattingRules();
-      console.log(`[UniverAdapter] Retrieved ${rules?.length || 0} CF rules`);
       return rules || [];
     } catch (error) {
       console.error('[UniverAdapter] Error getting CF rules:', error);
@@ -1381,7 +1318,6 @@ export class UniverAdapter {
       }
 
       this.worksheet.deleteConditionalFormattingRule(cfId);
-      console.log('[UniverAdapter] ✅ CF rule deleted:', cfId);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error deleting CF rule:', error);
@@ -1403,7 +1339,6 @@ export class UniverAdapter {
       }
 
       this.worksheet.clearConditionalFormatRules();
-      console.log('[UniverAdapter] ✅ All CF rules cleared');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error clearing CF rules:', error);
@@ -1420,7 +1355,6 @@ export class UniverAdapter {
    */
   createDuplicateValuesRule(range?: string, bgColor: string = '#FFFF00', fontColor?: string): boolean {
     try {
-      console.log('[UniverAdapter] Creating duplicate values rule');
 
       const builder = this.newConditionalFormattingRule();
       if (!builder) return false;
@@ -1459,7 +1393,6 @@ export class UniverAdapter {
    */
   createGreaterThanRule(range: string, value: number, bgColor: string = '#FF0000', fontColor?: string): boolean {
     try {
-      console.log(`[UniverAdapter] Creating greater than rule: value > ${value}`);
 
       const builder = this.newConditionalFormattingRule();
       if (!builder) return false;
@@ -1496,7 +1429,6 @@ export class UniverAdapter {
    */
   createLessThanRule(range: string, value: number, bgColor: string = '#FF0000', fontColor?: string): boolean {
     try {
-      console.log(`[UniverAdapter] Creating less than rule: value < ${value}`);
 
       const builder = this.newConditionalFormattingRule();
       if (!builder) return false;
@@ -1533,7 +1465,6 @@ export class UniverAdapter {
    */
   createEqualsRule(range: string, value: number, bgColor: string = '#00FF00', fontColor?: string): boolean {
     try {
-      console.log(`[UniverAdapter] Creating equals rule: value = ${value}`);
 
       const builder = this.newConditionalFormattingRule();
       if (!builder) return false;
@@ -1570,7 +1501,6 @@ export class UniverAdapter {
    */
   createTextContainsRule(range: string, text: string, bgColor: string = '#FFFF00', fontColor?: string): boolean {
     try {
-      console.log(`[UniverAdapter] Creating text contains rule: contains "${text}"`);
 
       const builder = this.newConditionalFormattingRule();
       if (!builder) return false;
@@ -1606,7 +1536,6 @@ export class UniverAdapter {
    */
   createUniqueValuesRule(range?: string, bgColor: string = '#90EE90', fontColor?: string): boolean {
     try {
-      console.log('[UniverAdapter] Creating unique values rule');
 
       const builder = this.newConditionalFormattingRule();
       if (!builder) return false;
@@ -1647,7 +1576,6 @@ export class UniverAdapter {
   highlightCells(startRow: number, startCol: number, numRows: number, numCols: number, color: string): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Highlighting cells: (${startRow}, ${startCol}) size ${numRows}x${numCols} with color ${color}`);
 
       const range = this.worksheet?.getRange(startRow, startCol, numRows, numCols);
 
@@ -1664,7 +1592,6 @@ export class UniverAdapter {
         range.setBackgroundColor(color);
       }
 
-      console.log('[UniverAdapter] ✅ Cells highlighted successfully');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error highlighting cells:', error);
@@ -1684,7 +1611,6 @@ export class UniverAdapter {
   splitTextToColumns(columnIndex: number, delimiter: string, numRows?: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Splitting text to columns: column ${columnIndex}, delimiter '${delimiter}'`);
 
       const dimensions = this.getSheetDimensions();
       const rowCount = numRows || dimensions.rows;
@@ -1699,7 +1625,6 @@ export class UniverAdapter {
       // Univer's FRange has splitTextToColumns method
       if (typeof range.splitTextToColumns === 'function') {
         range.splitTextToColumns(delimiter);
-        console.log('[UniverAdapter] ✅ Text split to columns successfully');
         return true;
       } else {
         console.error('[UniverAdapter] splitTextToColumns method not available on range');
@@ -1722,7 +1647,6 @@ export class UniverAdapter {
   insertBlankRows(rowIndex: number, count: number = 1): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Inserting ${count} blank row(s) at index ${rowIndex}`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -1732,7 +1656,6 @@ export class UniverAdapter {
       // Use FacadeAPI: worksheet.insertRows(rowPosition, howMany)
       this.worksheet.insertRows(rowIndex, count);
 
-      console.log(`[UniverAdapter] ✅ Successfully inserted ${count} blank row(s)`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error inserting blank rows:', error);
@@ -1749,7 +1672,6 @@ export class UniverAdapter {
   deleteRow(rowIndex: number, count: number = 1): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Deleting ${count} row(s) starting at index ${rowIndex}`);
 
       if (!this.worksheet || !this.workbook || !this.univerInstance) {
         console.error('[UniverAdapter] Missing required objects');
@@ -1780,7 +1702,6 @@ export class UniverAdapter {
       });
 
       if (result) {
-        console.log(`[UniverAdapter] ✅ Successfully deleted ${count} row(s)`);
       } else {
         console.warn(`[UniverAdapter] ⚠️ Command returned false for row deletion`);
       }
@@ -1817,27 +1738,20 @@ export class UniverAdapter {
         return -1;
       }
 
-      console.log(`[UniverAdapter] Finding "${findText}" and replacing with "${replaceText}"`);
-      console.log('[UniverAdapter] Step 1: About to call createTextFinderAsync');
 
       // Step 1: Create text finder
       const textFinder = await this.univerAPI.createTextFinderAsync(findText);
 
-      console.log('[UniverAdapter] Step 2: createTextFinderAsync returned:', textFinder);
-      console.log('[UniverAdapter] Step 2a: textFinder is null?', textFinder === null);
-      console.log('[UniverAdapter] Step 2b: textFinder is undefined?', textFinder === undefined);
 
       if (!textFinder) {
         console.warn('[UniverAdapter] createTextFinderAsync returned null/undefined');
         return 0;
       }
 
-      console.log('[UniverAdapter] Step 3: Skipping options configuration (async methods hang)');
       // NOTE: The matchCaseAsync(), matchEntireCellAsync(), and matchFormulaTextAsync()
       // methods appear to return promises that never resolve, causing the operation to hang.
       // For now, we'll skip configuration and use default settings.
 
-      console.log('[UniverAdapter] Step 4: About to replace...');
 
       // If column filter is specified, we need to:
       // 1. Find all matches
@@ -1845,7 +1759,6 @@ export class UniverAdapter {
       // 3. Replace only filtered matches
 
       if (options?.columnFilter !== undefined) {
-        console.log('[UniverAdapter] Column filter detected:', options.columnFilter);
 
         // Step 4a: Resolve column index
         let targetColumnIndex: number;
@@ -1855,7 +1768,6 @@ export class UniverAdapter {
           if (options.columnFilter.length === 1 && /[A-Z]/i.test(options.columnFilter)) {
             // Column letter: A=0, B=1, etc.
             targetColumnIndex = options.columnFilter.toUpperCase().charCodeAt(0) - 65;
-            console.log('[UniverAdapter] Resolved column letter', options.columnFilter, 'to index', targetColumnIndex);
           } else {
             // Column name: need to find which column has this header
             targetColumnIndex = await this.findColumnByName(options.columnFilter);
@@ -1863,7 +1775,6 @@ export class UniverAdapter {
               console.warn('[UniverAdapter] Column name not found:', options.columnFilter);
               return 0;
             }
-            console.log('[UniverAdapter] Resolved column name', options.columnFilter, 'to index', targetColumnIndex);
           }
         } else {
           // Already a number
@@ -1872,7 +1783,6 @@ export class UniverAdapter {
 
         // Step 4b: Find all matches
         const matches = textFinder.findAll();
-        console.log('[UniverAdapter] Found', matches.length, 'total matches');
 
         // Step 4c: Filter matches by column
         const columnMatches = matches.filter(range => {
@@ -1880,7 +1790,6 @@ export class UniverAdapter {
           return col === targetColumnIndex;
         });
 
-        console.log('[UniverAdapter] Filtered to', columnMatches.length, 'matches in column', targetColumnIndex);
 
         // Step 4d: Replace filtered matches
         let count = 0;
@@ -1893,26 +1802,18 @@ export class UniverAdapter {
           }
         }
 
-        console.log(`[UniverAdapter] ✅ Replaced ${count} cell(s) in column ${targetColumnIndex}`);
         return count;
 
       } else {
         // No column filter - replace all matches (existing code)
-        console.log('[UniverAdapter] 🔧 Attempting replace operation...');
-        console.log('[UniverAdapter] textFinder type:', typeof textFinder);
-        console.log('[UniverAdapter] textFinder methods:', Object.keys(textFinder).filter(k => typeof textFinder[k] === 'function'));
 
         // Try the async method first
         if (typeof textFinder.replaceAllWithAsync === 'function') {
-          console.log('[UniverAdapter] Using replaceAllWithAsync method');
           const count = await textFinder.replaceAllWithAsync(replaceText);
-          console.log(`[UniverAdapter] ✅ Replaced ${count} cell(s)`);
           return count;
         } else {
           // Fallback: use synchronous findAll + setValue approach
-          console.log('[UniverAdapter] replaceAllWithAsync not available, using findAll + setValue fallback');
           const matches = textFinder.findAll();
-          console.log(`[UniverAdapter] Found ${matches.length} matches to replace`);
 
           let count = 0;
           for (const range of matches) {
@@ -1924,7 +1825,6 @@ export class UniverAdapter {
             }
           }
 
-          console.log(`[UniverAdapter] ✅ Replaced ${count} cell(s) using fallback`);
           return count;
         }
       }
@@ -1983,7 +1883,6 @@ export class UniverAdapter {
       // Convert FRange[] to A1 notation strings
       const addresses = matches.map(range => range.getA1Notation());
 
-      console.log(`[UniverAdapter] Found ${addresses.length} match(es): ${addresses.join(', ')}`);
       return addresses;
 
     } catch (error) {
@@ -2014,7 +1913,6 @@ export class UniverAdapter {
       const lowerName = columnName.toLowerCase();
       for (let i = 0; i < headers.length; i++) {
         if (headers[i] && String(headers[i]).toLowerCase() === lowerName) {
-          console.log(`[UniverAdapter] Found column "${columnName}" at index ${i}`);
           return i;
         }
       }
@@ -2036,7 +1934,6 @@ export class UniverAdapter {
   hideRows(startRow: number, endRow: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Hiding rows ${startRow} to ${endRow}`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2049,7 +1946,6 @@ export class UniverAdapter {
       // Use FacadeAPI: worksheet.hideRows(rowPosition, howMany)
       this.worksheet.hideRows(startRow, count);
 
-      console.log(`[UniverAdapter] ✅ Successfully hid rows ${startRow}-${endRow}`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error hiding rows:', error);
@@ -2066,7 +1962,6 @@ export class UniverAdapter {
   showRows(startRow: number, endRow: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Showing rows ${startRow} to ${endRow}`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2079,7 +1974,6 @@ export class UniverAdapter {
       // Use FacadeAPI: worksheet.showRows(rowPosition, howMany)
       this.worksheet.showRows(startRow, count);
 
-      console.log(`[UniverAdapter] ✅ Successfully showed rows ${startRow}-${endRow}`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error showing rows:', error);
@@ -2098,7 +1992,6 @@ export class UniverAdapter {
   insertColumn(columnIndex: number, count: number = 1): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Inserting ${count} column(s) at index ${columnIndex}`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2108,7 +2001,6 @@ export class UniverAdapter {
       // Use FacadeAPI: worksheet.insertColumns(columnPosition, howMany)
       this.worksheet.insertColumns(columnIndex, count);
 
-      console.log(`[UniverAdapter] ✅ Successfully inserted ${count} column(s)`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error inserting columns:', error);
@@ -2125,7 +2017,6 @@ export class UniverAdapter {
   deleteColumn(columnIndex: number, count: number = 1): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Deleting ${count} column(s) at index ${columnIndex}`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2135,7 +2026,6 @@ export class UniverAdapter {
       // Use FacadeAPI: worksheet.deleteColumns(columnPosition, howMany)
       this.worksheet.deleteColumns(columnIndex, count);
 
-      console.log(`[UniverAdapter] ✅ Successfully deleted ${count} column(s)`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error deleting columns:', error);
@@ -2152,7 +2042,6 @@ export class UniverAdapter {
   hideColumns(startColumn: number, endColumn: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Hiding columns ${startColumn} to ${endColumn}`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2165,7 +2054,6 @@ export class UniverAdapter {
       // Use FacadeAPI: worksheet.hideColumns(columnPosition, howMany)
       this.worksheet.hideColumns(startColumn, count);
 
-      console.log(`[UniverAdapter] ✅ Successfully hid columns ${startColumn}-${endColumn}`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error hiding columns:', error);
@@ -2182,7 +2070,6 @@ export class UniverAdapter {
   showColumns(startColumn: number, endColumn: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Showing columns ${startColumn} to ${endColumn}`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2195,7 +2082,6 @@ export class UniverAdapter {
       // Use FacadeAPI: worksheet.showColumns(columnPosition, howMany)
       this.worksheet.showColumns(startColumn, count);
 
-      console.log(`[UniverAdapter] ✅ Successfully showed columns ${startColumn}-${endColumn}`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error showing columns:', error);
@@ -2213,7 +2099,6 @@ export class UniverAdapter {
   freezeRows(rowCount: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Freezing first ${rowCount} row(s)`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2223,7 +2108,6 @@ export class UniverAdapter {
       // Use FacadeAPI: worksheet.setFrozenRows(rowCount)
       this.worksheet.setFrozenRows(rowCount);
 
-      console.log(`[UniverAdapter] ✅ Successfully froze ${rowCount} row(s)`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error freezing rows:', error);
@@ -2239,7 +2123,6 @@ export class UniverAdapter {
   freezeColumns(columnCount: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Freezing first ${columnCount} column(s)`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2249,7 +2132,6 @@ export class UniverAdapter {
       // Use FacadeAPI: worksheet.setFrozenColumns(colCount)
       this.worksheet.setFrozenColumns(columnCount);
 
-      console.log(`[UniverAdapter] ✅ Successfully froze ${columnCount} column(s)`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error freezing columns:', error);
@@ -2266,7 +2148,6 @@ export class UniverAdapter {
   freezePanes(rowCount: number, columnCount: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Freezing ${rowCount} row(s) and ${columnCount} column(s)`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2281,7 +2162,6 @@ export class UniverAdapter {
         startColumn: columnCount
       });
 
-      console.log(`[UniverAdapter] ✅ Successfully froze panes`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error freezing panes:', error);
@@ -2296,7 +2176,6 @@ export class UniverAdapter {
   unfreeze(): boolean {
     try {
       this.refresh();
-      console.log('[UniverAdapter] Unfreezing all panes');
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2306,7 +2185,6 @@ export class UniverAdapter {
       // Use FacadeAPI: worksheet.cancelFreeze()
       this.worksheet.cancelFreeze();
 
-      console.log('[UniverAdapter] ✅ Successfully unfroze all panes');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error unfreezing panes:', error);
@@ -2355,7 +2233,6 @@ export class UniverAdapter {
       const gridRows = Math.max(DEFAULT_ROW_COUNT, dataRows);
       const gridCols = Math.max(DEFAULT_COL_COUNT, dataCols);
 
-      console.log(`[UniverAdapter] Adding new sheet: ${sheetName} with ${gridRows}x${gridCols} grid (data: ${dataRows}x${dataCols})`);
 
       // Use Univer's correct FacadeAPI: fWorkbook.create(name, rows, cols)
       const newSheet = fWorkbook.create(sheetName, gridRows, gridCols);
@@ -2365,7 +2242,6 @@ export class UniverAdapter {
         return false;
       }
 
-      console.log('[UniverAdapter] Sheet created, setting data...');
 
       // Set only the actual data (not the entire grid)
       const range = newSheet.getRange(0, 0, dataRows, dataCols);
@@ -2377,12 +2253,10 @@ export class UniverAdapter {
 
       range.setValues(data);
 
-      console.log('[UniverAdapter] Data set, activating sheet...');
 
       // Activate the new sheet using FSheet.activate()
       newSheet.activate();
 
-      console.log(`[UniverAdapter] ✅ Successfully added and activated sheet: ${sheetName}`);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] ❌ Error adding sheet:', error);
@@ -2392,7 +2266,6 @@ export class UniverAdapter {
 
   /**
    * Get full workbook snapshot for persistence
-   * This is equivalent to Luckysheet's getAllSheets()
    * @returns Promise<IWorkbookData> - Full workbook state
    */
   async getWorkbookSnapshot(): Promise<any> {
@@ -2409,9 +2282,7 @@ export class UniverAdapter {
         return null;
       }
 
-      console.log('[UniverAdapter] Getting workbook snapshot...');
       const snapshot = await this.workbook.save();
-      console.log('[UniverAdapter] Workbook snapshot retrieved successfully');
       return snapshot;
     } catch (error) {
       console.error('[UniverAdapter] Error getting workbook snapshot:', error);
@@ -2432,7 +2303,6 @@ export class UniverAdapter {
   setHyperlink(row: number, col: number, url: string, label?: string): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Setting hyperlink at (${row}, ${col}): ${url}`);
 
       if (!this.workbook || !this.worksheet) {
         console.error('[UniverAdapter] No workbook or worksheet available');
@@ -2471,7 +2341,6 @@ export class UniverAdapter {
       });
 
       if (result) {
-        console.log('[UniverAdapter] ✅ Hyperlink set successfully');
         return true;
       } else {
         console.error('[UniverAdapter] Failed to execute AddHyperLinkCommand');
@@ -2528,7 +2397,6 @@ export class UniverAdapter {
   removeHyperlink(row: number, col: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Removing hyperlink from (${row}, ${col})`);
 
       if (!this.workbook || !this.worksheet) {
         console.error('[UniverAdapter] No workbook or worksheet available');
@@ -2565,7 +2433,6 @@ export class UniverAdapter {
       });
 
       if (result) {
-        console.log('[UniverAdapter] ✅ Hyperlink removed');
         return true;
       } else {
         console.error('[UniverAdapter] Failed to execute CancelHyperLinkCommand');
@@ -2587,7 +2454,6 @@ export class UniverAdapter {
   setHyperlinkByRange(range: string, url: string, label?: string): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Setting hyperlink on range ${range}: ${url}`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2601,7 +2467,6 @@ export class UniverAdapter {
       }
 
       rangeObj.setHyperlink(url, label || url);
-      console.log('[UniverAdapter] ✅ Hyperlink set on range');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error setting hyperlink on range:', error);
@@ -2649,9 +2514,6 @@ export class UniverAdapter {
   ): boolean {
     try {
       this.refresh();
-      console.log(
-        `[UniverAdapter] Setting data validation on (${startRow},${startCol}) [${numRows}x${numCols}]`
-      );
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2665,7 +2527,6 @@ export class UniverAdapter {
       }
 
       range.setDataValidation(rule);
-      console.log('[UniverAdapter] ✅ Data validation set');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error setting data validation:', error);
@@ -2709,9 +2570,6 @@ export class UniverAdapter {
   ): boolean {
     try {
       this.refresh();
-      console.log(
-        `[UniverAdapter] Removing data validation from (${startRow},${startCol}) [${numRows}x${numCols}]`
-      );
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2725,7 +2583,6 @@ export class UniverAdapter {
       }
 
       range.removeDataValidation();
-      console.log('[UniverAdapter] ✅ Data validation removed');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error removing data validation:', error);
@@ -2829,7 +2686,6 @@ export class UniverAdapter {
   addNote(row: number, col: number, text: string): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Adding note to (${row}, ${col}): "${text}"`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2843,7 +2699,6 @@ export class UniverAdapter {
       }
 
       range.setNote(text);
-      console.log('[UniverAdapter] ✅ Note added');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error adding note:', error);
@@ -2882,7 +2737,6 @@ export class UniverAdapter {
   removeNote(row: number, col: number): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Removing note from (${row}, ${col})`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2896,7 +2750,6 @@ export class UniverAdapter {
       }
 
       range.clearNote();
-      console.log('[UniverAdapter] ✅ Note removed');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error removing note:', error);
@@ -2913,7 +2766,6 @@ export class UniverAdapter {
   addNoteByRange(range: string, text: string): boolean {
     try {
       this.refresh();
-      console.log(`[UniverAdapter] Adding note to range ${range}`);
 
       if (!this.worksheet) {
         console.error('[UniverAdapter] No worksheet available');
@@ -2927,7 +2779,6 @@ export class UniverAdapter {
       }
 
       rangeObj.setNote(text);
-      console.log('[UniverAdapter] ✅ Note added to range');
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error adding note to range:', error);
@@ -3074,12 +2925,10 @@ export class UniverAdapter {
       const sheetName = this.worksheet?.getName() || 'Sheet1';
       const ref = `${sheetName}!$${rangeA1.replace(':', ':$')}`;
 
-      console.log(`[UniverAdapter] Creating named range: ${name} = ${ref}`);
 
       // Create using simple method
       this.workbook?.insertDefinedName(name, ref);
 
-      console.log(`[UniverAdapter] ✅ Named range "${name}" created`);
       return true;
 
     } catch (error) {
@@ -3104,10 +2953,8 @@ export class UniverAdapter {
         return false;
       }
 
-      console.log(`[UniverAdapter] Deleting named range: ${name}`);
       this.workbook?.deleteDefinedName(name);
 
-      console.log(`[UniverAdapter] ✅ Named range "${name}" deleted`);
       return true;
 
     } catch (error) {
@@ -3147,7 +2994,6 @@ export class UniverAdapter {
         });
       }
 
-      console.log(`[UniverAdapter] Found ${results.length} named range(s)`);
       return results;
 
     } catch (error) {
@@ -3186,10 +3032,8 @@ export class UniverAdapter {
         return false;
       }
 
-      console.log(`[UniverAdapter] Renaming: ${oldName} → ${newName}`);
       existing.setName(newName);
 
-      console.log(`[UniverAdapter] ✅ Named range renamed`);
       return true;
 
     } catch (error) {
@@ -3225,10 +3069,8 @@ export class UniverAdapter {
       const sheetName = this.worksheet?.getName() || 'Sheet1';
       const ref = `${sheetName}!$${newRangeA1.replace(':', ':$')}`;
 
-      console.log(`[UniverAdapter] Updating ${name} to ${ref}`);
       existing.setRef(ref);
 
-      console.log(`[UniverAdapter] ✅ Named range updated`);
       return true;
 
     } catch (error) {

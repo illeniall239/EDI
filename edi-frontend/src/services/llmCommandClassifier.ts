@@ -1,9 +1,11 @@
 /**
  * LLM Command Classification Service
- * 
- * Uses an LLM to intelligently classify user commands and extract parameters
- * with regex patterns as fallback for simple cases.
+ *
+ * Classifies user commands through the backend's model, with regex patterns as
+ * a fallback for simple cases and whenever the model is unavailable.
  */
+
+import { API_ENDPOINTS } from '@/config';
 
 export interface CommandClassification {
   intent: 'conditional_format' | 'data_modification' | 'find_replace' | 'filter' | 'sort' | 'column_operation' | 'row_operation' | 'cell_operation' | 'range_operation' | 'freeze_operation' | 'table_operation' | 'hyperlink_operation' | 'data_validation' | 'comment_operation' | 'image_operation' | 'named_range_operation' | 'intelligent_analysis' | 'smart_format' | 'data_entry' | 'general_query' | 'compound_operation' | 'unknown';
@@ -34,12 +36,10 @@ export class LLMCommandClassifier {
    * Main classification method - tries LLM first, falls back to patterns
    */
   async classifyCommand(userInput: string): Promise<CommandClassification> {
-    console.log('🧠 LLM Classifier: Processing command:', userInput);
 
     // Check cache first
     const cacheKey = userInput.toLowerCase().trim();
     if (this.cache.has(cacheKey)) {
-      console.log('⚡ Cache hit for command classification');
       return this.cache.get(cacheKey)!;
     }
 
@@ -55,11 +55,9 @@ export class LLMCommandClassifier {
         const idx1 = col1.charCodeAt(0) - 65;
         const idx2 = col2.charCodeAt(0) - 65;
 
-        console.log(`🔍 Multi-column pattern matched: ${col1} and ${col2} (indices: ${idx1}, ${idx2})`);
 
         // Check if consecutive (e.g., D and E where E = D + 1)
         if (idx2 === idx1 + 1) {
-          console.log(`✅ Consecutive columns detected - returning count=2`);
           const result = {
             intent: 'column_operation' as const,
             action: 'delete_column',
@@ -72,7 +70,6 @@ export class LLMCommandClassifier {
           return result;
         } else {
           // Non-consecutive columns (e.g., A and C)
-          console.log(`✅ Non-consecutive columns detected - using delete_columns_multiple`);
           const result = {
             intent: 'column_operation' as const,
             action: 'delete_columns_multiple',
@@ -97,7 +94,6 @@ export class LLMCommandClassifier {
         const columnsStr = match[1];
         const columns = columnsStr.split(/\s*,\s*|\s+and\s+/).map(c => c.trim().toUpperCase()).filter(c => c.length > 0);
 
-        console.log(`✅ Comma-separated columns detected:`, columns);
         const result = {
           intent: 'column_operation' as const,
           action: 'delete_columns_multiple',
@@ -308,25 +304,21 @@ export class LLMCommandClassifier {
       
       // If high confidence, use LLM result
       if (llmResult.confidence >= 0.8) {
-        console.log('✅ High confidence LLM classification:', llmResult.confidence);
         this.cache.set(cacheKey, llmResult);
         return llmResult;
       }
 
-      console.log('⚠️ Low confidence LLM result, trying regex fallback...');
       
       // Fall back to regex patterns for common cases
       const regexResult = this.classifyWithRegex(userInput);
       
       // If regex has higher confidence, use it
       if (regexResult.confidence > llmResult.confidence) {
-        console.log('🔧 Regex fallback provided better result');
         this.cache.set(cacheKey, regexResult);
         return regexResult;
       }
 
       // Use LLM result even if confidence is lower
-      console.log('🧠 Using LLM result despite lower confidence');
       this.cache.set(cacheKey, llmResult);
       return llmResult;
 
@@ -347,70 +339,33 @@ export class LLMCommandClassifier {
     // ⚡ OPTIMIZATION: Skip Groq for simple table patterns (faster, no timeout)
     const simpleTablePattern = /\b(create|make|add|insert)\s+(?:a\s+)?table\b/i;
     if (simpleTablePattern.test(userInput)) {
-      console.log('⚡ Simple table pattern detected, using regex (skipping Groq API)');
       return this.classifyWithRegex(userInput);
     }
 
-    // 1) Try Groq Chat Completions first (client-side) if API key is available
+    // Ask the backend to classify. This used to call Groq straight from the
+    // browser with a key from NEXT_PUBLIC_GROQ_API_KEY -- which Next inlines
+    // into the bundle, so every visitor could read it and spend it. The
+    // backend uses whichever model the deployment configured, and meters the
+    // call like any other.
     try {
-      const groqKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
-      if (groqKey) {
-        console.log('🧠 Using Groq for classification (moonshotai/kimi-k2-instruct)...');
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6000);
-        const groqResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${groqKey}`
-          },
-          body: JSON.stringify({
-            model: 'moonshotai/kimi-k2-instruct',
-            messages: [
-              { role: 'system', content: 'You are a spreadsheet command classifier. Return ONLY JSON matching the schema.' },
-              { role: 'user', content: prompt }
-            ],
-            temperature: 0.2,
-            max_tokens: 512
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
-        if (!groqResp.ok) {
-          console.warn('⚠️ Groq classify HTTP error:', groqResp.status, groqResp.statusText);
-          throw new Error(`HTTP ${groqResp.status}`);
-        }
-        const groqJson = await groqResp.json();
-        const content: string = groqJson?.choices?.[0]?.message?.content || '';
-        let data: Record<string, unknown> | null = null;
-        try {
-          data = JSON.parse(content);
-        } catch {
-          const m = content.match(/\{[\s\S]*\}/);
-          if (m) data = JSON.parse(m[0]);
-        }
-        if (!data) throw new Error('Invalid Groq response format');
-        const targetData = (data.target ?? {}) as Partial<CommandClassification['target']>;
-        const confidenceVal = Number(data.confidence ?? 0.5);
-        const classification: CommandClassification = {
-          intent: (data.intent as CommandClassification['intent']) || 'unknown',
-          action: (data.action as CommandClassification['action']) || 'unknown',
-          target: {
-            type: (targetData.type as CommandClassification['target']['type']) || 'all_data',
-            identifier: String(targetData.identifier ?? '*')
-          },
-          parameters: (data.parameters as Record<string, unknown>) || {},
-          confidence: Math.min(
-            Math.max(Number.isFinite(confidenceVal) ? confidenceVal : 0.5, 0),
-            1
-          ),
-          reasoning: (data.reasoning as string) || 'Groq classification'
-        };
-        console.log('🧠 Groq classification result:', classification);
-        return classification;
-      }
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(API_ENDPOINTS.classifyCommand, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const body = await response.json();
+      if (!body?.classification) throw new Error('No classification returned');
+
+      return body.classification as CommandClassification;
     } catch (e) {
-      console.warn('⚠️ Groq classification failed, falling back to local simulation...', e);
+      console.warn('⚠️ Classification failed, falling back to local simulation...', e);
     }
 
     // 2) Simulation fallback only (no backend fallback)
@@ -1222,7 +1177,6 @@ Return ONLY JSON for the current input.`;
         reasoning: (parsed.reasoning as string) || 'LLM classification'
       };
 
-      console.log('🧠 LLM Classification result:', classification);
       return classification;
 
     } catch (error) {
@@ -1266,7 +1220,6 @@ Return ONLY JSON for the current input.`;
         const operations = parts.filter(p => !['and', 'then', 'also', 'and then', 'and also'].includes(p.trim().toLowerCase()));
 
         if (operations.length >= 2) {
-          console.log('🎭 Detected compound operation with parts:', operations);
           return {
             intent: 'compound_operation',
             action: 'execute_multiple',
@@ -1528,7 +1481,6 @@ Return ONLY JSON for the current input.`;
       const match = userInput.match(patternObj.pattern);
 
       if (match) {
-        console.log('🔧 Regex pattern matched:', patternObj.pattern);
         
         // Extract dynamic values from regex groups
         const result = { ...patternObj };
@@ -1610,7 +1562,6 @@ Return ONLY JSON for the current input.`;
     }
 
     // No pattern matched - return low confidence unknown
-    console.log('❌ No regex patterns matched');
     return {
       intent: 'unknown',
       action: 'unknown',

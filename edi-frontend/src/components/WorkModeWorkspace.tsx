@@ -1,12 +1,24 @@
 'use client';
 
 import React, { useState } from 'react';
-import SpreadsheetWrapper from '@/components/SpreadsheetWrapper';
+import dynamic from 'next/dynamic';
 import SpreadsheetNavbar from '@/components/SpreadsheetNavbar';
-import SyntheticDatasetDialog, { SyntheticDatasetSpecs } from '@/components/SyntheticDatasetDialog';
 import ColumnExtractionDialog from '@/components/ColumnExtractionDialog';
 import { Workspace } from '@/types';
-import { API_ENDPOINTS, API_BASE_URL } from '@/config';
+import { API_BASE_URL } from '@/config';
+
+// Univer touches window on the way up, so it cannot be server-rendered.
+const UniversalSpreadsheet = dynamic(() => import('@/components/UniversalSpreadsheet'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full w-full flex items-center justify-center bg-background">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-lg text-foreground font-medium">Loading...</p>
+      </div>
+    </div>
+  ),
+});
 
 interface WorkModeWorkspaceProps {
   workspace: Workspace;
@@ -25,7 +37,6 @@ interface WorkModeWorkspaceProps {
   onSpreadsheetCommand: (command: string) => Promise<any>;
   onDataUpdate: (data: any[]) => void;
   onFileUploadFromSpreadsheet: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  setShowSyntheticDatasetDialog: (show: boolean) => void;
   setShowColumnExtraction: (show: boolean) => void;
   currentFilename?: string;
   initialSheets?: any[];
@@ -49,7 +60,6 @@ export default function WorkModeWorkspace({
   onSpreadsheetCommand,
   onDataUpdate,
   onFileUploadFromSpreadsheet,
-  setShowSyntheticDatasetDialog,
   setShowColumnExtraction,
   currentFilename,
   initialSheets,
@@ -57,7 +67,6 @@ export default function WorkModeWorkspace({
 }: WorkModeWorkspaceProps) {
 
   // Local state for dialogs
-  const [showSyntheticDialog, setShowSyntheticDialog] = useState(false);
   const [showColumnDialog, setShowColumnDialog] = useState(false);
 
   void _onExtractColumns;
@@ -69,57 +78,13 @@ export default function WorkModeWorkspace({
   }, []);
 
   const handleShowFormulaAssistant = () => {
-    console.log('📝 Formula Assistant clicked');
     // Dispatch event for UniversalSpreadsheet to handle
     window.dispatchEvent(new Event('openFormulaAssistant'));
-  };
-
-  // Handle synthetic dataset generation
-  const handleSyntheticDatasetGeneration = async (specs: SyntheticDatasetSpecs) => {
-    try {
-      console.log('🧬 Generating synthetic dataset...', specs);
-      
-      const response = await fetch(API_ENDPOINTS.generateSyntheticDataset, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(specs)
-      });
-
-      const result = await response.json();
-      
-      if (result.success && result.data) {
-        console.log('✅ Dataset generated:', result.data.length, 'rows');
-        
-        // Update parent data
-        onDataUpdate(result.data);
-        
-        // Dispatch dataUpdate event for spreadsheet components
-        const dataUpdateEvent = new CustomEvent('dataUpdate', { 
-          detail: { 
-            data: result.data,
-            filename: `${result.dataset_name}.csv` 
-          } 
-        });
-        window.dispatchEvent(dataUpdateEvent);
-        
-        // Close dialog
-        setShowSyntheticDialog(false);
-        setShowSyntheticDatasetDialog(false);
-      } else {
-        throw new Error(result.message || 'Failed to generate dataset');
-      }
-    } catch (error) {
-      console.error('❌ Error generating dataset:', error);
-      throw error;
-    }
   };
 
   // Handle column extraction
   const handleColumnExtraction = async (selectedColumns: string[], sheetName?: string) => {
     try {
-      console.log('🔧 === EXTRACTING COLUMNS ===');
-      console.log('📋 Selected columns:', selectedColumns);
-      console.log('🏷️ Sheet name:', sheetName);
 
       // Call backend API to extract columns (creates new sheet data)
       const response = await fetch(`${API_BASE_URL}/api/extract-columns`, {
@@ -132,7 +97,6 @@ export default function WorkModeWorkspace({
       });
 
       const result = await response.json();
-      console.log('✅ Extraction result:', result);
 
       if (result.success && result.sheet_data) {
         // Dispatch event for UniversalSpreadsheet to add new sheet
@@ -145,7 +109,6 @@ export default function WorkModeWorkspace({
         });
         window.dispatchEvent(addSheetEvent);
 
-        console.log(`✅ Successfully dispatched addNewSheet event for: ${result.sheet_name}`);
       } else {
         throw new Error(result.error || 'Failed to extract columns');
       }
@@ -170,10 +133,6 @@ export default function WorkModeWorkspace({
         onRenameWorkspace={onRenameWorkspace}
         onDeleteWorkspace={onDeleteWorkspace}
         onFileUpload={onFileUpload}
-        onGenerateDataset={() => {
-          setShowSyntheticDialog(true);
-          setShowSyntheticDatasetDialog(true);
-        }}
         onGenerateQualityReport={onGenerateQualityReport}
         onGenerateReport={onGenerateReport}
         onExtractColumns={() => {
@@ -184,10 +143,6 @@ export default function WorkModeWorkspace({
         data={data}
         isGeneratingReport={isGeneratingReport}
         onShowFormulaAssistant={handleShowFormulaAssistant}
-        setShowSyntheticDatasetDialog={(show) => {
-          setShowSyntheticDialog(show);
-          setShowSyntheticDatasetDialog(show);
-        }}
         setShowColumnExtraction={(show) => {
           setShowColumnDialog(show);
           setShowColumnExtraction(show);
@@ -207,7 +162,7 @@ export default function WorkModeWorkspace({
                 </div>
               </div>
             ) : (
-              <SpreadsheetWrapper
+              <UniversalSpreadsheet
                 data={data}
                 onCommand={onSpreadsheetCommand}
                 onDataUpdate={onDataUpdate}
@@ -216,7 +171,6 @@ export default function WorkModeWorkspace({
                 isDataEmpty={data.length === 0}
                 filename={currentFilename}
                 isFromSavedWorkspace={true}
-                mode="work"
                 initialSheets={initialSheets}
                 onAdapterReady={onAdapterReady}
               />
@@ -224,16 +178,6 @@ export default function WorkModeWorkspace({
           </div>
         </div>
       </div>
-
-      {/* Synthetic Dataset Dialog */}
-      <SyntheticDatasetDialog
-        isOpen={showSyntheticDialog}
-        onClose={() => {
-          setShowSyntheticDialog(false);
-          setShowSyntheticDatasetDialog(false);
-        }}
-        onGenerate={handleSyntheticDatasetGeneration}
-      />
 
       {/* Column Extraction Dialog */}
       <ColumnExtractionDialog

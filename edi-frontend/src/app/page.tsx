@@ -308,7 +308,6 @@ export default function HomePage() {
                 })}
                 onDataUpdate={setData}
                 onFileUploadFromSpreadsheet={handleFileUploadFromSpreadsheet}
-                setShowSyntheticDatasetDialog={noop}
                 setShowColumnExtraction={noop}
                 currentFilename={currentFilename}
                 initialSheets={initialSheets}

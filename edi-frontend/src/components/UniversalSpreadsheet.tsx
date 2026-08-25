@@ -1,8 +1,8 @@
 /**
  * UniversalSpreadsheet Component
  * 
- * Univer-based spreadsheet component (migration from Luckysheet)
- * Maintains API compatibility with NativeSpreadsheet for smooth transition
+ * The spreadsheet. Univer under the hood, wrapped in the file menu, the
+ * formula assistant and the auto-save the rest of the app talks to.
  */
 
 'use client';
@@ -27,6 +27,10 @@ import { UniverSheetsFindReplacePreset } from '@univerjs/preset-sheets-find-repl
 import UniverPresetSheetsFindReplaceEnUS from '@univerjs/preset-sheets-find-replace/locales/en-US';
 
 // Regular plugins (not presets)
+// The /facade entry is what puts sort() on FWorksheet and FRange. Registering
+// the plugin alone gives you the toolbar command but not the scripting API, and
+// UniverAdapter.sort() calls the scripting API.
+import '@univerjs/sheets-sort/facade';
 import { UniverSheetsSortPlugin } from '@univerjs/sheets-sort';
 import { UniverSheetsSortUIPlugin } from '@univerjs/sheets-sort-ui';
 import UniverSheetsSortUIEnUS from '@univerjs/sheets-sort-ui/locale/en-US';
@@ -60,7 +64,6 @@ import { UniverAdapter, createUniverAdapter } from '@/utils/univerAdapter';
 import ChatSidebar from '@/components/ChatSidebar';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { Calculator, BarChart3 } from 'lucide-react';
-import { SpreadsheetCommandProcessor } from '@/utils/spreadsheetCommandProcessor';
 
 interface UniversalSpreadsheetProps {
   data?: Array<any>;
@@ -71,9 +74,7 @@ interface UniversalSpreadsheetProps {
   isDataEmpty?: boolean;
   filename?: string;
   isFromSavedWorkspace?: boolean;
-  mode?: 'work' | 'learn';
   disableFormulaErrorUI?: boolean;
-  learnChatMinimal?: boolean;
   hideSidebar?: boolean;
   initialSheets?: any[]; // Univer workbook snapshot
   onAdapterReady?: (adapter: UniverAdapter | null) => void; // Callback to expose adapter to parent
@@ -114,21 +115,17 @@ export default function UniversalSpreadsheet({
   isDataEmpty,
   filename,
   isFromSavedWorkspace = false,
-  mode = 'work',
-  learnChatMinimal = false,
   hideSidebar = false,
   initialSheets,
   onAdapterReady,
 }: UniversalSpreadsheetProps) {
 
-  console.log('🔍 [UniversalSpreadsheet] Props:', { mode, filename, learnChatMinimal, hideSidebar });
 
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const univerRef = useRef<any>(null); // Type: Univer
   const univerAPIRef = useRef<any>(null); // Type: FUniver
   const univerAdapterRef = useRef<UniverAdapter | null>(null); // API Adapter for AI commands
-  const commandProcessorRef = useRef<SpreadsheetCommandProcessor | null>(null); // Command processor for simple commands
   const initializingRef = useRef<boolean>(false); // Guard against double initialization
 
   // Save state tracking refs (for auto-save)
@@ -137,13 +134,23 @@ export default function UniversalSpreadsheet({
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const eventDisposableRef = useRef<any>(null); // Store event listener disposable
 
+  // Univer's change listener is registered once, during initialization, so a
+  // direct reference would pin the first trackDataChange forever -- and with it
+  // the workspace id that happened to be current then. Going through a ref
+  // means an edit made after switching workspaces is saved against the one the
+  // user is actually looking at.
+  const trackDataChangeRef = useRef<() => void>(() => {});
+
   // State
   const [univerInitialized, setUniverInitialized] = useState(false);
+  // The same adapter the ref holds. The ref is for the imperative call sites in
+  // this file; this is for handing to ChatSidebar, which needs it to arrive as
+  // a prop rather than by reaching into a ref mid-render.
+  const [univerAdapter, setUniverAdapter] = useState<UniverAdapter | null>(null);
   const [currentData, setCurrentData] = useState<any[]>(data);
   const [columnOrder, setColumnOrder] = useState<string[]>([]);
   const [initError, setInitError] = useState<string | null>(null);
   const isProcessingCommand = false;
-  const currentSelection: string | undefined = undefined;
 
   // Save state tracking
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -153,7 +160,7 @@ export default function UniversalSpreadsheet({
   const [isListening, setIsListening] = useState(false);
   const { currentWorkspace } = useWorkspace();
 
-  // Formula Dialog state (from NativeSpreadsheet)
+  // Formula Dialog state
   const [showFormulaDialog, setShowFormulaDialog] = useState(false);
   const [formulaInput, setFormulaInput] = useState('');
   const [formulaDialogPos, setFormulaDialogPos] = useState<{top: number, left: number} | null>(null);
@@ -177,7 +184,6 @@ export default function UniversalSpreadsheet({
         // Force Univer to recalculate its dimensions
         // Univer doesn't have a direct resize method, but we can trigger a window resize event
         window.dispatchEvent(new Event('resize'));
-        console.log('Univer resized after sidebar toggle');
       } catch (error) {
         console.error('Error resizing Univer:', error);
       }
@@ -188,22 +194,17 @@ export default function UniversalSpreadsheet({
 
   // This effect will handle the one-time initialization of Univer.
   useEffect(() => {
+    // There is no "are the Univer packages installed" check here on purpose.
+    // They are static imports at the top of this file, so a missing one fails
+    // the module before this component exists; the check that used to live here
+    // could never be reached, and TypeScript said so.
+
     // Prevent double initialization in React Strict Mode
     if (initializingRef.current || univerRef.current || !containerRef.current) {
       return;
     }
 
     initializingRef.current = true;
-    console.log('🚀 [Univer] Initializing Univer spreadsheet...');
-
-    // Check if Univer packages are available
-    if (!createUniver || !UniverSheetsCorePreset || !UniverSheetsFilterPreset) {
-      console.warn('⚠️ [Univer] Packages not available');
-      setInitError('Univer packages are not installed. Please run `npm install @univerjs/presets @univerjs/preset-sheets-core @univerjs/preset-sheets-filter` and try again.');
-      setUniverInitialized(true); // Mark as "initialized" to show the error panel
-      initializingRef.current = false;
-      return;
-    }
 
     try {
       // Use the new createUniver API with all presets and proper localization
@@ -237,7 +238,7 @@ export default function UniversalSpreadsheet({
 
       // Create API adapter for AI commands and programmatic control
       univerAdapterRef.current = createUniverAdapter(univerAPI, univer);
-      console.log('✅ [Univer] API Adapter created for AI commands');
+      setUniverAdapter(univerAdapterRef.current);
 
       // Expose adapter to parent component for state persistence
       if (onAdapterReady) {
@@ -245,7 +246,6 @@ export default function UniversalSpreadsheet({
       }
       
       // Register all regular plugins (not presets) in proper order
-      console.log('🔌 [Univer] Registering additional plugins...');
       
       // Note: Number formatting (numfmt) is already included in UniverSheetsCorePreset
       
@@ -253,7 +253,6 @@ export default function UniversalSpreadsheet({
       if (UniverSheetsSortPlugin && UniverSheetsSortUIPlugin) {
         univer.registerPlugin(UniverSheetsSortPlugin);
         univer.registerPlugin(UniverSheetsSortUIPlugin);
-        console.log('✅ [Univer] Sort plugins registered');
       }
       
       // Note: Find & Replace is already included in UniverSheetsFindReplacePreset
@@ -263,31 +262,26 @@ export default function UniversalSpreadsheet({
       if (UniverSheetsDataValidationPlugin && UniverSheetsDataValidationUIPlugin) {
         univer.registerPlugin(UniverSheetsDataValidationPlugin);
         univer.registerPlugin(UniverSheetsDataValidationUIPlugin);
-        console.log('✅ [Univer] Data Validation plugins registered');
       }
       
       // Conditional Formatting
       if (UniverSheetsConditionalFormattingPlugin && UniverSheetsConditionalFormattingUIPlugin) {
         univer.registerPlugin(UniverSheetsConditionalFormattingPlugin);
         univer.registerPlugin(UniverSheetsConditionalFormattingUIPlugin);
-        console.log('✅ [Univer] Conditional Formatting plugins registered');
       }
       
       // Hyperlinks
       if (UniverSheetsHyperLinkPlugin && UniverSheetsHyperLinkUIPlugin) {
         univer.registerPlugin(UniverSheetsHyperLinkPlugin);
         univer.registerPlugin(UniverSheetsHyperLinkUIPlugin);
-        console.log('✅ [Univer] Hyperlink plugins registered');
       }
       
       // Drawing (shapes, images)
       if (UniverSheetsDrawingPlugin && UniverSheetsDrawingUIPlugin) {
         univer.registerPlugin(UniverSheetsDrawingPlugin);
         univer.registerPlugin(UniverSheetsDrawingUIPlugin);
-        console.log('✅ [Univer] Drawing plugins registered');
       }
 
-      console.log('✅ [Univer] All plugins registered - Full spreadsheet features enabled!');
 
       // Create workbook with data
       const workbookData = UniverConverter.arrayToUniver(initialSheets || data, columnOrder);
@@ -295,7 +289,6 @@ export default function UniversalSpreadsheet({
 
       // Set up event listener for auto-save on changes
       if (univerAPI && univerAPI.Event && typeof univerAPI.addEvent === 'function') {
-        console.log('🔔 [Univer] Setting up CommandExecuted event listener for auto-save...');
         try {
           const disposable = univerAPI.addEvent(
             univerAPI.Event.CommandExecuted,
@@ -303,13 +296,11 @@ export default function UniversalSpreadsheet({
               // Filter out read-only commands (we only care about mutations)
               const readOnlyCommands = ['SetSelectionsOperation', 'ScrollOperation', 'SetZoomRatioOperation'];
               if (command && command.id && !readOnlyCommands.includes(command.id)) {
-                console.log('🔔 [Univer] Command executed:', command.id);
-                trackDataChange(command.id || 'Command');
+                trackDataChangeRef.current();
               }
             }
           );
           eventDisposableRef.current = disposable;
-          console.log('✅ [Univer] Event listener registered successfully');
         } catch (error) {
           console.error('❌ [Univer] Failed to register event listener:', error);
         }
@@ -318,8 +309,6 @@ export default function UniversalSpreadsheet({
       }
 
       setUniverInitialized(true);
-      console.log('✅ [Univer] Initialization complete');
-      console.log('🎉 [Univer] You can now click on any cell and start typing!');
 
       // NO CLEANUP - Univer instance persists for the lifetime of the app
       // Disposing causes issues with React's rendering lifecycle
@@ -337,7 +326,6 @@ export default function UniversalSpreadsheet({
     return () => {
       // Cleanup event listener if exists
       if (eventDisposableRef.current && typeof eventDisposableRef.current.dispose === 'function') {
-        console.log('🧹 [Univer] Disposing event listener');
         eventDisposableRef.current.dispose();
         eventDisposableRef.current = null;
       }
@@ -362,27 +350,18 @@ export default function UniversalSpreadsheet({
   }, [currentData]);
 
   /**
-   * Get current sheet data (alias for ChatSidebar compatibility)
-   */
-  const getCurrentSheetData = useCallback((): any[] => {
-    return getCurrentData();
-  }, [getCurrentData]);
-
-  /**
    * Voice recognition functions
    */
   const startVoiceRecognition = useCallback(() => {
     // TODO: Implement voice recognition
-    console.log('[Univer] Start voice recognition (not implemented)');
     setIsListening(true);
   }, []);
 
   const stopVoiceRecognition = useCallback(() => {
-    console.log('[Univer] Stop voice recognition');
     setIsListening(false);
   }, []);
 
-  // Formula Dialog helper functions (from NativeSpreadsheet)
+  // Formula Dialog helper functions
   const columnLetter = (index: number) => String.fromCharCode(65 + index);
   
   const allColumns = useMemo(() => describeGrid(currentData).headers, [currentData]);
@@ -426,7 +405,7 @@ export default function UniversalSpreadsheet({
     setFormulaError(null);
 
     try {
-      // Build enhanced prompt with data context (similar to NativeSpreadsheet)
+      // Build enhanced prompt with data context
       const dataRangeInfo = getDataRangeInfo();
       let prompt = formulaInput;
 
@@ -498,7 +477,6 @@ export default function UniversalSpreadsheet({
     );
 
     if (success) {
-      console.log('✅ Formula inserted successfully');
       handleFormulaCancel();
     } else {
       setFormulaError('Failed to insert formula');
@@ -563,7 +541,6 @@ export default function UniversalSpreadsheet({
       return false;
     }
 
-    console.log(`[Univer] Loading file data: ${fileData.length} rows`);
     const success = univerAdapterRef.current.loadData(fileData, clearExisting);
     
     if (success && onDataUpdate) {
@@ -581,13 +558,11 @@ export default function UniversalSpreadsheet({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    console.log(`[Univer] Reading file: ${file.name}`);
 
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const content = e.target?.result as string;
-        console.log(`[Univer] File content length: ${content.length} bytes`);
         
         // Parse CSV
         if (file.name.endsWith('.csv')) {
@@ -595,12 +570,9 @@ export default function UniversalSpreadsheet({
           const data = lines.map(line => 
             line.split(',').map(cell => cell.trim())
           );
-          console.log(`[Univer] Parsed CSV: ${data.length} rows x ${data[0]?.length || 0} columns`);
-          console.log('[Univer] First 3 rows:', data.slice(0, 3));
           
           const success = loadFileData(data, true);
           if (success) {
-            console.log(`✅ [Univer] Successfully loaded CSV file: ${file.name}`);
             alert(`File loaded: ${data.length} rows`);
           } else {
             console.error('[Univer] Failed to load data');
@@ -611,10 +583,8 @@ export default function UniversalSpreadsheet({
         else if (file.name.endsWith('.json')) {
           const jsonData = JSON.parse(content);
           if (Array.isArray(jsonData)) {
-            console.log(`[Univer] Parsed JSON: ${jsonData.length} rows`);
             const success = loadFileData(jsonData, true);
             if (success) {
-              console.log(`✅ [Univer] Successfully loaded JSON file: ${file.name}`);
               alert(`File loaded: ${jsonData.length} rows`);
             }
           } else {
@@ -649,7 +619,6 @@ export default function UniversalSpreadsheet({
       return { success: false, error: 'Adapter not initialized' };
     }
 
-    console.log('[Univer] Executing AI command:', command);
 
     // Pass to parent's onCommand handler if provided
     if (onCommand) {
@@ -662,19 +631,16 @@ export default function UniversalSpreadsheet({
   /**
    * Save current state with change detection
    */
-  const saveCurrentState = useCallback(async (operation: string = 'Manual Save') => {
+  const saveCurrentState = useCallback(async () => {
     if (!currentWorkspace?.id) {
-      console.log('[Univer] No workspace ID available');
       return false;
     }
 
     if (!univerAdapterRef.current?.isReady()) {
-      console.log('[Univer] Adapter not ready, skipping save');
       return false;
     }
 
     try {
-      console.log(`💾 [Univer] Saving state (${operation})...`);
       setSaveStatus('saving');
 
       // Get current data and sheet state
@@ -695,7 +661,6 @@ export default function UniversalSpreadsheet({
 
       // Only save if data OR sheet state has changed
       if (dataString === lastSavedDataRef.current && sheetString === lastSavedSheetRef.current) {
-        console.log('[Univer] No changes to save');
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 2000);
         return true;
@@ -716,7 +681,6 @@ export default function UniversalSpreadsheet({
         setSaveStatus('idle');
       }, 3000);
 
-      console.log('✅ [Univer] State saved successfully');
       return true;
     } catch (error) {
       console.error('❌ [Univer] Save failed:', error);
@@ -734,8 +698,7 @@ export default function UniversalSpreadsheet({
   /**
    * Track data changes (triggers debounced save)
    */
-  const trackDataChange = useCallback((operation: string = 'Change') => {
-    console.log('📝 [Univer] Data change detected:', operation);
+  const trackDataChange = useCallback(() => {
 
     // Clear any existing save timeout
     if (saveTimeoutRef.current) {
@@ -744,9 +707,13 @@ export default function UniversalSpreadsheet({
 
     // Debounce save by 2 seconds
     saveTimeoutRef.current = setTimeout(() => {
-      saveCurrentState(operation);
+      saveCurrentState();
     }, 2000);
   }, [saveCurrentState]);
+
+  useEffect(() => {
+    trackDataChangeRef.current = trackDataChange;
+  }, [trackDataChange]);
 
   /**
    * Refresh data in Univer
@@ -758,47 +725,30 @@ export default function UniversalSpreadsheet({
       return;
     }
 
-    console.log('🔄 [Univer] Refreshing data...', newData.length, 'rows');
 
     // For now, just update state
     // TODO: Update Univer workbook once API is stable
     setCurrentData(newData);
   }, []);
 
-  // Initialize/update command processor when data changes
-  useEffect(() => {
-    if (currentData && currentData.length > 0) {
-      const headers = typeof currentData[0] === 'object' && !Array.isArray(currentData[0])
-        ? Object.keys(currentData[0])
-        : [];
-
-      const dataArray = typeof currentData[0] === 'object' && !Array.isArray(currentData[0])
-        ? currentData.map(row => headers.map(key => row[key]))
-        : currentData;
-
-      console.log('🔧 [Univer] Initializing command processor with', dataArray.length, 'rows,', headers.length, 'headers');
-
-      if (!commandProcessorRef.current) {
-        commandProcessorRef.current = new SpreadsheetCommandProcessor(dataArray, headers);
-      } else {
-        commandProcessorRef.current.updateData(dataArray, headers);
-      }
-    }
-  }, [currentData]);
-
-  // Effect for handling data prop changes from parent
+  // Effect for handling data prop changes from parent.
+  //
+  // currentData is not a mirror of the prop that could be derived during
+  // render: the sheet writes to it too, whenever the user edits a cell. So a
+  // new prop has to be pushed into Univer and into state together, and that
+  // push is a call into a library outside React's knowledge -- which is what
+  // the set-state-in-effect exemption below is for.
   useEffect(() => {
     if (univerInitialized && univerAdapterRef.current?.isReady()) {
       // Handle data cleared (empty array)
       if (!data || data.length === 0) {
-        console.log('📊 [Univer] Data cleared, resetting spreadsheet');
         univerAdapterRef.current.clearSheet();
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrentData([]);
         setColumnOrder([]);
       }
       // Handle data loaded
       else {
-        console.log('📊 [Univer] Data prop changed, loading into spreadsheet:', data.length, 'rows');
 
         // Convert object array to 2D array if needed
         if (typeof data[0] === 'object' && !Array.isArray(data[0])) {
@@ -818,15 +768,9 @@ export default function UniversalSpreadsheet({
   // Listen for dataUpdate events from ChatSidebar and other components
   useEffect(() => {
     const handleDataUpdate = (event: CustomEvent) => {
-      console.log('📊 [Univer] Data update event received:', event.detail);
       
       if (event.detail && event.detail.data) {
         const newData = event.detail.data;
-        console.log('📊 [Univer] Processing data update:', {
-          newDataLength: newData.length,
-          currentDataLength: currentData.length,
-          univerInitialized
-        });
         
         if (univerAdapterRef.current?.isReady()) {
           // Convert object array to 2D array if needed
@@ -857,7 +801,6 @@ export default function UniversalSpreadsheet({
   // Listen for formulaAssistant event to open dialog
   useEffect(() => {
     const handleFormulaAssistantOpen = () => {
-      console.log('📝 [Univer] Opening formula assistant');
 
       // Get the current cell selection from Univer
       let currentCell = { row: 0, col: 0 }; // Default to A1
@@ -865,7 +808,6 @@ export default function UniversalSpreadsheet({
         const selection = univerAdapterRef.current.getCurrentSelection();
         if (selection) {
           currentCell = selection;
-          console.log('📝 [Univer] Using current cell:', currentCell);
         }
       }
 
@@ -888,7 +830,6 @@ export default function UniversalSpreadsheet({
   // Listen for addNewSheet event (from column extraction)
   useEffect(() => {
     const handleAddNewSheet = (event: CustomEvent) => {
-      console.log('📋 [Univer] Received addNewSheet event:', event.detail);
 
       const { sheetData, sheetName } = event.detail;
 
@@ -898,7 +839,7 @@ export default function UniversalSpreadsheet({
       }
 
       try {
-        // Convert backend sheet_data (Luckysheet celldata format) to 2D array
+        // Convert backend sheet_data (celldata format) to 2D array
         if (sheetData && sheetData.celldata) {
           const celldata = sheetData.celldata;
 
@@ -919,13 +860,11 @@ export default function UniversalSpreadsheet({
             }
           });
 
-          console.log(`📋 [Univer] Converting celldata to ${dataArray.length}x${maxCol} array for sheet: ${sheetName}`);
 
           // Add the sheet using UniverAdapter
           const success = univerAdapterRef.current.addSheet(sheetName, dataArray);
 
           if (success) {
-            console.log(`✅ [Univer] Successfully added sheet: ${sheetName}`);
           } else {
             console.error(`❌ [Univer] Failed to add sheet: ${sheetName}`);
             alert('Failed to create new sheet. Please try again.');
@@ -955,19 +894,14 @@ export default function UniversalSpreadsheet({
           data={currentData}
           isExpanded={sidebarExpanded}
           onToggle={() => setSidebarExpanded(!sidebarExpanded)}
-          isListening={learnChatMinimal ? false : isListening}
+          isListening={isListening}
           isProcessingCommand={isProcessingCommand}
-          onStartVoiceRecognition={learnChatMinimal ? undefined : startVoiceRecognition}
-          onStopVoiceRecognition={learnChatMinimal ? undefined : stopVoiceRecognition}
-          onFileUpload={learnChatMinimal ? undefined : onFileUpload}
+          onStartVoiceRecognition={startVoiceRecognition}
+          onStopVoiceRecognition={stopVoiceRecognition}
+          onFileUpload={onFileUpload}
           filename={filename}
           isFromSavedWorkspace={isFromSavedWorkspace}
-          minimal={learnChatMinimal}
-          mode={mode}
-          concept={filename?.replace('practice_', '').replace('.csv', '').replace(/[^a-zA-Z0-9]/g, '_') || 'basic_functions'}
-          currentSelection={currentSelection}
-          getCurrentData={getCurrentSheetData}
-          univerAdapter={univerAdapterRef.current}
+          univerAdapter={univerAdapter}
         />
       )}
 
@@ -1041,50 +975,14 @@ export default function UniversalSpreadsheet({
               <p className="text-muted-foreground">Loading...</p>
             </div>
           </div>
-        ) : !createUniver || !UniverSheetsCorePreset || !UniverSheetsFilterPreset ? (
-          // Show install instructions if packages not found
-          <div className="flex items-center justify-center h-full border-2 border-dashed border-border rounded-lg m-4">
-            <div className="text-center max-w-md p-8">
-              <h3 className="text-xl font-bold text-foreground mb-4">
-                📦 Univer Packages Required
-              </h3>
-              <p className="text-muted-foreground mb-4">
-                To use the Univer spreadsheet engine, install the required packages:
-              </p>
-              <code className="block bg-muted text-muted-foreground p-4 rounded text-sm text-left overflow-x-auto">
-                npm install @univerjs/presets @univerjs/preset-sheets-core @univerjs/preset-sheets-filter
-              </code>
-              <p className="text-sm text-muted-foreground mt-4">
-                Then restart your dev server and toggle back to Univer.
-              </p>
-              <button
-                onClick={() => {
-                  localStorage.setItem('USE_UNIVER', 'false');
-                  window.location.reload();
-                }}
-                className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-              >
-                Switch back to Luckysheet
-              </button>
-            </div>
-          </div>
         ) : initError ? (
-          // Show initialization error with manual fallback
+          // Show initialization error
           <div className="flex items-center justify-center h-full m-4">
             <div className="max-w-xl w-full bg-card border border-border rounded-lg p-6 text-left">
               <h3 className="text-lg font-semibold text-foreground mb-2">Univer failed to initialize</h3>
-              <p className="text-sm text-muted-foreground mb-3">You can switch back to Luckysheet or retry.</p>
+              <p className="text-sm text-muted-foreground mb-3">Reloading usually clears it.</p>
               <pre className="text-xs bg-muted text-muted-foreground p-3 rounded overflow-auto max-h-48 whitespace-pre-wrap">{initError}</pre>
               <div className="mt-4 flex gap-2">
-                <button
-                  onClick={() => {
-                    localStorage.setItem('USE_UNIVER', 'false');
-                    window.location.reload();
-                  }}
-                  className="px-3 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-                >
-                  Switch back to Luckysheet
-                </button>
                 <button
                   onClick={() => window.location.reload()}
                   className="px-3 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80"
@@ -1098,7 +996,7 @@ export default function UniversalSpreadsheet({
       </div>
       </div>
 
-      {/* Formula Assistant Dialog (from NativeSpreadsheet) */}
+      {/* Formula Assistant Dialog */}
       {showFormulaDialog && (
         <div
           ref={formulaModalRef}

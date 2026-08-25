@@ -199,7 +199,6 @@ export function calculateOverallQuality(data: any[]) {
     const duplicateRowPercentage = (duplicateRows / totalRows) * 100;
     duplicatePenalty = Math.min(40, duplicateRowPercentage * 2); // Cap at 40 points
     qualityScore -= duplicatePenalty;
-    console.log(`🔍 Duplicate penalty: ${duplicatePenalty.toFixed(1)} points (${duplicateRows} rows = ${duplicateRowPercentage.toFixed(1)}%)`);
   }
 
   // Missing values penalty (moderate severity)
@@ -208,22 +207,18 @@ export function calculateOverallQuality(data: any[]) {
     const missingCellPercentage = (missingCells / totalCells) * 100;
     missingPenalty = Math.min(30, missingCellPercentage * 10 + 5); // Base 5 points + scaled penalty, cap at 30
     qualityScore -= missingPenalty;
-    console.log(`⚠️ Missing values penalty: ${missingPenalty.toFixed(1)} points (${missingCells} cells = ${missingCellPercentage.toFixed(2)}%)`);
   }
 
   // Data type inconsistency penalty (high severity - affects data integrity)
   let typePenalty = 0;
   if (typeIssues > 0) {
-    const typeInconsistencyPercentage = (typeIssues / totalColumns) * 100;
     typePenalty = Math.min(25, typeIssues * 5); // 5 points per inconsistent column, cap at 25
     qualityScore -= typePenalty;
-    console.log(`🔧 Type inconsistency penalty: ${typePenalty.toFixed(1)} points (${typeIssues} columns = ${typeInconsistencyPercentage.toFixed(1)}%)`);
   }
 
   // Ensure score doesn't go below 0
   qualityScore = Math.max(0, qualityScore);
 
-  console.log(`📊 Final quality score: ${qualityScore.toFixed(1)}%`);
 
   return {
     score: Math.round(qualityScore),
@@ -287,6 +282,5 @@ export async function generateDataQualityReport(
     dataHash: generateDataHash(data)
   };
 
-  console.log('✅ Data quality report generated:', qualityReport);
   return qualityReport;
 }
