@@ -27,6 +27,20 @@ const nextConfig: NextConfig = {
   // old paths, and anything that already linked to them, working.
   async redirects() {
     return [
+      // The hosted site is documentation only: there is no demo behind /app,
+      // and an empty spreadsheet asking a visitor for a file they do not have
+      // is a worse landing than the docs.
+      //
+      // Off by default, and deliberately not inferred from process.env.VERCEL:
+      // deploying the real app to Vercel is a supported setup that the
+      // self-hosting page documents, and guessing would break it. Anyone who
+      // clones this repo gets the whole app at /app without setting anything.
+      //
+      // Temporary, not permanent -- a browser caches a 308 and would keep
+      // redirecting long after the variable was unset.
+      ...(process.env.EDI_DOCS_ONLY === '1'
+        ? [{ source: '/app', destination: '/', permanent: false }]
+        : []),
       { source: '/docs', destination: '/', permanent: true },
       // Before the wildcard: the API reference is not at /api. That path
       // belongs to the backend, and a docs page inside the API namespace is a

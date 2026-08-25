@@ -121,8 +121,8 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
 
             <h3>Vercel, as one worked example</h3>
             <p>
-                <code>vercel.json</code> is in the repository because it is what the demo
-                runs on. Only Vercel reads it, so it costs nothing if you deploy elsewhere —
+                <code>vercel.json</code> is in the repository because it is what this
+                site runs on. Only Vercel reads it, so it costs nothing if you deploy elsewhere —
                 and it is worth copying the shape: both halves as services of one project,{' '}
                 <code>/api/*</code> to Python, everything else to Next, one domain, no CORS.
             </p>
@@ -133,6 +133,22 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
                 <code>edi-frontend/</code> it ignores the file, serves the frontend alone, and
                 every API call hits Next&apos;s 404 page.
             </div>
+
+            <h3>Deploying the documentation without the app</h3>
+            <p>
+                This site is that deployment. The app is at <code>/app</code>, and it is
+                there in every clone; what the hosted copy does is redirect it away, because
+                an empty spreadsheet asking a stranger for a file they have not got is a
+                worse landing page than the documentation. One variable at build time:
+            </p>
+            <pre><code>{`EDI_DOCS_ONLY=1`}</code></pre>
+            <p>
+                Read by <code>edi-frontend/next.config.ts</code>, not the backend, so it
+                belongs in the frontend&apos;s environment. Unset — which is the default, and
+                what you get by cloning — <code>/app</code> serves the whole application. It
+                is not inferred from being on Vercel: deploying the real app there is a
+                supported setup, and guessing would break it.
+            </p>
 
             <h2>Usage limits</h2>
             <p>
@@ -217,7 +233,7 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
             <h2>Other limits worth knowing</h2>
             <ul>
                 <li>
-                    The 4 MB upload limit is set for the demo, where Vercel caps a request
+                    The 4 MB upload limit is set for Vercel, which caps a request
                     or response body at 4.5 MB. It is a default, not a constraint of the
                     project: raise <code>EDI_MAX_UPLOAD_BYTES</code> on a host without that
                     cap.

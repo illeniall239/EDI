@@ -25,12 +25,17 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
                         EDI<span style={{ color: 'var(--edi-signal)' }}>.ai</span>
                     </Link>
                     <span className="edi-kicker-doc">Docs</span>
-                    <Link
-                        href="/app"
+                    {/* The site is the documentation; the app is the repository.
+                        Nothing here opens a spreadsheet, so the one thing a
+                        reader can act on from the header is the clone. */}
+                    <a
+                        href="https://github.com/illeniall239/EDI"
+                        target="_blank"
+                        rel="noreferrer"
                         className="ml-auto text-[13px] text-white/55 transition-colors hover:text-white"
                     >
-                        Open the app →
-                    </Link>
+                        GitHub →
+                    </a>
                 </div>
             </header>
 
