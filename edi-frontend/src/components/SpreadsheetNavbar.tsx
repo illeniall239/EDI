@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { File, ChevronDown, Download, ChevronRight, Trash2, Edit, Table, FileSpreadsheet, Plus } from 'lucide-react';
+import { File, ChevronDown, Download, ChevronRight, Trash2, Edit, Table, FileSpreadsheet, Plus, LayoutGrid } from 'lucide-react';
 import ConfirmationDialog from './ConfirmationDialog';
 
 interface Workspace {
@@ -19,6 +19,7 @@ interface SpreadsheetNavbarProps {
   onRenameWorkspace: (id: string, name: string) => void;
   onDeleteWorkspace: (id: string) => void;
   onCreateWorkspace: () => void;
+  onShowAllWorkbooks: () => void;
   
   // Data Operations
   onClearData?: () => void;
@@ -39,6 +40,7 @@ export default function SpreadsheetNavbar({
   onRenameWorkspace,
   onDeleteWorkspace,
   onCreateWorkspace,
+  onShowAllWorkbooks,
   onClearData,
   onExportCSV,
   onExportExcel,
@@ -307,6 +309,16 @@ export default function SpreadsheetNavbar({
                     >
                       <Plus className="w-4 h-4" />
                       New workbook
+                    </button>
+                    <button
+                      onClick={() => {
+                        onShowAllWorkbooks();
+                        setDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                      All workbooks
                     </button>
                   </div>
                 </div>

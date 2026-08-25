@@ -27,6 +27,7 @@ interface WorkModeWorkspaceProps {
   onRenameWorkspace: (id: string, name: string) => void;
   onDeleteWorkspace: (id: string) => void;
   onCreateWorkspace: () => void;
+  onShowAllWorkbooks: () => void;
   onClearData: () => void;
   onSpreadsheetCommand: (command: string) => Promise<any>;
   onDataUpdate: (data: any[]) => void;
@@ -45,6 +46,7 @@ export default function WorkModeWorkspace({
   onRenameWorkspace,
   onDeleteWorkspace,
   onCreateWorkspace,
+  onShowAllWorkbooks,
   onClearData,
   onSpreadsheetCommand,
   onDataUpdate,
@@ -73,6 +75,7 @@ export default function WorkModeWorkspace({
         onRenameWorkspace={onRenameWorkspace}
         onDeleteWorkspace={onDeleteWorkspace}
         onCreateWorkspace={onCreateWorkspace}
+        onShowAllWorkbooks={onShowAllWorkbooks}
         onClearData={onClearData}
         data={data}
       />

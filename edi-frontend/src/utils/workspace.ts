@@ -143,6 +143,17 @@ export function getActiveWorkspaceId(): string | null {
     return listWorkspaceIds()[0] ?? null;
 }
 
+/**
+ * Whether this tab has already chosen a workbook.
+ *
+ * False in a tab that has just been opened -- including after closing the
+ * browser and coming back -- which is when the opener is worth showing. True
+ * after a reload, because a reload is not "coming back", it is staying put.
+ */
+export function hasTabChosenWorkspace(): boolean {
+    return Boolean(read(session(), ACTIVE_KEY));
+}
+
 export function setActiveWorkspaceId(id: string): void {
     write(session(), ACTIVE_KEY, id);   // this tab, across reloads
     writeRaw(ACTIVE_KEY, id);           // the default for the next new tab

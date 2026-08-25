@@ -185,24 +185,65 @@ export default function ChatSidebar({
     // Note: Removed old loadWorkspaceChatHistory useEffect to prevent race condition
     // Chat loading is now handled by the loadWorkspaceChats function in the useEffect below
 
+    /**
+     * The active thread, readable synchronously.
+     *
+     * setActiveChat does not take effect until the next render, but one
+     * conversation saves several times inside a single handler -- and the
+     * first of those happens in the same tick that creates the thread. Reading
+     * state there gives null, which is how the opening exchange in every new
+     * workbook used to be dropped: the thread was created, the messages went
+     * nowhere, and the whole conversation lived in React state until reload.
+     */
+    const activeChatRef = useRef<Chat | null>(null);
+
+    /** In-flight creation, so two saves in one tick cannot make two threads. */
+    const chatCreation = useRef<Promise<Chat | null> | null>(null);
+
+    const ensureActiveChat = async (): Promise<Chat | null> => {
+        const known = activeChatRef.current ?? activeChat;
+        if (known?.id) return known;
+        if (!currentWorkspace?.id) return null;
+
+        if (!chatCreation.current) {
+            const workspaceId = currentWorkspace.id;
+            chatCreation.current = (async () => {
+                try {
+                    const chat = await createNewChat(workspaceId, 'Chat 1');
+                    activeChatRef.current = chat;
+                    setActiveChat(chat);
+                    setChats(prev => (prev.some(c => c.id === chat.id) ? prev : [chat, ...prev]));
+                    return chat;
+                } catch (error) {
+                    console.error('❌ Failed to create a chat thread:', error);
+                    return null;
+                } finally {
+                    chatCreation.current = null;
+                }
+            })();
+        }
+        return chatCreation.current;
+    };
+
     // Helper function to save chat messages to active chat
     const saveChatMessagesToActiveChat = async (newMessages: ChatMessage[]) => {
-        if (activeChat?.id) {
-            try {
-                await saveChatMessages(activeChat.id, newMessages);
-                
-                // Update the chat in the chats list with new messages
-                setChats(prev => 
-                    prev.map(chat => 
-                        chat.id === activeChat.id 
-                            ? { ...chat, messages: newMessages, updated_at: new Date().toISOString() }
-                            : chat
-                    )
-                );
-            } catch (error) {
-                console.error('❌ Failed to save chat messages:', error);
-                // Don't show error to user, this is auto-save
-            }
+        const chat = await ensureActiveChat();
+        if (!chat?.id) return;
+
+        try {
+            await saveChatMessages(chat.id, newMessages);
+
+            // Update the chat in the chats list with new messages
+            setChats(prev =>
+                prev.map(entry =>
+                    entry.id === chat.id
+                        ? { ...entry, messages: newMessages, updated_at: new Date().toISOString() }
+                        : entry
+                )
+            );
+        } catch (error) {
+            console.error('❌ Failed to save chat messages:', error);
+            // Don't show error to user, this is auto-save
         }
     };
 
@@ -2512,17 +2553,10 @@ export default function ChatSidebar({
             return;
         }
 
-        // If no active chat exists, create one first
-        if (!activeChat && currentWorkspace?.id) {
-            try {
-                const newChat = await createNewChat(currentWorkspace.id, 'Chat 1');
-                setChats([newChat]);
-                setActiveChat(newChat);
-            } catch (error) {
-                console.error('❌ Failed to create default chat:', error);
-                alert('Failed to create chat. Please try again.');
-                return;
-            }
+        // Make sure there is a thread to save into before anything is said.
+        if (!(await ensureActiveChat()) && currentWorkspace?.id) {
+            alert('Failed to create chat. Please try again.');
+            return;
         }
 
         const userMessage = input.trim();
@@ -4646,6 +4680,10 @@ export default function ChatSidebar({
     useEffect(() => {
         messageCountRef.current = messages.length;
     }, [messages.length]);
+
+    useEffect(() => {
+        activeChatRef.current = activeChat;
+    }, [activeChat]);
 
     // Load chats when workspace changes
     useEffect(() => {

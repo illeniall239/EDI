@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import WorkModeWorkspace from '@/components/WorkModeWorkspace';
+import WorkbookOpener from '@/components/WorkbookOpener';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import {
     uploadFile,
@@ -19,7 +20,8 @@ import {
     createWorkspace,
     listWorkspaceIds,
     setActiveWorkspaceId,
-    forgetWorkspaceId
+    forgetWorkspaceId,
+    hasTabChosenWorkspace
 } from '@/utils/workspace';
 import { Workspace } from '@/types';
 
@@ -39,6 +41,7 @@ export default function HomePage() {
     const [workspace, setWorkspace] = useState<Workspace | null>(null);
     const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
     const [switching, setSwitching] = useState(false);
+    const [showOpener, setShowOpener] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<unknown[]>([]);
@@ -141,16 +144,27 @@ export default function HomePage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Resolve the workspace, then restore whatever was in it.
+    // Resolve the workspace, then restore whatever was in it -- unless there
+    // is more than one to choose from and this tab has not chosen yet, in
+    // which case ask.
     useEffect(() => {
         let cancelled = false;
 
         (async () => {
             try {
-                const id = await getOrCreateWorkspaceId();
+                const summaries = await refreshWorkspaces();
                 if (cancelled) return;
 
-                const summaries = await refreshWorkspaces();
+                // Coming back to several workbooks: offer them rather than
+                // guessing. A reload does not count as coming back -- the tab
+                // has already chosen, and being thrown back to a picker every
+                // refresh would be worse than guessing.
+                if (summaries.length > 1 && !hasTabChosenWorkspace()) {
+                    setShowOpener(true);
+                    return;
+                }
+
+                const id = await getOrCreateWorkspaceId();
                 if (cancelled) return;
 
                 const name = summaries.find((entry) => entry.id === id)?.name;
@@ -223,12 +237,35 @@ export default function HomePage() {
         event.target.value = '';
     };
 
+    /** Open a workbook chosen from the opener. */
+    const handleOpenFromOpener = async (id: string, name: string) => {
+        setSwitching(true);
+        try {
+            await openWorkspace(id, name);
+            await refreshWorkspaces();
+            setShowOpener(false);
+        } catch (err) {
+            console.error('Could not open that workbook:', err);
+            alert(err instanceof Error ? err.message : 'Could not open that workbook.');
+        } finally {
+            setSwitching(false);
+        }
+    };
+
+    /** Back to the opener, from the workspace picker. */
+    const handleShowOpener = async () => {
+        await saveDataToWorkspace(data, currentFilename);
+        await refreshWorkspaces();
+        setShowOpener(true);
+    };
+
     const handleCreateWorkspace = async () => {
         setSwitching(true);
         try {
             const id = await createWorkspace(`Workbook ${workspaces.length + 1}`);
             await openWorkspace(id);
             await refreshWorkspaces();
+            setShowOpener(false);
         } catch (err) {
             console.error('Could not create a workbook:', err);
             alert(err instanceof Error ? err.message : 'Could not create a workbook.');
@@ -321,6 +358,19 @@ export default function HomePage() {
         );
     }
 
+    if (showOpener) {
+        return (
+            <WorkbookOpener
+                workbooks={workspaces}
+                onOpen={handleOpenFromOpener}
+                onCreate={handleCreateWorkspace}
+                // Nothing to go back to until a workbook is actually open.
+                onDismiss={workspace ? () => setShowOpener(false) : undefined}
+                busy={switching}
+            />
+        );
+    }
+
     if (error || !workspace) {
         return (
             <div className="min-h-screen bg-background">
@@ -361,6 +411,7 @@ export default function HomePage() {
                 onRenameWorkspace={handleRenameWorkspace}
                 onDeleteWorkspace={handleDeleteWorkspace}
                 onCreateWorkspace={handleCreateWorkspace}
+                onShowAllWorkbooks={handleShowOpener}
                 onClearData={handleClearData}
                 onSpreadsheetCommand={async (command: string) => ({
                     success: true,
