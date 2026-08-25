@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { File, ChevronDown, Upload, Download, ChevronRight, Trash2, Menu, Edit, Table, FileSpreadsheet } from 'lucide-react';
+import { File, ChevronDown, Download, ChevronRight, Trash2, Edit, Table, FileSpreadsheet } from 'lucide-react';
 import ConfirmationDialog from './ConfirmationDialog';
 
 interface Workspace {
@@ -20,7 +20,6 @@ interface SpreadsheetNavbarProps {
   onDeleteWorkspace: (id: string) => void;
   
   // Data Operations
-  onFileUpload?: (files: FileList) => void;
   onClearData?: () => void;
   onExportCSV?: () => void;
   onExportExcel?: () => void;
@@ -38,7 +37,6 @@ export default function SpreadsheetNavbar({
   onWorkspaceChange,
   onRenameWorkspace,
   onDeleteWorkspace,
-  onFileUpload,
   onClearData,
   onExportCSV,
   onExportExcel,
@@ -47,7 +45,6 @@ export default function SpreadsheetNavbar({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [fileDropdownOpen, setFileDropdownOpen] = useState(false);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editLoading, setEditLoading] = useState(false);
@@ -135,108 +132,86 @@ export default function SpreadsheetNavbar({
 
             {/* Desktop Navigation */}
             <div className="hidden md:flex items-center space-x-6">
-              {/* File Menu */}
-              <div className="relative" ref={fileDropdownRef}>
-                <button
-                  onClick={() => setFileDropdownOpen(!fileDropdownOpen)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-white/10 transition-all text-sm text-white hover:text-white"
-                >
-                  <File className="w-4 h-4" />
-                  File
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </button>
+              {/* File Menu. Everything in it -- export, clear -- needs data,
+                 so with an empty sheet the button would open an empty box. */}
+              {data.length > 0 && (
+                <div className="relative" ref={fileDropdownRef}>
+                  <button
+                    onClick={() => setFileDropdownOpen(!fileDropdownOpen)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-white/10 transition-all text-sm text-white hover:text-white"
+                  >
+                    <File className="w-4 h-4" />
+                    File
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
 
-                {fileDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-2 w-48 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50">
-                    {onFileUpload && (
-                      <label className="flex items-center gap-3 px-4 py-2 hover:bg-accent cursor-pointer text-sm text-popover-foreground hover:text-accent-foreground">
-                        <Upload className="w-4 h-4" />
-                        Upload Data
-                        <input
-                          type="file"
-                          accept=".csv,.xlsx,.xls"
-                          multiple
-                          onChange={(e) => e.target.files && onFileUpload(e.target.files)}
-                          className="hidden"
-                        />
-                      </label>
-                    )}
-                    
+                  {fileDropdownOpen && (
+                    <div className="absolute top-full left-0 mt-2 w-48 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50">
+                      {/* Export submenu */}
+                      {data.length > 0 && (
+                        <div className="relative" ref={exportDropdownRef}>
+                          <button
+                            onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+                            className="w-full flex items-center justify-between gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Download className="w-4 h-4" />
+                              Export File
+                            </div>
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
 
-                    {/* Export submenu */}
-                    {data.length > 0 && (
-                      <div className="relative" ref={exportDropdownRef}>
+                          {exportDropdownOpen && (
+                            <div className="absolute left-full top-0 ml-1 w-44 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50">
+                              {onExportCSV && (
+                                <button
+                                  onClick={() => {
+                                    onExportCSV();
+                                    setExportDropdownOpen(false);
+                                    setFileDropdownOpen(false);
+                                  }}
+                                  className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
+                                >
+                                  <Table className="w-4 h-4" />
+                                  Export as CSV
+                                </button>
+                              )}
+                              {onExportExcel && (
+                                <button
+                                  onClick={() => {
+                                    onExportExcel();
+                                    setExportDropdownOpen(false);
+                                    setFileDropdownOpen(false);
+                                  }}
+                                  className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
+                                >
+                                  <FileSpreadsheet className="w-4 h-4" />
+                                  Export as Excel
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {onClearData && data.length > 0 && (
                         <button
-                          onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
-                          className="w-full flex items-center justify-between gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
+                          onClick={() => {
+                            setShowClearDataConfirm(true);
+                            setFileDropdownOpen(false);
+                          }}
+                          className="w-full flex items-center gap-3 px-4 py-2 hover:bg-destructive text-sm text-popover-foreground hover:text-destructive-foreground"
                         >
-                          <div className="flex items-center gap-3">
-                            <Download className="w-4 h-4" />
-                            Export File
-                          </div>
-                          <ChevronRight className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" />
+                          Clear Data
                         </button>
-
-                        {exportDropdownOpen && (
-                          <div className="absolute left-full top-0 ml-1 w-44 bg-popover backdrop-blur-sm rounded-lg shadow-xl border border-border py-2 z-50">
-                            {onExportCSV && (
-                              <button
-                                onClick={() => {
-                                  onExportCSV();
-                                  setExportDropdownOpen(false);
-                                  setFileDropdownOpen(false);
-                                }}
-                                className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
-                              >
-                                <Table className="w-4 h-4" />
-                                Export as CSV
-                              </button>
-                            )}
-                            {onExportExcel && (
-                              <button
-                                onClick={() => {
-                                  onExportExcel();
-                                  setExportDropdownOpen(false);
-                                  setFileDropdownOpen(false);
-                                }}
-                                className="w-full flex items-center gap-3 px-4 py-2 hover:bg-accent text-sm text-popover-foreground hover:text-accent-foreground"
-                              >
-                                <FileSpreadsheet className="w-4 h-4" />
-                                Export as Excel
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {onClearData && data.length > 0 && (
-                      <button
-                        onClick={() => {
-                          setShowClearDataConfirm(true);
-                          setFileDropdownOpen(false);
-                        }}
-                        className="w-full flex items-center gap-3 px-4 py-2 hover:bg-destructive text-sm text-popover-foreground hover:text-destructive-foreground"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Clear Data
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Mobile hamburger menu */}
-            <div className="md:hidden">
-              <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 rounded-md hover:bg-white/10 transition-colors"
-              >
-                <Menu className="w-5 h-5 text-white" />
-              </button>
-            </div>
           </div>
 
           {/* Right section - Workspace Selector and User Profile */}
@@ -321,35 +296,6 @@ export default function SpreadsheetNavbar({
           </div>
         </div>
 
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-border py-3 space-y-2">
-
-            {/* Mobile File Operations */}
-            <div className="px-3">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">File</h3>
-              <div className="space-y-1">
-                {onFileUpload && (
-                  <label className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md bg-card hover:bg-primary cursor-pointer text-xs text-card-foreground hover:text-primary-foreground">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    Upload Data
-                    <input
-                      type="file"
-                      accept=".csv,.xlsx,.xls"
-                      multiple
-                      onChange={(e) => e.target.files && onFileUpload(e.target.files)}
-                      className="hidden"
-                    />
-                  </label>
-                )}
-                
-              </div>
-            </div>
-
-          </div>
-        )}
       </div>
 
       {/* Clear Data Confirmation Dialog */}

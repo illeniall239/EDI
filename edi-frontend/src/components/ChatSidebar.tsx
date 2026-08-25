@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Plus, RefreshCw, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, Upload } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, LimitError } from '@/utils/api';
@@ -4724,6 +4724,26 @@ export default function ChatSidebar({
                     {/* Chat Controls in Header */}
                     {isExpanded && (
                         <div className="flex items-center gap-3">
+                            {/* Upload data. Sits before New Chat because it is
+                                the first thing a new workspace needs, and it is
+                                never disabled -- uploading is how you get out of
+                                the empty state. */}
+                            {onFileUpload && (
+                                <label
+                                    title="Upload a CSV or Excel file"
+                                    className="bg-black hover:bg-black/90 text-white px-3 py-2 rounded-md font-medium transition-all duration-200 border border-white/20 flex items-center gap-2 cursor-pointer"
+                                >
+                                    <Upload className="w-4 h-4" />
+                                    <span className="text-sm">Upload data</span>
+                                    <input
+                                        type="file"
+                                        accept=".csv,.xlsx,.xls"
+                                        onChange={onFileUpload}
+                                        className="hidden"
+                                    />
+                                </label>
+                            )}
+
                             {/* New Chat */}
                             <button
                                 onClick={() => handleCreateNewChat()}

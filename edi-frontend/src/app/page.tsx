@@ -163,11 +163,6 @@ export default function HomePage() {
         event.target.value = '';
     };
 
-    const handleFileUploadFromNavbar = async (files: FileList) => {
-        const file = files[0];
-        if (file) await ingestFile(file);
-    };
-
     const handleClearData = async () => {
         setData([]);
         setCurrentFilename(undefined);
@@ -225,7 +220,6 @@ export default function HomePage() {
                 onWorkspaceChange={noop}
                 onRenameWorkspace={noop}
                 onDeleteWorkspace={noop}
-                onFileUpload={handleFileUploadFromNavbar}
                 onClearData={handleClearData}
                 onSpreadsheetCommand={async (command: string) => ({
                     success: true,
