@@ -1,20 +1,45 @@
 # EDI
 
-A spreadsheet you can ask questions. Upload a CSV or Excel file, then use plain
-English to filter it, clean it, chart it, or have it explained back to you.
+**A spreadsheet you can ask questions, running entirely on your own machine.**
 
-There is no sign-up. Opening the app drops you straight into a sheet with the
-AI sidebar next to it.
+Open a CSV or Excel file, then use plain English to filter it, clean it, chart
+it, or have it explained back to you — answered by a model running on your own
+hardware. No account, no API key, no upload.
+
+There is no sign-up because there is nothing to sign up to. Clone it, point it
+at [Ollama](https://ollama.com), and the whole thing runs on localhost.
 
 ![Uploading a CSV, asking which region had the highest revenue, charting revenue by month, and sorting the sheet -- all from the chat](assets/edi-demo.gif)
 
 *Real answers from a real model. The pauses while it thinks are cut; nothing else is.*
 
-EDI is a harness: you bring the model. It runs on Google, OpenAI, Anthropic,
-Groq, a local model through **Ollama**, or anything speaking the
-OpenAI-compatible wire format. With nothing configured at all it keeps
-workspaces in a local file and looks for Ollama on localhost -- no API key, no
-database signup.
+## Nothing leaves the machine
+
+Run it the default way -- a local model through **Ollama**, workspaces in a
+local SQLite file -- and no part of your sheet crosses the network. Not the
+rows, not the column names, not the question you asked. There is nobody on the
+other end to send it to.
+
+That is the point. The spreadsheets people actually have are salaries, patient
+lists, client records, things under an NDA, things an employer's policy says
+cannot be pasted into a chat window. The usual answer for those is that you
+cannot use a tool like this at all.
+
+**The cloud is still there if you want it.** EDI is a harness: it talks to
+Ollama, to anything speaking the OpenAI-compatible wire format (LM Studio,
+vLLM, llama.cpp, OpenRouter), or to Google, OpenAI, Anthropic and Groq when you
+want the biggest model going. That is a choice you make, not a default you have
+to undo.
+
+If you do point it at a hosted model, here is what travels per question, which
+is more than just the question: the text you typed and the last few messages of
+the conversation; your column names, plus the distinct values of small text
+columns when it draws a chart; up to 200 rows of that query's results; and, on
+the pandas path, the first five rows of the sheet. All of it avoidable by
+staying local -- written down because "your data stays private" is a claim
+worth being precise about in both directions.
+
+## Documentation
 
 Documentation is part of the app and is what you land on: run it and open
 `/`, with the spreadsheet itself at `/app`. Or read the source in
@@ -26,14 +51,16 @@ how it works.
 
 ```
 browser ──── /api/* ────► FastAPI ────► your model
+   │                         │          (Ollama on localhost, by default)
    │                         │
    │                         └────────► workspace store
-   │                                    (Postgres, or a local file)
+   │                                    (a local file, or Postgres)
    │
    └── remembers its anonymous workspace ids in localStorage
 ```
 
-A workspace is a row in Postgres keyed by a UUID. The browser keeps that UUID
+A workspace is a row keyed by a UUID -- in a local SQLite file by default, or
+in Postgres when you have put EDI on a server. The browser keeps that UUID
 in `localStorage` and sends it with every request; that is the whole identity
 model. You can keep several workbooks, and the browser holds the list of them
 -- there is no "list all workspaces" endpoint, because with no sign-in it
@@ -51,8 +78,9 @@ is what lets the whole thing run on serverless functions.
 
 ## Running it
 
-Nothing is required. With no configuration EDI stores workspaces in a local
-SQLite file and looks for a model on `localhost:11434`, where Ollama listens.
+Nothing is required, and there is nothing to configure for the local path --
+it is what you get by default. EDI stores workspaces in a local SQLite file and
+looks for a model on `localhost:11434`, where Ollama listens.
 
 ```bash
 pip install -r backend/requirements.txt
@@ -69,8 +97,9 @@ it answers confidently and wrongly:
 EDI_LLM_PROVIDER=ollama python backend/check_model.py
 ```
 
-To use a hosted model and Postgres instead, copy `sample.env` to `.env`, fill
-in a key and your Supabase details, and apply the schema:
+That is the whole local setup. If you would rather use a hosted model and
+Postgres, copy `sample.env` to `.env`, fill in a key and your Supabase details,
+and apply the schema:
 
 ```bash
 supabase db push

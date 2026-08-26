@@ -2,7 +2,8 @@ import Link from 'next/link';
 
 export const metadata = {
     title: 'Self-hosting',
-    description: 'Storage backends, deployment, and the usage limits.',
+    description: 'Where workspaces live, and what changes when you put EDI '
+        + 'somewhere other than your own machine.',
 };
 
 export default function SelfHosting() {
@@ -11,8 +12,10 @@ export default function SelfHosting() {
             <div className="edi-kicker-doc">Configure</div>
             <h1>Self-hosting</h1>
             <p className="lede">
-                Where workspaces live, how to deploy, and how to stop a public URL spending
-                your money.
+                Everything here is optional. Run EDI on your own machine and the local
+                SQLite store is already doing the job. This page is for the other case —
+                putting it on a server, where the storage changes, the data leaves your
+                machine, and a public URL can spend your money.
             </p>
 
             <h2>Storage</h2>

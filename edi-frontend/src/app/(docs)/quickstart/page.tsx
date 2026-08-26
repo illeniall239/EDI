@@ -2,7 +2,8 @@ import Link from 'next/link';
 
 export const metadata = {
     title: 'Quickstart',
-    description: 'Clone to running, locally with no accounts, or deployed.',
+    description: 'Clone to running on your own machine, with no accounts. '
+        + 'Deploying to a server is the other, optional path.',
 };
 
 export default function Quickstart() {
@@ -11,8 +12,10 @@ export default function Quickstart() {
             <div className="edi-kicker-doc">Start</div>
             <h1>Quickstart</h1>
             <p className="lede">
-                Two ways to run EDI. Locally it needs no accounts at all; deployed it needs
-                a Supabase project, because serverless has nowhere to keep a file.
+                The first path is the one to take: EDI on your own machine, with a local
+                model, needing no account anywhere. The second is for putting it on a
+                server, which needs a Postgres database because serverless has nowhere to
+                keep a file.
             </p>
 
             <h2>Prerequisites</h2>
@@ -27,8 +30,9 @@ export default function Quickstart() {
 
             <h2>Local, with no accounts</h2>
             <p>
-                This is the default path. Workspaces go in a local SQLite file, and the
-                model runs on your machine.
+                This is the default path, and the one most people should stay on.
+                Workspaces go in a local SQLite file, the model runs on your machine, and
+                nothing your sheet contains crosses the network.
             </p>
 
             <h3>1. Backend</h3>

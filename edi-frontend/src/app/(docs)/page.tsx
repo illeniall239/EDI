@@ -3,19 +3,22 @@ import Link from 'next/link';
 export const metadata = {
     // The layout supplies the "— EDI.ai" suffix; `absolute` opts this one page
     // out of it so the landing page is not "EDI.ai — EDI.ai".
-    title: { absolute: 'EDI.ai — a spreadsheet you can ask questions' },
-    description: 'A spreadsheet you can ask questions, running on any model you bring.',
+    title: { absolute: 'EDI.ai — a local spreadsheet you can ask questions' },
+    description:
+        'A spreadsheet you can ask questions, running a local model on your own '
+        + 'machine. No account, no API key, no data leaving the room.',
 };
 
 export default function DocsHome() {
     return (
         <>
             <div className="edi-kicker-doc">Overview</div>
-            <h1>A spreadsheet you can ask questions.</h1>
+            <h1>A spreadsheet you can ask questions. On your own machine.</h1>
             <p className="lede">
-                Upload a CSV or Excel file, then use plain English to filter it, clean it,
-                chart it, or have it explained back to you. EDI brings the interface; you
-                bring the model.
+                Open a CSV or Excel file, then use plain English to filter it, clean it,
+                chart it, or have it explained back to you — answered by a model running
+                on your own hardware. No account, no API key, no upload. The cloud is
+                there if you want it, and off by default.
             </p>
 
             <video
@@ -61,13 +64,48 @@ export default function DocsHome() {
                 functions.
             </p>
 
-            <h2>You bring the model</h2>
+            <h2>Nothing leaves the machine</h2>
             <p>
-                EDI is a harness. It talks to Google, OpenAI, Anthropic, Groq, a local
-                model through <strong>Ollama</strong>, or anything speaking the
-                OpenAI-compatible wire format — LM Studio, vLLM, OpenRouter, llama.cpp.
-                Pick one, and the quality of the answers follows from that choice rather
-                than from anything in this repo.
+                Run EDI the default way — a local model through{' '}
+                <a href="https://ollama.com">Ollama</a>, workspaces in a local SQLite file
+                — and no part of your sheet crosses the network. Not the rows, not the
+                column names, not the question you asked. There is no account to make and
+                no key to paste, because there is nobody on the other end.
+            </p>
+            <p>
+                That matters for the spreadsheets people actually have: salaries, patient
+                lists, client records, anything under an NDA, anything an employer&apos;s
+                policy says cannot be pasted into a chat window. The usual answer to those
+                is that you cannot use this kind of tool at all.
+            </p>
+
+            <h3>If you do point it at a hosted model</h3>
+            <p>
+                Then be clear-eyed about what travels, because it is more than the
+                question. Per question, a hosted provider receives:
+            </p>
+            <ul>
+                <li>the question you typed, and the last few messages of the conversation;</li>
+                <li>your column names — and, when it draws a chart, the distinct values of
+                    small text columns, so it does not invent categories;</li>
+                <li>up to 200 rows of that query&apos;s results, with totals computed
+                    locally over all of them;</li>
+                <li>on the pandas path, the first five rows of the sheet.</li>
+            </ul>
+            <p>
+                None of that is unusual for a tool like this, and all of it is avoidable by
+                staying local. It is written down here because &quot;your data stays
+                private&quot; is a claim worth being precise about, in both directions.
+            </p>
+
+            <h2>You still bring the model</h2>
+            <p>
+                Local is the default, not the limit. EDI is a harness: it talks to a local
+                model through <strong>Ollama</strong>, to anything speaking the
+                OpenAI-compatible wire format — LM Studio, vLLM, llama.cpp, OpenRouter —
+                or to Google, OpenAI, Anthropic and Groq when you want the biggest model
+                going. Pick one, and the quality of the answers follows from that choice
+                rather than from anything in this repo.
             </p>
             <div className="edi-note">
                 <strong>That cuts both ways.</strong> A weak model does not error — it
@@ -79,9 +117,9 @@ export default function DocsHome() {
 
             <h2>Running it with no accounts</h2>
             <p>
-                With nothing configured, EDI keeps workspaces in a local SQLite file and
-                looks for a model on <code>localhost:11434</code>, where Ollama listens.
-                No API key, no database signup, no cloud anything:
+                There is no configuration to do for the local path — it is what you get by
+                default. EDI keeps workspaces in a local SQLite file and looks for a model
+                on <code>localhost:11434</code>, where Ollama listens:
             </p>
             <pre><code>{`git clone https://github.com/illeniall239/EDI.git
 cd EDI
@@ -117,20 +155,20 @@ EDI_LLM_PROVIDER=ollama uvicorn main:app --app-dir backend --port 8000`}</code><
             <h2>Where to go next</h2>
             <ul>
                 <li>
-                    <Link href="/quickstart">Quickstart</Link> — clone to running, locally
-                    or deployed.
+                    <Link href="/quickstart">Quickstart</Link> — clone to running on
+                    your own machine, in about five minutes.
                 </li>
                 <li>
                     <Link href="/asking">What you can ask</Link> — the questions and
                     commands it handles, tested against a real sheet.
                 </li>
                 <li>
-                    <Link href="/models">Choosing a model</Link> — the provider matrix,
-                    and how to tell whether yours is good enough.
+                    <Link href="/models">Choosing a model</Link> — what to run locally,
+                    the hosted options, and how to tell whether yours is good enough.
                 </li>
                 <li>
-                    <Link href="/self-hosting">Self-hosting</Link> — storage, deployment,
-                    and the usage limits.
+                    <Link href="/self-hosting">Self-hosting</Link> — optional: what
+                    changes when EDI lives somewhere other than your machine.
                 </li>
                 <li>
                     <Link href="/architecture">How it works</Link> — what happens between

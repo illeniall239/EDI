@@ -2,7 +2,8 @@ import Link from 'next/link';
 
 export const metadata = {
     title: 'Choosing a model',
-    description: 'The provider matrix, and how to tell whether your model is good enough.',
+    description: 'Running a model on your own hardware, the hosted options if you '
+        + 'want them, and how to tell whether yours is good enough.',
 };
 
 export default function Models() {
@@ -11,9 +12,12 @@ export default function Models() {
             <div className="edi-kicker-doc">Configure</div>
             <h1>Choosing a model</h1>
             <p className="lede">
-                EDI is a harness. It supplies the spreadsheet, the prompts and the plumbing;
-                the model is yours to pick, and the answers you get are a property of that
-                choice rather than of this code.
+                EDI is a harness. It supplies the spreadsheet, the prompts and the
+                plumbing; the model is yours to pick, and the answers you get are a
+                property of that choice rather than of this code. The default is{' '}
+                <code>ollama</code>, on your own hardware — everything below is what to
+                run there, and what the hosted alternatives cost you in exchange for being
+                easier.
             </p>
 
             <h2>Providers</h2>
