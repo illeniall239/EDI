@@ -275,7 +275,18 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
         if not self.supabase_client:
             logger.warning("⚠️ Supabase client not available - cannot load chat history")
             return []
-        
+
+        # A chat only gets a row once it has been saved, and until then the
+        # client sends a placeholder -- "default" for the one every new
+        # workspace opens with. chats.id is a uuid column, so asking for that
+        # placeholder is not an empty result but a 400 from Postgres, which
+        # cost a round trip and an error line on every single question.
+        try:
+            uuid.UUID(str(chat_id))
+        except (ValueError, AttributeError, TypeError):
+            logger.debug(f"📭 Chat '{chat_id}' has never been saved; nothing to load")
+            return []
+
         try:
             logger.debug(f"📥 Loading chat messages from Supabase for chat_id: {chat_id}")
             
@@ -500,29 +511,12 @@ except Exception as e:
     
     def _categorize_query_basic(self, question: str) -> str:
         """Categorize the query to determine the appropriate processing method"""
-        question_lower = question.lower()
-
-        # Use LLM to detect missing values queries - no more pattern matching
-        missing_values_check_prompt = f"""
-        Is this user query about missing values, null values, or empty data? Answer only "YES" or "NO".
-        
-        Query: "{question}"
-        
-        Examples of missing values queries:
-        - "show me missing values"
-        - "how to handle missing data" 
-        - "what should I do about null values"
-        - "remove missing values"
-        - "fill empty cells"
-        - "deal with missing information"
-        """
-        
-        try:
-            response = self.llm.invoke(missing_values_check_prompt)
-            if content_of(response).upper() == "YES":
-                return "MISSING_VALUES"
-        except Exception as e:
-            logger.error(f"LLM missing values detection failed: {str(e)}")
+        # MISSING_VALUES used to be decided by its own yes/no call to the
+        # model before this one ran, which is one round trip to answer a
+        # question the categoriser below already answers -- it has
+        # MISSING_VALUES among its categories. Its examples were folded into
+        # that prompt instead. Worth about a second and a half per question,
+        # and this ran twice.
 
         # --- Pattern-based pre-filtering for critical categories ---
         question_lower = question.lower()
@@ -560,7 +554,7 @@ Guidelines for categorization:
 - DUPLICATE_CHECK: ALL queries about checking for OR removing duplicate rows (e.g., "are there duplicates", "remove duplicates", "check for duplicates", "delete duplicates", "find duplicates", "drop duplicates", "deduplicate", "how many duplicates"). This includes BOTH checking AND removal operations.
 - TRANSLATION: Requests to translate data content
 - ANALYSIS: Requests for statistical analysis, correlations, patterns
-- MISSING_VALUES: Queries about null/empty values
+- MISSING_VALUES: Queries about null, empty or missing data -- finding it, counting it, filling it or removing it (e.g. "show me missing values", "how to handle missing data", "what should I do about null values", "fill empty cells", "deal with missing information")
 - JUNK_DETECTION: Requests to find, identify, flag, or clean junk/spam/meaningless responses in text columns (e.g., "find junk responses", "detect spam", "identify meaningless text", "flag gibberish", "clean bad responses", "add junk column")
 
 IMPORTANT: Any query containing words like "duplicate", "duplicates", "deduplicate" should ALWAYS be categorized as DUPLICATE_CHECK, never SPREADSHEET_COMMAND.
@@ -1133,8 +1127,10 @@ Keep responses conversational, human-like, SHORT, and context-aware."""
                     logger.error("❌ No data loaded for duplicate removal")
                     return "I need some data to work with first. Please upload a dataset and I can help remove duplicates.", None
                 
-            # For other queries, use the category-based approach
-            query_category, confidence = self.categorize_query(question)
+            # Reuse the category from the top of this function rather than
+            # asking again. The question has not changed since, so the second
+            # call returned the same answer the first one did, for another
+            # round trip to the model.
             logger.info(f"Query categorized as: {query_category} (confidence: {confidence}%)")
             
             # Process based on category
