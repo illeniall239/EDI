@@ -342,6 +342,35 @@ export class LLMCommandClassifier {
       return this.classifyWithRegex(userInput);
     }
 
+    // A plain question about the data does not need the model to tell us so.
+    //
+    // Measured over a corpus of questions, charts and commands: every input
+    // the universal router sends to DIRECT_BACKEND came back general_query,
+    // and on that path ChatSidebar never reads the classification again --
+    // it routes on the raw message and calls /api/query. The one thing the
+    // classification decides for such an input is that it is *not* one of the
+    // five intents the sidebar handles itself, and that is what NOT_A_QUESTION
+    // below is for.
+    //
+    // So the round trip was ~2s spent confirming "still just a question". It
+    // is skipped when nothing in the input could make it anything else. The
+    // test is deliberately one-sided: an unrecognised word means fall through
+    // to the model, so being too strict costs nothing but the old latency,
+    // while being too loose would misroute a command. Speculatively firing
+    // the query in parallel instead is not an option -- "remove duplicate
+    // rows" would then be carried out by both ends.
+    if (!NOT_A_QUESTION.test(userInput)) {
+      const result: CommandClassification = {
+        intent: 'general_query',
+        action: 'analyze_data',
+        target: { type: 'all_data', identifier: '*' },
+        parameters: { query_type: 'analysis' },
+        confidence: 0.9,
+        reasoning: 'Plain question about the data; no command vocabulary present'
+      };
+      return result;   // classifyCommand caches whatever comes back from here
+    }
+
     // Ask the backend to classify. This used to call Groq straight from the
     // browser with a key from NEXT_PUBLIC_GROQ_API_KEY -- which Next inlines
     // into the bundle, so every visitor could read it and spend it. The
@@ -1676,4 +1705,46 @@ Return ONLY JSON for the current input.`;
 }
 
 // Export singleton instance
+/**
+ * Anything that might not be a plain question about the data.
+ *
+ * One word from this list is enough to send an input to the model for real
+ * classification. It covers every intent in the taxonomy except general_query
+ * -- both the spreadsheet operations and, importantly, the five the sidebar
+ * intercepts and carries out itself (intelligent_analysis, smart_format,
+ * data_entry, and data_modification's remove_duplicates and find_and_replace),
+ * since misreading one of those as a question would send it to the SQL path
+ * instead of its handler.
+ *
+ * Err towards listing a word. A question that trips this is merely as slow as
+ * it used to be; a command that does not trip it goes somewhere wrong.
+ */
+const NOT_A_QUESTION = new RegExp([
+  // Cell and text formatting
+  'bold', 'italic', 'underline', 'strike', 'font', 'colou?r', 'highlight',
+  'format', 'style', 'align', 'wrap', 'border', 'currency', 'decimal',
+  'beautify', 'tidy', 'clean\s*up', 'pretty',
+  // Structure
+  'column', 'row', 'cell', 'range', 'sheet', 'table', 'header',
+  'insert', 'delete', 'remove', 'add', 'append', 'clear', 'merge', 'split',
+  'resize', 'widen', 'narrow', 'autofit', 'auto\s*fit', 'freeze', 'unfreeze',
+  'hide', 'unhide', 'rename',
+  // Operations on the view
+  'sort', 'filter', 'group', 'pivot', 'transpose',
+  // Named features
+  'hyperlink', 'validation', 'comment', 'note', 'image', 'picture',
+  'named\s*range', 'conditional',
+  // Data modification -- the two the sidebar handles itself
+  'duplicate', 'dedup', 'find\s*(and|&)\s*replace', 'replace',
+  // Intelligent analysis and smart formatting
+  'analy[sz]', 'summar[iy]', 'insight', 'anomal', 'outlier', 'trend',
+  'pattern', 'what\s+matters', 'junk', 'spam', 'gibberish',
+  // Data entry
+  'enter\s+data', 'fill\s+in', 'set\s+.*\bto\b', 'update\s+.*\bto\b',
+  // Anything addressing a cell by reference, e.g. "A2", "B10:C12"
+  '\b[a-z]{1,2}\d{1,4}\b',
+  // Translation
+  'translat',
+].join('|'), 'i');
+
 export const llmCommandClassifier = LLMCommandClassifier.getInstance();
