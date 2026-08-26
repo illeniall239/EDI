@@ -41,6 +41,22 @@ if sys.platform.startswith('win'):
 
 logger = logging.getLogger('AgentServices')
 
+# The most result rows ever put in front of the model.
+#
+# Nothing bounded this before. What a query returns is not what the sheet
+# holds -- an aggregate comes back as four rows -- but "list every order in
+# the North region" on an 80,000-row sheet returns 20,117, and every one of
+# them was pasted into the prompt. Measured on that sheet: 65s when the model
+# got through it, and a 1.69MB dump of raw Python tuples when it did not,
+# because db.run() stringifies every row and the formatting call that failed
+# on the result fell through to printing it.
+#
+# Bounding the sample costs no accuracy because the numbers do not come from
+# it: the count and the column totals are computed over the whole result set
+# in _result_facts(), and the arithmetic that answers most questions already
+# happened in SQL before any of this.
+MAX_PROMPT_ROWS = 200
+
 if not SUPABASE_AVAILABLE:
     logger.info("supabase-py not available (%s); conversation memory stays in process.",
                 _supabase_import_error)
@@ -906,10 +922,12 @@ conversation does not contain the answer, say so plainly and briefly."""
                     # Execute dataset query based on mode
                     if mode.lower() == "simple":
                         logger.debug("🔧 Using SIMPLE mode - direct SQL execution...")
+                        self._last_derived = []
                         response = self._execute_sql_query_directly(question)
                         logger.debug(f"✅ Simple mode execution completed: {response}")
                         # Apply enhanced template formatting to Simple mode as well
-                        return self._format_sql_response(response, question)
+                        answer = self._format_sql_response(response, question)
+                        return self._with_derived_note(answer)
                     else:  # complex mode
                         logger.debug("🔧 Using COMPLEX mode - agent executor...")
                         try:
@@ -2217,6 +2235,12 @@ Rules:
             sql_query = re.sub(r'(FROM|from)\s+\w+', 'FROM data', sql_query)
             sql_query = re.sub(r'(JOIN|join)\s+\w+', 'JOIN data', sql_query)
             logger.debug(f"🔍 Generated SQL Query (post-rewrite): {sql_query}")
+
+            # Held for the caller to append after the last rephrasing pass.
+            # Putting it in the prompt is not enough: the answer goes through a
+            # second model call that rewrites what the first one wrote, and a
+            # line it is free to reword is a line it is free to drop.
+            self._last_derived = self._derived_definitions(sql_query)
             
             # Step 2: Execute the SQL query
             # Get the SQL database object
@@ -2228,7 +2252,20 @@ Rules:
             # Use the appropriate method to run the query based on the object type
             rows = []
             columns = []
-            
+
+            # Run it into a DataFrame wherever we can. db.run() returns rows
+            # already stringified into one blob, which is both the thing that
+            # used to be pasted into the prompt whole and a shape the row count
+            # and column totals cannot be recovered from. The engine is set
+            # alongside db_sqlalchemy in data_handler, so in practice this is
+            # the path taken; the branches below stay for the case where it is
+            # not.
+            engine = getattr(self.data_handler, "engine", None)
+            if engine is not None:
+                with engine.connect() as conn:
+                    rows_df = pd.read_sql_query(sa_text(sql_query), conn)
+                return self._format_direct_sql_result(rows_df, question, sql_query)
+
             # Use LangChain's built-in run method if available (for SQLDatabase)
             if hasattr(db, "run"):
                 logger.debug("Using db.run() method for SQLDatabase object")
@@ -2320,7 +2357,7 @@ Rules:
             table_separator = "| " + " | ".join(["---" for _ in columns]) + " |"
             
             table_rows = []
-            for row in rows:
+            for row in rows[:MAX_PROMPT_ROWS]:
                 # Format each value appropriately
                 formatted_values = []
                 for val in row:
@@ -2336,6 +2373,10 @@ Rules:
             
             # Combine into final table
             result_table = "\n".join([table_header, table_separator] + table_rows)
+            if len(rows) > MAX_PROMPT_ROWS:
+                result_table += (
+                    f"\n\n(showing the first {MAX_PROMPT_ROWS:,} of {len(rows):,} rows)"
+                )
             
             # Step 4: Generate a natural language summary of the results
             result_summary_prompt = f"""
@@ -2402,7 +2443,121 @@ Rules:
             # Return error instead of automatic fallback
             return "Unable to process query with available SQL tools. Please try Complex mode for advanced analysis."
 
-    def _format_direct_sql_result(self, result: str, question: str, sql_query: str) -> str:
+    @staticmethod
+    def _num(value) -> str:
+        """A number a person would write, not a float repr."""
+        if value is None or pd.isna(value):
+            return "n/a"
+        if float(value).is_integer():
+            return f"{int(value):,}"
+        return f"{float(value):,.2f}"
+
+    @staticmethod
+    def _derived_definitions(sql_query: str):
+        """
+        The calculated columns in a SELECT, as (name, expression) pairs.
+
+        Asked to explain its own arithmetic the model mostly does not: the rule
+        sits in the prompt among a dozen others and loses. But the definition
+        is not a matter of opinion, it is in the SQL, so it is read from there
+        instead -- the same reason the sort direction is read from the sentence
+        rather than requested from the model.
+
+        This matters more than it sounds. Asked for revenue by region on a
+        sheet with a Discount column, the query answered with
+        Units * UnitPrice * (1 - Discount) and said nothing about it. Gross and
+        net do not merely differ in size, they rank the regions differently --
+        East and West swap -- so a user reading "which region earns least" got
+        an answer whose meaning depended on a choice nobody showed them.
+        """
+        head = re.search(r'\bSELECT\b(.*?)\bFROM\b', sql_query or '',
+                         flags=re.IGNORECASE | re.DOTALL)
+        if not head:
+            return []
+
+        # Split the select list on top-level commas only; the interesting
+        # expressions are full of function calls with commas inside them.
+        items, depth, current = [], 0, ''
+        for ch in head.group(1):
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            if ch == ',' and depth == 0:
+                items.append(current)
+                current = ''
+            else:
+                current += ch
+        items.append(current)
+
+        definitions = []
+        for item in items:
+            item = item.strip()
+            if not item or item == '*':
+                continue
+            alias_match = re.search(r'\s+AS\s+([`"\[]?)([A-Za-z_][\w ]*)\1\s*$',
+                                    item, flags=re.IGNORECASE)
+            if not alias_match:
+                continue
+            expression = item[:alias_match.start()].strip()
+            # A bare column, or an aggregate of one, is not a definition worth
+            # explaining -- "total_units = SUM(Units)" tells nobody anything.
+            # An operator between columns is.
+            if not re.search(r'[*/+-]', re.sub(r'\b\w+\s*\(', '(', expression)):
+                continue
+            definitions.append((alias_match.group(2).strip(), ' '.join(expression.split())))
+        return definitions
+
+    def _result_facts(self, rows_df) -> str:
+        """
+        True figures for the whole result set, for a prompt that shows part of it.
+
+        This is what makes bounding the table safe. A model handed 200 of
+        20,117 rows and asked for a total will produce one anyway, and it will
+        be the total of what it can see. Everything here comes from pandas over
+        the complete result, so the number in the answer is measured rather
+        than estimated -- including when the model wrote SELECT * and intended
+        to do the counting itself.
+        """
+        lines = [f"Rows returned by the query: {len(rows_df):,}"]
+        for col in rows_df.columns:
+            series = rows_df[col]
+            if not pd.api.types.is_numeric_dtype(series) or not series.notna().any():
+                continue
+            lines.append(
+                f"- {col}: sum {self._num(series.sum())}, "
+                f"min {self._num(series.min())}, "
+                f"max {self._num(series.max())}, "
+                f"mean {self._num(series.mean())}"
+            )
+        return "\n".join(lines)
+
+    def _render_result_table(self, rows_df, limit: int = MAX_PROMPT_ROWS) -> str:
+        """The first `limit` rows as markdown, with a line saying so if cut."""
+        shown = rows_df.head(limit)
+        columns = [str(c) for c in shown.columns]
+        lines = [
+            "| " + " | ".join(columns) + " |",
+            "| " + " | ".join("---" for _ in columns) + " |",
+        ]
+        for row in shown.itertuples(index=False):
+            cells = []
+            for value in row:
+                if value is None or (not isinstance(value, str) and pd.isna(value)):
+                    cells.append("NULL")
+                else:
+                    cells.append(str(value).replace("|", "\\|"))
+            lines.append("| " + " | ".join(cells) + " |")
+
+        table = "\n".join(lines)
+        if len(rows_df) > limit:
+            table += (
+                f"\n\n(showing the first {limit:,} of {len(rows_df):,} rows -- "
+                f"the figures above cover all {len(rows_df):,})"
+            )
+        return table
+
+    def _format_direct_sql_result(self, result, question: str, sql_query: str) -> str:
         """
         Format direct SQL result into a user-friendly response.
         
@@ -2415,46 +2570,125 @@ Rules:
             A formatted, user-friendly response
         """
         try:
-            # Log the raw result for debugging
-            logger.debug(f"🔍 Formatting direct SQL result: {result}")
-            
-            # Handle empty or "I don't know" results
-            if not result or result.strip().lower() in ['i don\'t know', 'none', '']:
-                return f"I couldn't find any data to answer your question: '{question}'. Please make sure your data is properly loaded and try rephrasing your question."
-            
+            if isinstance(result, pd.DataFrame):
+                if result.empty:
+                    return f"Nothing in the sheet matches that: '{question}' returned no rows."
+                facts = self._result_facts(result)
+                shown = self._render_result_table(result)
+                logger.debug(
+                    "\U0001f50d Formatting %d result rows (%d shown)",
+                    len(result), min(len(result), MAX_PROMPT_ROWS),
+                )
+            else:
+                # No engine to run the query ourselves, so the result arrives
+                # already stringified and the totals cannot be recovered from
+                # it. Bound it anyway -- an unbounded blob here is what used to
+                # be dumped into the answer verbatim.
+                if not result or str(result).strip().lower() in ["i don't know", 'none', '']:
+                    return (
+                        f"I couldn't find any data to answer your question: "
+                        f"'{question}'. Please make sure your data is properly "
+                        f"loaded and try rephrasing your question."
+                    )
+                text = str(result)
+                shown = text[:20000] + ("\n\n(result truncated)" if len(text) > 20000 else "")
+                facts = "Not available: this result could not be measured directly."
+
             # Use the LLM only to phrase the result, never to add to it. The
             # prompt this replaced asserted the data was "product feedback with
             # columns like Product_Name, User_Score" and gave a coffee-maker
             # example, so the model reproduced that framing for whatever had
             # actually been uploaded, and the "Insights" section it demanded
             # invented trends that were not in the rows.
+            #
+            # The figures are kept separate from the rows on purpose. The rows
+            # may be a sample; the figures never are. Saying which is which is
+            # what stops a bounded table becoming an invented total.
             format_prompt = f"""
             User asked: "{question}"
             SQL query executed: {sql_query}
-            Raw result from database: {result}
 
-            TASK: Convert the raw SQL result into a clear, readable answer.
+            Figures for the whole result set (measured, not estimated):
+            {facts}
+
+            Result rows:
+            {shown}
+
+            TASK: Convert this into a clear, readable answer.
 
             RULES:
-            - ONLY state facts that appear in the raw result above. Do NOT invent, assume, or fabricate any data.
+            - ONLY state facts that appear above. Do NOT invent, assume, or fabricate any data.
+            - The result rows may be only the first part of a larger result. NEVER
+              count, total or average them yourself. Every total, count, minimum,
+              maximum and mean you state must come from the figures block above.
+              If a number the question needs is not there, say what is missing
+              rather than working it out from the rows shown.
+            - If the SQL computed a derived value (revenue, margin, a rate, a
+              ratio), state in plain words how it was derived, e.g. "revenue here
+              is Units x UnitPrice x (1 - Discount)". The user cannot see the
+              query, and the same word can mean different things in one sheet.
             - If the result is a count, state the count. If it's a list, present the list clearly.
             - Use natural language to present the numbers/data from the result.
             - Round numbers to whole numbers where appropriate.
             - Keep the response concise (2-4 sentences for simple results, a short list for multiple rows).
             - Do NOT add "insights", "recommendations", or "what this means for your business".
-            - Do NOT reference data that isn't in the raw result.
+            - Do NOT reference data that isn't shown above.
             - If the result is empty or zero, say so clearly.
             """
             
             formatted_response = content_of(self.llm.invoke(format_prompt))
             logger.debug(f"✅ Formatted response: {formatted_response}")
-            
+
             return formatted_response
             
         except Exception as e:
             logger.error(f"❌ Error formatting direct SQL result: {str(e)}")
-            # Fallback: return the raw result with some basic formatting
-            return f"Here's what I found for your question '{question}':\n\n{result}"
+            # Fallback: the rows themselves, bounded.
+            #
+            # This used to interpolate the raw result whole. On a query
+            # matching 20,117 rows that is 1.69MB of Python tuple repr posted
+            # into the chat -- and it is precisely the case that lands here,
+            # since what breaks the call above is the size of the thing being
+            # formatted. A readable sample beats a wall of tuples.
+            if isinstance(result, pd.DataFrame) and not result.empty:
+                return (
+                    f"I could not summarise that, but the query returned "
+                    f"{len(result):,} rows:\n\n{self._render_result_table(result)}"
+                )
+            return (
+                f"Here's what I found for your question '{question}':"
+                f"\n\n{str(result)[:20000]}"
+            )
+
+    def _with_derived_note(self, answer: str) -> str:
+        """
+        Append how a calculated column was calculated, if one was.
+
+        Deliberately after every model call rather than inside a prompt. The
+        definition is not something the model knows better than we do -- it is
+        in the SQL we just ran -- and a rule competing with a dozen others in a
+        prompt gets followed sometimes. This gets followed always.
+        """
+        definitions = getattr(self, "_last_derived", None)
+        if not definitions:
+            return answer
+        # Say it once: the rephrasing pass often works the formula into its own
+        # prose ("Total Revenue is the sum of Units * UnitPrice * ..."), and
+        # repeating it underneath reads like a stutter. Compare on the
+        # arithmetic rather than the whole expression, since the prose rarely
+        # keeps the SUM(...) wrapper the SQL had.
+        flat = " ".join((answer or "").split()).lower()
+
+        def already_said(expression):
+            inner = re.sub(r'^\s*\w+\s*\((.*)\)\s*$', r'\1', expression)
+            return any(" ".join(form.split()).lower() in flat
+                       for form in (expression, inner))
+
+        lines = [f"- {name} = {expression}" for name, expression in definitions
+                 if not already_said(expression)]
+        if not lines:
+            return answer
+        return f"{answer}\n\n**How this was calculated:**\n" + "\n".join(lines)
 
     def _format_sql_response(self, raw_response: str, question: str) -> str:
         """
