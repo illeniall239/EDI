@@ -5,15 +5,9 @@ import pandas as pd
 import re
 import logging
 
-# Optional: persistent conversation memory lives in Supabase when it is
-# installed and configured. The outcome is reported once the logger exists.
-try:
-    from supabase import create_client, Client
-    SUPABASE_AVAILABLE = True
-    _supabase_import_error = None
-except Exception as exc:
-    SUPABASE_AVAILABLE = False
-    _supabase_import_error = exc
+# Conversation history is read back through the stores package, the same way
+# workspaces are, so this module needs no database client of its own.
+import stores
 from langchain_community.agent_toolkits.sql.base import create_sql_agent
 from langchain.agents.agent_types import AgentType
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
@@ -57,10 +51,6 @@ logger = logging.getLogger('AgentServices')
 # happened in SQL before any of this.
 MAX_PROMPT_ROWS = 200
 
-if not SUPABASE_AVAILABLE:
-    logger.info("supabase-py not available (%s); conversation memory stays in process.",
-                _supabase_import_error)
-
 # CustomSQLDatabaseToolkit definition
 class CustomSQLDatabaseToolkit(SQLDatabaseToolkit):
     def __init__(self, db, llm):
@@ -94,26 +84,15 @@ class AgentServices:
         self.analysis_results = []
         self.data_handler = None
         
-        # Initialize Supabase client for persistent memory
-        self.supabase_client = None
-        if SUPABASE_AVAILABLE:
-            try:
-                supabase_url = os.getenv('NEXT_PUBLIC_SUPABASE_URL')
-                supabase_key = os.getenv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
-                logger.debug(f"🔍 Supabase URL from env: {supabase_url}")
-                logger.debug(f"🔍 Supabase key from env: {'***' + supabase_key[-10:] if supabase_key else None}")
-                
-                if supabase_url and supabase_key:
-                    self.supabase_client: Client = create_client(supabase_url, supabase_key)
-                    logger.info("✅ Supabase client initialized for persistent conversation memory")
-                else:
-                    logger.warning("⚠️ Supabase credentials not found in environment variables")
-                    logger.debug(f"URL present: {bool(supabase_url)}, Key present: {bool(supabase_key)}")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize Supabase client: {str(e)}")
-                self.supabase_client = None
-        else:
-            logger.warning("⚠️ Supabase not available - conversation memory will not persist across restarts")
+        # No database client here on purpose: history is read through the
+        # stores package, which is already the thing that knows whether this
+        # install keeps its data in SQLite or in Postgres.
+        #
+        # What stood here was a supabase client built from the ANON key, and
+        # RLS is enabled on chats with no policies granting that role anything
+        # -- so the select it ran could only ever come back empty. It logged
+        # "Supabase client initialized for persistent conversation memory" on
+        # the way past, which is why nobody looked.
 
     def initialize_agents(self, data_handler_instance):
         self.data_handler = data_handler_instance
@@ -207,57 +186,63 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
 
     # NEW: Chat-specific memory management methods
     def switch_chat_context(self, chat_id: str):
-        """Switch to specific chat's memory context with persistent loading from Supabase"""
-        logger.info(f"🔄 Switching to chat context: {chat_id}")
-        
-        # Save current chat state if we have one
+        """
+        Point memory at a chat, reloading it from the store when necessary.
+
+        Two things made this fail quietly before. It was never called from
+        anywhere -- so chat_id was accepted by /api/query, passed around, and
+        used for nothing -- and it rebound self.memory only when an agent
+        executor happened to exist, leaving the context builder reading a
+        different history object than the one being written to.
+
+        It reloads whenever the in-process history is empty rather than
+        trusting the cache, because initialize_agents() clears memory and
+        hydrate() calls it on every request. Without that check the cache
+        holds the emptied history and the stored conversation is never read
+        back.
+        """
+        if not chat_id:
+            return
+
         if self.current_chat_id and self.chat_history:
-            logger.debug(f"💾 Saving context for previous chat: {self.current_chat_id}")
             self.chat_histories[self.current_chat_id] = self.chat_history
-        
-        # Switch to new chat's memory or create new one
-        if chat_id in self.chat_histories:
-            # History already exists in current session
-            logger.debug(f"📥 Restoring context for chat: {chat_id}")
-            self.chat_history = self.chat_histories[chat_id]
-        else:
-            # Create new memory and load from Supabase if available
-            logger.debug(f"🆕 Creating new context for chat: {chat_id}")
-            self.chat_history = InMemoryChatMessageHistory()
-            
-            # PERSISTENT MEMORY: Load chat history from Supabase database
+
+        history = self.chat_histories.get(chat_id)
+        if history is None or not history.messages:
+            history = InMemoryChatMessageHistory()
             try:
-                chat_messages = self._load_chat_messages_from_supabase(chat_id)
-                if chat_messages:
-                    logger.info(f"📚 Populating memory with {len(chat_messages)} messages from database")
-                    for i, message in enumerate(chat_messages):
-                        role = message.get('role')
-                        content = message.get('content', '')
-                        logger.debug(f"📝 Loading message {i+1}: {role} -> {content[:50]}...")
-                        if role == 'user':
-                            self.chat_history.add_user_message(content)
-                        elif role == 'assistant':
-                            self.chat_history.add_ai_message(content)
-                    logger.info("✅ Successfully restored conversation context from database")
-                    logger.debug(f"🧠 Final memory state: {len(self.chat_history.messages)} messages total")
-                else:
-                    logger.debug(f"📭 No previous conversation history found for chat: {chat_id}")
-            except Exception as e:
-                logger.error(f"❌ Failed to load conversation history from database: {str(e)}")
-                logger.debug("🔄 Continuing with empty memory")
-            
-            self.chat_histories[chat_id] = self.chat_history
-        
-        # Update current chat reference
+                stored = self._load_chat_messages(chat_id)
+                for message in stored:
+                    role = message.get('role')
+                    content = message.get('content', '')
+                    if not content:
+                        continue
+                    if role == 'user':
+                        history.add_user_message(content)
+                    elif role == 'assistant':
+                        history.add_ai_message(content)
+                if stored:
+                    logger.info("\U0001f4da Restored %d messages for chat %s",
+                                len(history.messages), chat_id)
+            except Exception as exc:
+                logger.error("Could not restore conversation for %s: %s", chat_id, exc)
+            self.chat_histories[chat_id] = history
+
+        self.chat_history = history
         self.current_chat_id = chat_id
-        
-        # Update agent executor with new memory if initialized
-        if self.agent_executor and hasattr(self.agent_executor, 'memory') and LANGCHAIN_MEMORY_AVAILABLE:
-            # Re-wrap current chat_history in ConversationBufferMemory
-            self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True, chat_memory=self.chat_history)
-            self.agent_executor.memory = self.memory
-            logger.debug(f"🔧 Updated agent executor memory for chat: {chat_id}")
-    
+
+        # Rebound every time, not only when an agent executor exists: the
+        # context the prompts are built from is read off self.memory, so a
+        # stale binding here is the difference between a chat with a memory
+        # and one without.
+        if LANGCHAIN_MEMORY_AVAILABLE:
+            self.memory = ConversationBufferMemory(
+                memory_key="chat_history", return_messages=True,
+                chat_memory=self.chat_history,
+            )
+            if self.agent_executor is not None and hasattr(self.agent_executor, 'memory'):
+                self.agent_executor.memory = self.memory
+
     def _get_conversation_context_string(self, max_messages: int = 6) -> str:
         """Get formatted conversation context for LLM prompts"""
         logger.debug("🔍 Getting conversation context...")
@@ -286,16 +271,63 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
         logger.debug(f"🔍 Final context string: {repr(final_context)}")
         return final_context
 
-    def _load_chat_messages_from_supabase(self, chat_id: str) -> list:
-        """Load chat messages from Supabase database for the given chat_id"""
-        if not self.supabase_client:
-            logger.warning("⚠️ Supabase client not available - cannot load chat history")
-            return []
+    def _standalone_question(self, question: str, conversation_context: str) -> str:
+        """
+        The question with what it points at filled in, or unchanged.
 
+        "And what about just the South?" carries no column, no table and no
+        verb. Handed to the router it looks nothing like a question about the
+        sheet, so it was sent to the conversation branch and answered "the
+        conversation does not contain the answer" -- while the number sat in
+        the sheet the whole time. Handed to the SQL step it is no better.
+        Resolving it first means both of them see a whole question.
+
+        Guarded rather than trusted. A model asked to rewrite will sometimes
+        explain instead, and a confident mangling is worse than the fragment:
+        anything empty, multi-line or long is discarded in favour of what the
+        user actually typed.
+        """
+        if not conversation_context.strip():
+            return question
+
+        prompt = f"""{conversation_context}The user now says: "{question}"
+
+Rewrite that as a question which stands on its own, replacing "it", "that",
+"there", "that one" and similar with whatever they refer to in the conversation
+above. Keep the user's own wording wherever you can. If it already stands on
+its own, give it back unchanged.
+
+Reply with the question and nothing else."""
+
+        try:
+            rewritten = content_of(self.llm.invoke(prompt))
+        except Exception as exc:
+            logger.error(f"Could not resolve the question against the conversation: {exc}")
+            return question
+
+        first_line = (rewritten or "").strip().split("\n")[0].strip().strip('"').strip()
+        if not first_line or len(first_line) > 300:
+            logger.debug("Ignoring an unusable rewrite: %r", (rewritten or "")[:120])
+            return question
+        if first_line != question:
+            logger.debug("Resolved %r -> %r", question, first_line)
+        return first_line
+
+    def _load_chat_messages(self, chat_id: str) -> list:
+        """
+        Load a chat's messages from whichever store is configured.
+
+        This used to talk to Supabase directly, which meant the default
+        install had no memory across restarts at all: with the SQLite store
+        there was no Supabase client, the loader returned nothing, and the
+        model began every question with an empty history while the frontend
+        went on displaying the conversation from the store. The chat looked
+        continuous and was not.
+        """
         # A chat only gets a row once it has been saved, and until then the
         # client sends a placeholder -- "default" for the one every new
-        # workspace opens with. chats.id is a uuid column, so asking for that
-        # placeholder is not an empty result but a 400 from Postgres, which
+        # workspace opens with. On Postgres chats.id is a uuid column, so
+        # asking for that placeholder is not an empty result but a 400, which
         # cost a round trip and an error line on every single question.
         try:
             uuid.UUID(str(chat_id))
@@ -304,22 +336,17 @@ Remember: You're a helpful assistant who happens to excel at data analysis, not 
             return []
 
         try:
-            logger.debug(f"📥 Loading chat messages from Supabase for chat_id: {chat_id}")
-            
-            # Query the chats table for messages
-            response = self.supabase_client.table('chats').select('messages').eq('id', chat_id).single().execute()
-            
-            if response.data and response.data.get('messages'):
-                messages = response.data['messages']
-                logger.info(f"✅ Loaded {len(messages)} messages from Supabase for chat: {chat_id}")
-                return messages
-            else:
-                logger.debug(f"📭 No messages found in Supabase for chat: {chat_id}")
-                return []
-                
+            chat = stores.fetch_chat(chat_id)
         except Exception as e:
-            logger.error(f"❌ Failed to load chat messages from Supabase: {str(e)}")
+            logger.error(f"❌ Failed to load chat messages: {str(e)}")
             return []
+
+        messages = (chat or {}).get("messages") or []
+        if messages:
+            logger.info(f"✅ Loaded {len(messages)} messages for chat: {chat_id}")
+        else:
+            logger.debug(f"📭 No stored messages for chat: {chat_id}")
+        return messages
 
     def cancel_operation(self):
         logger.debug("AgentServices: Cancel operation requested.")
@@ -813,9 +840,15 @@ Only output the category name, nothing else.
         if self.operation_cancelled_flag:
             return "I've stopped processing that request as you requested."
 
-        # Add user message to memory
-        # Record user message in chat history
+        # The conversation as it stood BEFORE this question, captured here
+        # because the question is about to join it.
+        #
+        # Built after the append, which is what used to happen, "what did I
+        # just ask you?" saw itself as the most recent line of context and the
+        # model answered by quoting the question back at the user.
+        prior_context = ""
         if hasattr(self, 'chat_history') and self.chat_history:
+            prior_context = self._get_conversation_context_string()
             self.chat_history.add_user_message(question)
 
         # Get current dataframe
@@ -831,7 +864,8 @@ Only output the category name, nothing else.
 
                 # CONTEXT-AWARE PROCESSING: "what did I just ask you?" should be
                 # answered from the conversation, not from the sheet.
-                conversation_context = self._get_conversation_context_string()
+                conversation_context = prior_context
+                resolved_question = question
 
                 # With no history there is nothing to answer from, so this check
                 # can only do harm -- it spends a model call and hands the model
@@ -840,6 +874,16 @@ Only output the category name, nothing else.
                 if not conversation_context.strip():
                     logger.debug("No conversation history; going straight to the dataset")
                 else:
+                    # Fill in what the question points at before deciding what
+                    # it is. "And what about just the South?" has no columns, no
+                    # table and no verb to classify or to turn into SQL, so it
+                    # was read as a question about the conversation and answered
+                    # "the conversation does not contain the answer" -- with the
+                    # number sitting in the sheet the whole time.
+                    resolved_question = self._standalone_question(
+                        question, conversation_context
+                    )
+
                     # A closed one-word classification, then a separate call to
                     # write the answer -- rather than one prompt offering "reply
                     # with this token, or else write the answer yourself".
@@ -861,7 +905,7 @@ Only output the category name, nothing else.
                     # invented number.
                     route_prompt = f"""Classify what the user's message is asking about. Answer with one word.
 
-{conversation_context}User message: "{question}"
+{conversation_context}User message: "{resolved_question}"
 
 DATA     - anything about the spreadsheet: numbers, rows, columns, totals,
            charts, filtering, sorting, analysis
@@ -923,11 +967,16 @@ conversation does not contain the answer, say so plainly and briefly."""
                     if mode.lower() == "simple":
                         logger.debug("🔧 Using SIMPLE mode - direct SQL execution...")
                         self._last_derived = []
-                        response = self._execute_sql_query_directly(question)
+                        self._last_resolved = (
+                            resolved_question if resolved_question != question else None
+                        )
+                        response = self._execute_sql_query_directly(
+                            resolved_question, conversation_context
+                        )
                         logger.debug(f"✅ Simple mode execution completed: {response}")
                         # Apply enhanced template formatting to Simple mode as well
-                        answer = self._format_sql_response(response, question)
-                        return self._with_derived_note(answer)
+                        answer = self._format_sql_response(response, resolved_question)
+                        return self._with_answer_notes(answer)
                     else:  # complex mode
                         logger.debug("🔧 Using COMPLEX mode - agent executor...")
                         try:
@@ -1019,7 +1068,7 @@ conversation does not contain the answer, say so plainly and briefly."""
                     return "I've stopped processing that request as you requested."
 
                 # Get recent conversation history for context using the proper method
-                context_str = self._get_conversation_context_string(max_messages=6)
+                context_str = prior_context
 
                 # Handle general conversation naturally while mentioning data expertise when appropriate
                 conversation_prompt = f"""You are EDI.ai, a conversational AI assistant.
@@ -2179,7 +2228,8 @@ Rules:
         except Exception as e:
             return f"\n❌ Error in comprehensive duplicate check: {str(e)}"
 
-    def _execute_sql_query_directly(self, question: str) -> str:
+    def _execute_sql_query_directly(self, question: str,
+                                    conversation_context: str = "") -> str:
         """
         Generate and execute a SQL query directly based on the user's natural language question.
         Args:
@@ -2199,7 +2249,20 @@ Rules:
                 if df is not None:
                     column_names = list(df.columns)
             # Step 1: Generate SQL Query from the natural language question
-            sql_prompt = f"""
+            #
+            # The conversation goes in as background only. The question has
+            # already been resolved against it by _standalone_question, and a
+            # prompt that presents both without saying which to answer is a
+            # prompt that sometimes answers the previous one.
+            context_block = ""
+            if conversation_context.strip():
+                context_block = (
+                    f"{conversation_context}"
+                    "That is the conversation so far, for background only.\n"
+                    "Write SQL for the question below, not for anything above it.\n\n"
+                )
+
+            sql_prompt = f"""{context_block}
             Generate a single SQL query to answer this question about the data: "{question}"
             Follow these guidelines:
             - The table name is always 'data'. Do NOT use any other table name.
@@ -2660,18 +2723,29 @@ Rules:
                 f"\n\n{str(result)[:20000]}"
             )
 
-    def _with_derived_note(self, answer: str) -> str:
+    def _with_answer_notes(self, answer: str) -> str:
         """
-        Append how a calculated column was calculated, if one was.
+        Append what the reader needs in order to trust the answer: the question
+        that was actually answered, and how any calculated column was reached.
 
-        Deliberately after every model call rather than inside a prompt. The
-        definition is not something the model knows better than we do -- it is
-        in the SQL we just ran -- and a rule competing with a dozen others in a
-        prompt gets followed sometimes. This gets followed always.
+        Deliberately after every model call rather than inside a prompt. Both
+        facts are ours, not the model's -- one is the rewrite we performed, the
+        other is in the SQL we ran -- and a rule competing with a dozen others
+        inside a prompt gets followed sometimes. This gets followed always.
         """
+        notes = []
+
+        # A follow-up gets rewritten into a standalone question before it is
+        # routed or turned into SQL. When that rewrite changed something, say
+        # so: the alternative is answering a question the user did not ask and
+        # giving them no way to see it happened.
+        resolved = getattr(self, "_last_resolved", None)
+        if resolved:
+            notes.append(f"*Answered as: {resolved}*")
+
         definitions = getattr(self, "_last_derived", None)
         if not definitions:
-            return answer
+            return f"{answer}\n\n{notes[0]}" if notes else answer
         # Say it once: the rephrasing pass often works the formula into its own
         # prose ("Total Revenue is the sum of Units * UnitPrice * ..."), and
         # repeating it underneath reads like a stutter. Compare on the
@@ -2686,9 +2760,11 @@ Rules:
 
         lines = [f"- {name} = {expression}" for name, expression in definitions
                  if not already_said(expression)]
-        if not lines:
+        if lines:
+            notes.append("**How this was calculated:**\n" + "\n".join(lines))
+        if not notes:
             return answer
-        return f"{answer}\n\n**How this was calculated:**\n" + "\n".join(lines)
+        return f"{answer}\n\n" + "\n\n".join(notes)
 
     def _format_sql_response(self, raw_response: str, question: str) -> str:
         """

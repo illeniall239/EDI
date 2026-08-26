@@ -255,6 +255,13 @@ async def process_query(query: QueryRequest):
         chat_id = query.chat_id
         mode = query.mode
 
+        # Load this chat's history before answering. Nothing did this before,
+        # so every question arrived with an empty memory however long the
+        # conversation on screen was -- and on a stateless backend there is no
+        # other moment where it could come back.
+        if agent_services is not None and chat_id:
+            agent_services.switch_chat_context(chat_id)
+
         logger.debug("📝 === EXTRACTED PARAMETERS ===")
         logger.debug(f"   - Question: '{question}'")
         logger.debug(f"   - Chat ID: {chat_id}")
