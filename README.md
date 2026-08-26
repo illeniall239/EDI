@@ -19,7 +19,8 @@ database signup.
 Documentation is part of the app and is what you land on: run it and open
 `/`, with the spreadsheet itself at `/app`. Or read the source in
 [`edi-frontend/src/app/(docs)`](<edi-frontend/src/app/(docs)>). It covers the
-quickstart, the provider matrix, self-hosting, and how it works.
+quickstart, what you can ask it to do, the provider matrix, self-hosting, and
+how it works.
 
 ## How it works
 

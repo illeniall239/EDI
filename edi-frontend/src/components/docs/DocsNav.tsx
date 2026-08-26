@@ -12,6 +12,7 @@ const NAV: { group: string; items: { href: string; label: string }[] }[] = [
         items: [
             { href: '/', label: 'What EDI is' },
             { href: '/quickstart', label: 'Quickstart' },
+            { href: '/asking', label: 'What you can ask' },
         ],
     },
     {

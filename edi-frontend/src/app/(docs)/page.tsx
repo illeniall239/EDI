@@ -52,7 +52,8 @@ export default function DocsHome() {
                 sheet, and the result comes back as prose — or as a chart, when the answer
                 is shaped like one. Asking it to filter, sort, clean or reformat the sheet
                 works the same way: the chat is the whole interface, and everything the app
-                does goes through it.
+                does goes through it. <Link href="/asking">What you can ask</Link> lists
+                what that covers today, and what it does not.
             </p>
             <p>
                 Nothing is written to disk while it runs, and charts are returned as data
@@ -118,6 +119,10 @@ EDI_LLM_PROVIDER=ollama uvicorn main:app --app-dir backend --port 8000`}</code><
                 <li>
                     <Link href="/quickstart">Quickstart</Link> — clone to running, locally
                     or deployed.
+                </li>
+                <li>
+                    <Link href="/asking">What you can ask</Link> — the questions and
+                    commands it handles, tested against a real sheet.
                 </li>
                 <li>
                     <Link href="/models">Choosing a model</Link> — the provider matrix,
