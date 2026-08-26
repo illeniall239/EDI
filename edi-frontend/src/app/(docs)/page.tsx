@@ -3,22 +3,23 @@ import Link from 'next/link';
 export const metadata = {
     // The layout supplies the "— EDI.ai" suffix; `absolute` opts this one page
     // out of it so the landing page is not "EDI.ai — EDI.ai".
-    title: { absolute: 'EDI.ai — a local spreadsheet you can ask questions' },
+    title: { absolute: 'EDI.ai — a local spreadsheet with a local model' },
     description:
-        'A spreadsheet you can ask questions, running a local model on your own '
-        + 'machine. No account, no API key, no data leaving the room.',
+        'A spreadsheet you can ask questions, answered by a model running on your '
+        + 'own machine. No account, no API key, nothing uploaded.',
 };
 
 export default function DocsHome() {
     return (
         <>
             <div className="edi-kicker-doc">Overview</div>
-            <h1>A spreadsheet you can ask questions. On your own machine.</h1>
+            <h1>A local spreadsheet, with a local model in the sidebar.</h1>
             <p className="lede">
-                Open a CSV or Excel file, then use plain English to filter it, clean it,
-                chart it, or have it explained back to you — answered by a model running
-                on your own hardware. No account, no API key, no upload. The cloud is
-                there if you want it, and off by default.
+                Open a CSV or Excel file and ask it things in plain English — filter it,
+                clean it, chart it, or have it explained back to you. The sheet stays on
+                your disk. The model answering questions about it runs on your hardware.
+                Neither half of that needs an account, an API key, or an upload. The
+                cloud is there if you want it, and off by default.
             </p>
 
             <video
@@ -64,13 +65,15 @@ export default function DocsHome() {
                 functions.
             </p>
 
-            <h2>Nothing leaves the machine</h2>
+            <h2>Local sheet, local model</h2>
             <p>
-                Run EDI the default way — a local model through{' '}
-                <a href="https://ollama.com">Ollama</a>, workspaces in a local SQLite file
-                — and no part of your sheet crosses the network. Not the rows, not the
-                column names, not the question you asked. There is no account to make and
-                no key to paste, because there is nobody on the other end.
+                Both halves run on your machine, and that is the default rather than a
+                mode you switch into: <a href="https://ollama.com">Ollama</a> on{' '}
+                <code>localhost:11434</code> answers the questions, a local SQLite file
+                holds the workspaces. Nothing your sheet contains crosses the network —
+                not the rows, not the column names, not the question you asked. There is
+                no account to make and no key to paste, because there is nobody on the
+                other end.
             </p>
             <p>
                 That matters for the spreadsheets people actually have: salaries, patient
@@ -117,9 +120,8 @@ export default function DocsHome() {
 
             <h2>Running it with no accounts</h2>
             <p>
-                There is no configuration to do for the local path — it is what you get by
-                default. EDI keeps workspaces in a local SQLite file and looks for a model
-                on <code>localhost:11434</code>, where Ollama listens:
+                There is nothing to configure for the local path — it is what you get by
+                default. Six lines, none of which asks you for a key:
             </p>
             <pre><code>{`git clone https://github.com/illeniall239/EDI.git
 cd EDI

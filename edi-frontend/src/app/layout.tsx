@@ -25,8 +25,12 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EDI.ai - Intelligent Data Analysis",
-  description: "Your personal AI-powered data analysis assistant.",
+  // The docs layout overrides these for every page under `(docs)`; what is
+  // left for this one to name is /app, the spreadsheet itself.
+  title: "EDI.ai — a local spreadsheet with a local model",
+  description:
+    "A spreadsheet you can ask questions, answered by a model running on your "
+    + "own machine. No account, no API key, nothing uploaded.",
 };
 
 export default function RootLayout({

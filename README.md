@@ -1,10 +1,11 @@
 # EDI
 
-**A spreadsheet you can ask questions, running entirely on your own machine.**
+**A local spreadsheet, with a local model in the sidebar.**
 
-Open a CSV or Excel file, then use plain English to filter it, clean it, chart
-it, or have it explained back to you — answered by a model running on your own
-hardware. No account, no API key, no upload.
+Open a CSV or Excel file and ask it things in plain English — filter it, clean
+it, chart it, or have it explained back to you. The sheet stays on your disk.
+The model answering questions about it runs on your hardware. Neither half of
+that needs an account, an API key, or an upload.
 
 There is no sign-up because there is nothing to sign up to. Clone it, point it
 at [Ollama](https://ollama.com), and the whole thing runs on localhost.
@@ -13,12 +14,13 @@ at [Ollama](https://ollama.com), and the whole thing runs on localhost.
 
 *Real answers from a real model. The pauses while it thinks are cut; nothing else is.*
 
-## Nothing leaves the machine
+## Local sheet, local model
 
-Run it the default way -- a local model through **Ollama**, workspaces in a
-local SQLite file -- and no part of your sheet crosses the network. Not the
-rows, not the column names, not the question you asked. There is nobody on the
-other end to send it to.
+Both halves run on your machine, and that is the default rather than a mode you
+switch into. **Ollama** on `localhost:11434` answers the questions; a local
+SQLite file holds the workspaces. Nothing your sheet contains crosses the
+network -- not the rows, not the column names, not the question you asked.
+There is nobody on the other end to send it to.
 
 That is the point. The spreadsheets people actually have are salaries, patient
 lists, client records, things under an NDA, things an employer's policy says
