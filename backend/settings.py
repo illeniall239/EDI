@@ -64,6 +64,12 @@ def llm_status():
         "model": LLM_CONFIG.model or None,
         "configured": LLM is not None,
         "detail": llm_providers.describe(LLM_CONFIG) or None,
+        # Only Ollama has these, and only when they were set. Empty means
+        # every choice was left to Ollama, which is the default and usually
+        # right -- but if someone has pinned the model to the CPU or given it
+        # a small context, that is the first thing worth knowing when answers
+        # are slow or wrong.
+        "runtime": dict(LLM_CONFIG.runtime) or None,
     }
 
 

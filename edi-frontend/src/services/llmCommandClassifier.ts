@@ -378,7 +378,15 @@ export class LLMCommandClassifier {
     // call like any other.
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
+      // Eight seconds was the old figure, and it was chosen against a hosted
+      // API. A model running on your own machine does not meet it: qwen3:4b
+      // took 7-18s to answer this same prompt on a warm GPU, and longer on
+      // a cold one or on CPU. Every one of those aborted, threw away the
+      // work, and fell back to the regex classifier -- silently, since the
+      // fallback is a legitimate path. Ninety seconds is past the point
+      // where a person is still waiting but well inside what a local model
+      // needs to finish.
+      const timeout = setTimeout(() => controller.abort(), CLASSIFY_TIMEOUT_MS);
       const response = await fetch(API_ENDPOINTS.classifyCommand, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1746,5 +1754,9 @@ const NOT_A_QUESTION = new RegExp([
   // Translation
   'translat',
 ].join('|'), 'i');
+
+// How long to wait for the backend to classify a command before giving up
+// and using the local patterns instead.
+const CLASSIFY_TIMEOUT_MS = 90_000;
 
 export const llmCommandClassifier = LLMCommandClassifier.getInstance();

@@ -207,6 +207,90 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
                 the app being broken.
             </p>
 
+            <h2>Running it on your own hardware</h2>
+            <p>
+                Ollama is the one provider where the machine is yours, so it is the one
+                with anything to say about GPUs and memory. It decides all of this for
+                itself and is usually right; these are for when it is not. All are
+                optional, and unset means Ollama chooses.
+            </p>
+            <div className="table-scroll">
+                <table>
+                    <thead>
+                        <tr><th>Variable</th><th>What it does</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>EDI_OLLAMA_NUM_GPU</code></td>
+                            <td>
+                                How many layers to put on the GPU. <code>0</code> forces
+                                CPU — worth having when the card is busy with something
+                                else. Fewer layers than the model has means the rest runs
+                                on the CPU, which is slower but fits.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>EDI_OLLAMA_NUM_THREAD</code></td>
+                            <td>CPU threads. Only matters for whatever is not on the GPU.</td>
+                        </tr>
+                        <tr>
+                            <td><code>EDI_OLLAMA_NUM_CTX</code></td>
+                            <td>
+                                Context window. See below — this one can change answers,
+                                not just speed.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><code>EDI_OLLAMA_KEEP_ALIVE</code></td>
+                            <td>
+                                How long the weights stay loaded after a request,
+                                e.g. <code>30m</code>. Ollama unloads after five minutes
+                                and the reload is paid by whoever asks the next question.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>
+                <code>GET /api/health</code> reports whichever of these are set, under{' '}
+                <code>llm_config.runtime</code>. An empty value there means every choice
+                was left to Ollama. Anything your version of the client does not accept is
+                dropped with a line in the log rather than failing to start.
+            </p>
+            <p>
+                There is no switch here for turning thinking off, on purpose. It is the
+                first thing anyone reaches for and it makes the answer worse rather than
+                faster, for the reason in the note above — and{' '}
+                <code>langchain-ollama</code> did not accept the argument at all until
+                0.3.4, a release that wants a <code>langchain-core</code> this backend
+                cannot import. If you want a model that does not think, use one.
+            </p>
+
+            <div className="edi-note">
+                <strong>A context too small does not fail, it truncates.</strong> The SQL
+                prompt carries your sheet&apos;s schema and a few sample rows, so it grows
+                with the width of the sheet. If it does not fit the context, the front of
+                it is dropped — which is the end holding the schema — and the model writes
+                confident SQL against columns it can no longer see. If answers on a wide
+                sheet are wrong in ways that look like the model guessing at column names,
+                raise <code>EDI_OLLAMA_NUM_CTX</code> before blaming the model. A larger
+                context costs memory, so raise it until it fits rather than as far as it
+                will go.
+            </div>
+
+            <h3>Is it actually on the GPU?</h3>
+            <p>
+                Ollama will quietly fall back to the CPU — an unsupported card, a driver
+                it does not like, a model too big for the memory available. Ask it:
+            </p>
+            <pre><code>{`curl http://localhost:11434/api/ps`}</code></pre>
+            <p>
+                Compare <code>size_vram</code> against <code>size</code>. Equal means all
+                of it is on the GPU; zero means none of it is, and you are on the CPU
+                whatever the card in the machine. Nothing is loaded at all until the first
+                request, so ask a question first.
+            </p>
+
             <h2>Testing yours</h2>
             <p>
                 Rather than trusting a recommendation, measure the model you actually have:

@@ -15,9 +15,12 @@ deployment carry five SDKs to use one.
 """
 
 import importlib
+import logging
 import os
-from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,10 @@ class Config:
     api_key: Optional[str]
     base_url: Optional[str]
     max_tokens: int
+    # Constructor arguments that only make sense for one provider. Ollama is
+    # the only one that runs on your own hardware, so it is the only one with
+    # anything to say about GPUs, threads and how long weights stay resident.
+    runtime: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def usable(self) -> bool:
@@ -144,6 +151,67 @@ def _int_env(name: str, default: int) -> int:
         return int(raw)
     except ValueError:
         return default
+
+
+def _optional_int_env(name: str) -> Optional[int]:
+    """An int if one was set and parses, otherwise nothing at all."""
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _ollama_runtime() -> Dict[str, Any]:
+    """
+    The knobs that exist because the model is running on your machine.
+
+    All unset by default: Ollama's own choices are informed by hardware this
+    process cannot see, and second-guessing them is how you end up spilling a
+    model out of VRAM. These are here for when its choice is wrong, and for
+    the person who wants to pin it.
+    """
+    runtime: Dict[str, Any] = {}
+
+    # Layers to put on the GPU. 0 forces CPU, which is worth having when a
+    # card is busy with something else or the driver is misbehaving.
+    num_gpu = _optional_int_env("EDI_OLLAMA_NUM_GPU")
+    if num_gpu is not None:
+        runtime["num_gpu"] = num_gpu
+
+    # CPU threads. Only bites when some or all of the model is on the CPU.
+    num_thread = _optional_int_env("EDI_OLLAMA_NUM_THREAD")
+    if num_thread is not None:
+        runtime["num_thread"] = num_thread
+
+    # Context window. Worth raising on a wide sheet: the SQL prompt carries
+    # the schema and sample rows, and a context too small to hold them is
+    # silently truncated from the front -- so the model loses the schema and
+    # writes confident SQL against columns it can no longer see.
+    num_ctx = _optional_int_env("EDI_OLLAMA_NUM_CTX")
+    if num_ctx is not None:
+        runtime["num_ctx"] = num_ctx
+
+    # How long the weights stay loaded after a request. Ollama unloads after
+    # five minutes, and the reload is paid by whoever asks the next question.
+    keep_alive = (os.getenv("EDI_OLLAMA_KEEP_ALIVE") or "").strip()
+    if keep_alive:
+        runtime["keep_alive"] = keep_alive
+
+    # There is deliberately no switch here for turning thinking off. It is the
+    # first thing anyone reaches for on a reasoning model and it does not do
+    # what they want: measured on qwen3:4b, thinking on answered a
+    # categorisation in 521 tokens with the single word "SPECIFIC_DATA", while
+    # reasoning=False produced 850 tokens beginning "We are given a query:" --
+    # the reasoning did not stop, it stopped being labelled, and arrived in the
+    # answer instead. langchain-ollama did not accept the argument at all until
+    # 0.3.4, and that release wants a langchain-core that langchain 0.3.19
+    # cannot import. A knob that needs a breaking upgrade to deliver a worse
+    # answer is not worth having.
+
+    return runtime
 
 
 def resolve() -> Config:
@@ -186,6 +254,7 @@ def resolve() -> Config:
         api_key=api_key or None,
         base_url=base_url or None,
         max_tokens=_int_env("EDI_LLM_MAX_TOKENS", DEFAULT_MAX_TOKENS),
+        runtime=_ollama_runtime() if provider == "ollama" else {},
     )
 
 
@@ -262,4 +331,24 @@ def build(config: Config, temperature: float = 0.4):
     if spec.base_url_kwarg and config.base_url:
         kwargs[spec.base_url_kwarg] = config.base_url
 
-    return getattr(module, spec.class_name)(**kwargs)
+    cls = getattr(module, spec.class_name)
+
+    # Provider-specific runtime knobs, last so an explicit setting wins.
+    #
+    # Filtered against what this installation actually accepts. These are
+    # optional extras rather than anything the app needs, and the versions
+    # people have vary; a pydantic model rejects an unknown field outright, so
+    # an unfiltered spread would turn "you set an option your client is too old
+    # for" into "the model cannot be constructed at all".
+    if config.runtime:
+        accepted = set(getattr(cls, "model_fields", {}) or {})
+        for name, value in config.runtime.items():
+            if not accepted or name in accepted:
+                kwargs[name] = value
+            else:
+                logger.warning(
+                    "Ignoring %s: this version of %s does not accept it.",
+                    name, spec.package,
+                )
+
+    return cls(**kwargs)
