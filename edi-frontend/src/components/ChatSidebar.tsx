@@ -16,6 +16,7 @@ import { API_BASE_URL } from '@/config';
 import ReactMarkdown from 'react-markdown';
 import { columnsOf, suggestionsFor } from '@/utils/dataShape';
 import { resolveColumnRef, columnLabel } from '@/utils/columnRef';
+import { sortDirection, stripSortDirection } from '@/utils/sortOrder';
 import { ChartRenderer, LegacyChartImage } from '@/components/charts/ChartRenderer';
 import remarkGfm from 'remark-gfm';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -2569,7 +2570,7 @@ export default function ChatSidebar({
 
         try {
             // Simple command detection: Check if this is a spreadsheet operation
-            const looksLikeSpreadsheetCmd = /autofit|fit|bold|italic|underline|highlight|background|color|font|cell|range|column|row|undo|redo|freeze|sort|filter|delete\s+column|remove\s+column/i.test(userMessage);
+            const looksLikeSpreadsheetCmd = /autofit|fit|bold|italic|underline|highlight|background|color|font|cell|range|column|row|undo|redo|freeze|sort|filter|delete\s+column|remove\s+column|order\s+by|arrange/i.test(userMessage);
             const isSpreadsheetOperation = (univerAdapter && univerAdapter.isReady()) && looksLikeSpreadsheetCmd;
 
             // If it looks like a spreadsheet command but Univer isn't ready, stop and show hint
@@ -2968,22 +2969,39 @@ export default function ChatSidebar({
 
                     // Sort by column
                     {
-                        const m = userMessage.match(/\b(?:sort|order|arrange)\b.*\bby\s+(?:column\s*)?([A-Za-z]|\d+)\b(?:\s+(asc|ascending|a-?z|desc|descending|z-?a))?/i);
+                        // Direction comes out of the sentence, and the column
+                        // is whatever is left once the direction phrase has
+                        // been cut away -- otherwise "sort by revenue, highest
+                        // first" hands "revenue, highest first" to the resolver.
+                        // The column used to have to be a single letter, so
+                        // "sort by revenue" never matched here at all and went
+                        // to the model, which is where the direction was being
+                        // got wrong.
+                        const ascending = sortDirection(userMessage) !== 'desc';
+                        const withoutDirection = stripSortDirection(userMessage);
+                        const m = withoutDirection.match(
+                            /\b(?:sort|order|arrange)\b(?:\s+the\s+\w+)?\s+(?:by\s+)?(?:the\s+)?(?:column\s+)?([^,.;]+?)\s*[,.;]?\s*$/i
+                        );
                         if (m) {
-                            const ref = m[1];
-                            const ascToken = (m[2] || '').toLowerCase();
-                            const ascending = ascToken ? !/desc|z-?a/.test(ascToken) : true;
-                            const colIndex = /^[A-Za-z]$/.test(ref) ? (ref.toUpperCase().charCodeAt(0) - 65) : (parseInt(ref, 10) - 1);
-                            const dims = univerAdapter.getSheetDimensions();
-                            const lastColLetter = String.fromCharCode(65 + Math.max(0, dims.cols - 1));
-                            const range = `A2:${lastColLetter}${Math.max(1, dims.rows)}`;
-                            const ok = univerAdapter.sort(range, colIndex, ascending);
-                            if (ok) {
-                                setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), { role: 'assistant', content: `✅ Sorted by ${/^[A-Za-z]$/.test(ref) ? ref.toUpperCase() : `#${colIndex + 1}`} ${ascending ? 'A-Z' : 'Z-A'}.`, timestamp: Date.now() }]);
-                                setIsProcessing(false);
-                                return;
+                            const headerRow = (univerAdapter.getAllData() || [])[0] || [];
+                            const colIndex = resolveColumnRef(m[1], headerRow);
+                            // An unresolved column falls through rather than
+                            // failing: the classifier and the backend get their
+                            // turn, as they did before.
+                            if (colIndex >= 0) {
+                                const dims = univerAdapter.getSheetDimensions();
+                                const range = `A2:${columnLabel(Math.max(0, dims.cols - 1))}${Math.max(1, dims.rows)}`;
+                                const ok = univerAdapter.sort(range, colIndex, ascending);
+                                if (ok) {
+                                    const header = String(headerRow[colIndex] && typeof headerRow[colIndex] === 'object'
+                                        ? ((headerRow[colIndex] as any).v ?? (headerRow[colIndex] as any).m ?? '')
+                                        : (headerRow[colIndex] ?? '')).trim();
+                                    setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), { role: 'assistant', content: `✅ Sorted by ${header || columnLabel(colIndex)} ${ascending ? 'A-Z' : 'Z-A'}.`, timestamp: Date.now() }]);
+                                    setIsProcessing(false);
+                                    return;
+                                }
+                                throw new Error('Sort failed');
                             }
-                            throw new Error('Sort failed');
                         }
                     }
 
@@ -3666,8 +3684,17 @@ export default function ChatSidebar({
                                 if (sheetData && sheetData.length > 1) {
                                     const headers = (sheetData[0] || []).map((h: any, i: number) => typeof h === 'object' ? (h?.v ?? h?.m ?? `Column ${i + 1}`) : (h ?? `Column ${i + 1}`));
                                     const colIdentRaw = (classification.target?.identifier || '').toString();
+                                    // What the sentence says beats what the
+                                    // model filled in: a small model answers
+                                    // "sort by revenue descending" with
+                                    // direction: "asc" and reports success.
+                                    // Its answer is still the fallback for a
+                                    // sentence that does not say either way.
                                     const dirRaw = (classification.parameters?.direction || 'asc').toString().toLowerCase();
-                                    const ascending = !/desc|z-?a|down|decreasing/.test(dirRaw);
+                                    const stated = sortDirection(userMessage);
+                                    const ascending = stated
+                                        ? stated === 'asc'
+                                        : !/desc|z-?a|down|decreasing/.test(dirRaw);
 
                                     const findColIndexByName = (nameRaw: string): number => {
                                         const name = nameRaw.trim().toLowerCase();

@@ -118,6 +118,10 @@ plot total revenue by region as a bar chart`}</code></pre>
                             <td>Sorted, with the direction confirmed back to you</td>
                         </tr>
                         <tr>
+                            <td><code>sort revenue from largest to smallest</code></td>
+                            <td>Same. <code>descending</code>, <code>high to low</code> and <code>Z-A</code> all read</td>
+                        </tr>
+                        <tr>
                             <td><code>filter Region equals East</code></td>
                             <td>Only matching rows left visible</td>
                         </tr>
@@ -144,6 +148,14 @@ plot total revenue by region as a bar chart`}</code></pre>
                     </tbody>
                 </table>
             </div>
+            <p>
+                Which way a sort runs is read from your sentence, not decided by the
+                model. That matters on a small local model: one was asked to sort
+                &ldquo;descending&rdquo; and sorted ascending, then reported success. The
+                word is in the sentence, so there is nothing to infer — the model is only
+                consulted when the sentence does not say, and then the default is
+                ascending.
+            </p>
             <p>
                 Filters match on <strong>equals</strong>, <strong>contains</strong>, or a
                 numeric comparison, and take a column by name or by letter
