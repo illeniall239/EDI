@@ -15,6 +15,7 @@ import Image from 'next/image';
 import { API_BASE_URL } from '@/config';
 import ReactMarkdown from 'react-markdown';
 import { columnsOf, suggestionsFor } from '@/utils/dataShape';
+import { resolveColumnRef, columnLabel } from '@/utils/columnRef';
 import { ChartRenderer, LegacyChartImage } from '@/components/charts/ChartRenderer';
 import remarkGfm from 'remark-gfm';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -2724,22 +2725,91 @@ export default function ChatSidebar({
                         throw new Error('Autofit rows failed');
                     }
 
+                    // Rename a column, i.e. write a new header. There was no
+                    // handler for this at all -- the classifier recognised it
+                    // and the request fell through to the backend, which
+                    // answered with a generic apology.
+                    {
+                        const m = userMessage.match(
+                            /\b(?:rename|call)\s+(?:the\s+)?(?:column\s+)?(.+?)\s+(?:column\s+)?(?:to|as)\s+"?([^"\n]+?)"?\s*$/i
+                        );
+                        if (m) {
+                            const data = univerAdapter.getAllData() || [];
+                            const headerRow = data[0] || [];
+                            const colIndex = resolveColumnRef(m[1], headerRow);
+                            if (colIndex < 0) throw new Error(`No column matches "${m[1].trim()}"`);
+                            const newName = m[2].trim();
+                            if (!univerAdapter.setCellValue(0, colIndex, newName)) {
+                                throw new Error('Rename failed');
+                            }
+                            setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), {
+                                id: (Date.now() + 1).toString(),
+                                role: 'assistant',
+                                type: 'assistant',
+                                content: `✅ Renamed column ${columnLabel(colIndex)} to "${newName}".`,
+                                timestamp: new Date()
+                            } as ChatMessage]);
+                            setIsProcessing(false);
+                            return;
+                        }
+                    }
+
+                    // Add a named column on the end. Distinct from inserting at
+                    // a position: there is no reference column to insert at, and
+                    // the point of it is the header.
+                    {
+                        const m = userMessage.match(
+                            /\b(?:add|create|insert)\s+(?:an?\s+)?(?:new\s+)?column\s+(?:called|named|titled|labell?ed)\s+"?([^"\n]+?)"?\s*$/i
+                        );
+                        if (m) {
+                            const name = m[1].trim();
+                            const data = univerAdapter.getAllData() || [];
+                            const headerRow = data[0] || [];
+                            const at = headerRow.length;
+                            if (!univerAdapter.insertColumn(at, 1)) {
+                                throw new Error('Could not add the column');
+                            }
+                            if (!univerAdapter.setCellValue(0, at, name)) {
+                                throw new Error('Column added but the header could not be written');
+                            }
+                            setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), {
+                                id: (Date.now() + 1).toString(),
+                                role: 'assistant',
+                                type: 'assistant',
+                                content: `✅ Added column ${columnLabel(at)}, "${name}". It is empty -- fill it in, or ask for a formula.`,
+                                timestamp: new Date()
+                            } as ChatMessage]);
+                            setIsProcessing(false);
+                            return;
+                        }
+                    }
+
                     // Insert column(s)
                     {
-                        const m = userMessage.match(/\b(?:insert|add|create)\s*(\d+)?\s*columns?\s*(?:at|before|after)?\s*(?:column\s*)?([A-Za-z]|\d+)\b/i)
-                            || userMessage.match(/\b(?:insert|add|create)\s*(?:a\s+)?(?:new\s+)?column\s*(?:at|before|after)?\s*(?:column\s*)?([A-Za-z]|\d+)\b/i);
+                        // One pattern with an optional count, not two. The old
+                        // fallback's only capture group was the column, while
+                        // the code read m[1] as the count either way -- so
+                        // "insert a column after B" asked Univer for NaN
+                        // columns and got "Invalid array length" back.
+                        const m = userMessage.match(
+                            /\b(?:insert|add|create)\s+(?:(\d+)\s+)?(?:an?\s+)?(?:new\s+)?columns?\s*(at|before|after)?\s*(?:the\s+)?(?:column\s+)?([A-Za-z]{1,3}|\d+)\b/i
+                        );
                         if (m) {
-                            const count = m[1] ? parseInt(m[1], 10) : 1;
-                            const ref = m[m.length - 1];
-                            const colIndex = /^[A-Za-z]$/.test(ref) ? (ref.toUpperCase().charCodeAt(0) - 65) : (parseInt(ref, 10) - 1);
-                            if (!Number.isNaN(colIndex) && colIndex >= 0) {
-                                const success = univerAdapter.insertColumn(colIndex, Math.max(1, count));
+                            const count = m[1] ? Math.max(1, parseInt(m[1], 10)) : 1;
+                            const where = (m[2] || 'at').toLowerCase();
+                            const ref = m[3];
+                            const headerRow = (univerAdapter.getAllData() || [])[0] || [];
+                            const found = resolveColumnRef(ref, headerRow);
+                            // "after B" puts the new column to B's right.
+                            const colIndex = found >= 0 && where === 'after' ? found + 1 : found;
+                            if (colIndex >= 0) {
+                                const success = univerAdapter.insertColumn(colIndex, count);
                                 if (success) {
                                     setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), {
                                         id: (Date.now() + 1).toString(),
                                         role: 'assistant',
                                         type: 'assistant',
-                                        content: `✅ Inserted ${Math.max(1, count)} column${Math.max(1, count) > 1 ? 's' : ''} at ${/^[A-Za-z]$/.test(ref) ? ref.toUpperCase() : `#${colIndex + 1}`}.`,
+                                        content: `✅ Inserted ${count} column${count > 1 ? 's' : ''} at ${columnLabel(colIndex)}.`,
                                         timestamp: new Date()
                                     } as ChatMessage]);
                                     setIsProcessing(false);
@@ -2805,20 +2875,29 @@ export default function ChatSidebar({
 
                     // Hide/Show column
                     {
-                        const hide = userMessage.match(/\bhide\s+(?:the\s+)?(?:column\s*)?([A-Za-z]|\d+)\b/i);
-                        const show = userMessage.match(/\b(?:show|unhide)\s+(?:the\s+)?(?:column\s*)?([A-Za-z]|\d+)\b/i);
-                        const m = hide || show;
-                        if (m) {
-                            const ref = m[1];
-                            const colIndex = /^[A-Za-z]$/.test(ref) ? (ref.toUpperCase().charCodeAt(0) - 65) : (parseInt(ref, 10) - 1);
-                            if (!Number.isNaN(colIndex) && colIndex >= 0) {
+                        // The reference used to be a single character, so it
+                        // could not even match "hide the Rep column" -- the
+                        // sentence fell through to the backend and came back
+                        // as a generic apology.
+                        const m = userMessage.match(
+                            /\b(hide|show|unhide)\s+(?:the\s+)?(?:column\s+)?(.+?)(?:\s+column)?\s*$/i
+                        );
+                        // "show all columns" and "show me the top 5" are not
+                        // column references; leaving them unresolved lets them
+                        // fall through to whoever does handle them, which is
+                        // why a failure to resolve here is not an error.
+                        if (m && !/^all\b/i.test(m[2].trim())) {
+                            const headerRow = (univerAdapter.getAllData() || [])[0] || [];
+                            const colIndex = resolveColumnRef(m[2], headerRow);
+                            if (colIndex >= 0) {
+                                const hide = m[1].toLowerCase() === 'hide';
                                 const ok = hide ? univerAdapter.hideColumns(colIndex, colIndex) : univerAdapter.showColumns(colIndex, colIndex);
                                 if (ok) {
                                     setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), {
                                         id: (Date.now() + 1).toString(),
                                         role: 'assistant',
                                         type: 'assistant',
-                                        content: `${hide ? '✅ Hidden' : '✅ Shown'} column ${/^[A-Za-z]$/.test(ref) ? ref.toUpperCase() : `#${colIndex + 1}`}.`,
+                                        content: `${hide ? '✅ Hidden' : '✅ Shown'} column ${columnLabel(colIndex)}.`,
                                         timestamp: new Date()
                                     } as ChatMessage]);
                                     setIsProcessing(false);
@@ -2910,33 +2989,54 @@ export default function ChatSidebar({
 
                     // Filter by column value (equals/contains) — Univer-only (hide non-matching rows)
                     {
-                        // Patterns: "filter column E with the value Valve", "filter column Name equals Valve", "filter Name contains Valve"
-                        const eq = userMessage.match(/\bfilter\s+(?:the\s+)?(?:column\s*)?(.+?)\s+(?:with\s+the\s+value|equals?|=|is)\s+"?([^"\n]+)"?/i);
-                        const contains = userMessage.match(/\bfilter\s+(?:the\s+)?(?:column\s*)?(.+?)\s+(?:contains|has)\s+"?([^"\n]+)"?/i);
-                        const m = eq || contains;
+                        // "filter column E with the value Valve", "filter Name
+                        // contains Valve", "filter rows where Revenue is over 5000".
+                        //
+                        // The comparison pattern has to be tried first: the
+                        // equality one is happy to read "over 5000" as the value
+                        // to match, and "rows where" as part of the column name,
+                        // which is how "filter revenue over 5000" used to end as
+                        // "Column not found".
+                        const LEAD = String.raw`\bfilter\s+(?:rows?\s+)?(?:where\s+)?(?:the\s+)?(?:column\s+)?`;
+                        // Longest phrasings first, so "greater than or equal to"
+                        // is not consumed by "greater than".
+                        const OPS = [
+                            'greater than or equal to', 'less than or equal to',
+                            'at least', 'at most', 'no more than', 'no less than',
+                            'greater than', 'less than', 'more than',
+                            'over', 'above', 'under', 'below',
+                            '>=', '<=', '>', '<',
+                        ].map(o => o.replace(/ /g, String.raw`\s+`)).join('|');
+
+                        const cmp = userMessage.match(new RegExp(
+                            LEAD + String.raw`(.+?)\s+(?:is\s+)?(${OPS})\s+\$?([\d,]+(?:\.\d+)?)\b`, 'i'
+                        ));
+                        const eq = cmp ? null : userMessage.match(new RegExp(
+                            LEAD + String.raw`(.+?)\s+(?:with\s+the\s+value|equals?|=|is)\s+"?([^"\n]+)"?`, 'i'
+                        ));
+                        const contains = (cmp || eq) ? null : userMessage.match(new RegExp(
+                            LEAD + String.raw`(.+?)\s+(?:contains|has)\s+"?([^"\n]+)"?`, 'i'
+                        ));
+                        const m = cmp || eq || contains;
                         if (m) {
                             const columnRefRaw = m[1].trim();
-                            const valueRaw = m[2].trim();
                             const isContains = !!contains;
-
-                            // Resolve column index from letter, number or header name
-                            const toIndex = (ref: string, headers: any[]): number => {
-                                if (/^[A-Za-z]$/.test(ref)) return ref.toUpperCase().charCodeAt(0) - 65;
-                                if (/^\d+$/.test(ref)) return parseInt(ref, 10) - 1;
-                                // Try header name (case-insensitive)
-                                const headerText = headers.map(h => typeof h === 'object' ? (h?.v ?? h?.m ?? '') : (h ?? ''));
-                                const idx = headerText.findIndex(h => String(h).toLowerCase() === ref.toLowerCase());
-                                if (idx !== -1) return idx;
-                                // Try partial contains
-                                const idx2 = headerText.findIndex(h => String(h).toLowerCase().includes(ref.toLowerCase()));
-                                return idx2;
-                            };
+                            const cmpOp = cmp ? cmp[2].toLowerCase().replace(/\s+/g, ' ') : '';
+                            const valueRaw = (cmp ? cmp[3] : m[2]).trim();
+                            const cmpTarget = cmp ? parseFloat(valueRaw.replace(/,/g, '')) : NaN;
 
                             const data = univerAdapter.getAllData();
                             if (!data || data.length <= 1) throw new Error('No data available to filter');
                             const headers = data[0] || [];
-                            const colIndex = toIndex(columnRefRaw, headers);
-                            if (colIndex === -1 || Number.isNaN(colIndex)) throw new Error('Column not found');
+                            const colIndex = resolveColumnRef(columnRefRaw, headers);
+                            if (colIndex === -1) throw new Error(`No column matches "${columnRefRaw}"`);
+                            if (cmp && Number.isNaN(cmpTarget)) throw new Error(`"${valueRaw}" is not a number`);
+                            const resolvedHeader = String(
+                                (headers[colIndex] && typeof headers[colIndex] === 'object')
+                                    ? ((headers[colIndex] as any).v ?? (headers[colIndex] as any).m ?? '')
+                                    : (headers[colIndex] ?? '')
+                            ).trim();
+                            const headerLabel = resolvedHeader ? `'${resolvedHeader}'` : `column ${columnLabel(colIndex)}`;
 
                             // Unhide all rows first
                             const dims = univerAdapter.getSheetDimensions();
@@ -2946,12 +3046,36 @@ export default function ChatSidebar({
 
                             // Build list of rows to hide (0-based indexing; skip header row 0)
                             const target = valueRaw.toLowerCase();
+                            const keeps = (cellStr: string, cellNum: number): boolean => {
+                                if (!cmp) return isContains ? cellStr.includes(target) : cellStr === target;
+                                // A cell that is not a number cannot satisfy a
+                                // comparison, so it is hidden rather than kept.
+                                if (Number.isNaN(cellNum)) return false;
+                                switch (cmpOp) {
+                                    case '>': case 'over': case 'above':
+                                    case 'greater than': case 'more than':
+                                        return cellNum > cmpTarget;
+                                    case '<': case 'under': case 'below':
+                                    case 'less than':
+                                        return cellNum < cmpTarget;
+                                    case '>=': case 'at least':
+                                    case 'no less than':
+                                    case 'greater than or equal to':
+                                        return cellNum >= cmpTarget;
+                                    case '<=': case 'at most':
+                                    case 'no more than':
+                                    case 'less than or equal to':
+                                        return cellNum <= cmpTarget;
+                                    default:
+                                        return false;
+                                }
+                            };
                             const rowsToHide: number[] = [];
                             for (let r = 1; r < data.length; r++) {
                                 const cell = data[r]?.[colIndex];
                                 const cellStr = String(cell ?? '').toLowerCase();
-                                const match = isContains ? cellStr.includes(target) : cellStr === target;
-                                if (!match) rowsToHide.push(r);
+                                const cellNum = parseFloat(cellStr.replace(/[$,\s]/g, ''));
+                                if (!keeps(cellStr, cellNum)) rowsToHide.push(r);
                             }
 
                             // Convert to contiguous blocks and hide
@@ -2971,7 +3095,7 @@ export default function ChatSidebar({
 
                             setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), {
                                 role: 'assistant',
-                                content: `✅ Filtered ${/^[A-Za-z]$/.test(columnRefRaw) ? `column ${columnRefRaw.toUpperCase()}` : `'${columnRefRaw}'`} ${isContains ? 'containing' : 'equal to'} "${valueRaw}".`,
+                                content: `✅ Filtered ${headerLabel} ${cmp ? cmpOp : isContains ? 'containing' : 'equal to'} ${cmp ? valueRaw : `"${valueRaw}"`}.`,
                                 timestamp: Date.now()
                             }]);
                             setIsProcessing(false);
@@ -3051,8 +3175,19 @@ export default function ChatSidebar({
                         const single = normalized.match(/\b(?:delete|remove)\s+(?:the\s+)?(?:column\s*)?([A-Za-z]|\d+)\b/i);
                         const range = normalized.match(/\b(?:delete|remove)\s+(?:the\s+)?(?:columns?\s*)?([A-Za-z]|\d+)\s*(?:to|through|-)\s*([A-Za-z]|\d+)\b/i);
                         const list = normalized.match(/\b(?:delete|remove)\s+(?:the\s+)?columns?\s+([A-Za-z\d,]+)\b/i);
-                        const toIndex = (ref: string) => (/^[A-Za-z]$/.test(ref) ? (ref.toUpperCase().charCodeAt(0) - 65) : (parseInt(ref, 10) - 1));
+                        const headerRow = (univerAdapter.getAllData() || [])[0] || [];
+                        const toIndex = (ref: string) => resolveColumnRef(ref, headerRow);
                         const isValid = (i: number) => !Number.isNaN(i) && i >= 0;
+                        // None of the three patterns above can match a header
+                        // name -- they all want a single character -- so
+                        // "delete the Rep column" matched nothing, fell past
+                        // this block to the router, and came back from the
+                        // backend as a generic apology. An unresolved
+                        // reference still falls through: "remove duplicate
+                        // rows" is not a column.
+                        const byName = (range || list || single)
+                            ? null
+                            : normalized.match(/\b(?:delete|remove)\s+(?:the\s+)?(.+?)(?:\s+column)?\s*$/i);
 
                         if (range) {
                             const start = toIndex(range[1]);
@@ -3063,7 +3198,7 @@ export default function ChatSidebar({
                                 const count = b - a + 1;
                                 const ok = univerAdapter.deleteColumn(a, count);
                                 if (ok) {
-                                    const label = `${String.fromCharCode(65 + a)}${count > 1 ? `-${String.fromCharCode(65 + b)}` : ''}`;
+                                    const label = `${columnLabel(a)}${count > 1 ? `-${columnLabel(b)}` : ''}`;
                                     setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), { role: 'assistant', content: `✅ Deleted column${count > 1 ? 's' : ''} ${label}.`, timestamp: Date.now() }]);
                                     setIsProcessing(false);
                                     return;
@@ -3081,7 +3216,7 @@ export default function ChatSidebar({
                                     if (!ok) { allOk = false; break; }
                                 }
                                 if (allOk) {
-                                    const label = parts.map(p => (/^[A-Za-z]$/.test(p) ? p.toUpperCase() : `#${toIndex(p) + 1}`)).join(', ');
+                                    const label = parts.map(p => columnLabel(toIndex(p))).join(', ');
                                     setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), { role: 'assistant', content: `✅ Deleted columns ${label}.`, timestamp: Date.now() }]);
                                     setIsProcessing(false);
                                     return;
@@ -3094,11 +3229,19 @@ export default function ChatSidebar({
                             if (isValid(idx)) {
                                 const ok = univerAdapter.deleteColumn(idx, 1);
                                 if (ok) {
-                                    setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), { role: 'assistant', content: `✅ Deleted column ${/^[A-Za-z]$/.test(ref) ? ref.toUpperCase() : `#${idx + 1}`}.`, timestamp: Date.now() }]);
+                                    setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), { role: 'assistant', content: `✅ Deleted column ${columnLabel(idx)}.`, timestamp: Date.now() }]);
                                     setIsProcessing(false);
                                     return;
                                 }
                                 throw new Error('Delete column failed');
+                            }
+                        } else if (byName) {
+                            const idx = toIndex(byName[1]);
+                            if (isValid(idx)) {
+                                if (!univerAdapter.deleteColumn(idx, 1)) throw new Error('Delete column failed');
+                                setMessages(prev => [...prev.filter(msg => !msg.isAnalyzing), { role: 'assistant', content: `✅ Deleted column ${columnLabel(idx)}.`, timestamp: Date.now() }]);
+                                setIsProcessing(false);
+                                return;
                             }
                         }
                     }
@@ -3585,11 +3728,14 @@ export default function ChatSidebar({
                             // Try Univer first if available
                             if (univerAdapter && univerAdapter.isReady()) {
 
-                                // Convert column letter to index if needed
-                                let colIndex = -1;
-                                if (/^[A-Za-z]$/.test(colIdentRaw)) {
-                                    colIndex = colIdentRaw.toUpperCase().charCodeAt(0) - 65;
-                                }
+                                // A letter, a number, or the header itself.
+                                // This used to be /^[A-Za-z]$/ and nothing
+                                // else, so "delete the Rep column" resolved to
+                                // -1 and fell through to a generic failure --
+                                // while sorting and filtering, which had their
+                                // own resolver, took names happily.
+                                const headerRow = (univerAdapter.getAllData() || [])[0] || [];
+                                const colIndex = resolveColumnRef(colIdentRaw, headerRow);
 
                                 if (action === 'insert_column' && colIndex >= 0) {
                                     const success = univerAdapter.insertColumn(colIndex, count);
@@ -3600,7 +3746,7 @@ export default function ChatSidebar({
                                                 id: (Date.now() + 1).toString(),
                                                 role: 'assistant',
                                                 type: 'assistant',
-                                                content: `✅ Inserted ${count} column(s) at position ${colIdentRaw.toUpperCase()}`,
+                                                content: `✅ Inserted ${count} column(s) at ${columnLabel(colIndex)}`,
                                                 isTyping: true,
                                                 timestamp: new Date()
                                             } as ChatMessage];
@@ -3619,7 +3765,7 @@ export default function ChatSidebar({
                                                 id: (Date.now() + 1).toString(),
                                                 role: 'assistant',
                                                 type: 'assistant',
-                                                content: `✅ Deleted ${count} column(s) starting at ${colIdentRaw.toUpperCase()}`,
+                                                content: `✅ Deleted ${count} column(s) starting at ${columnLabel(colIndex)}`,
                                                 isTyping: true,
                                                 timestamp: new Date()
                                             } as ChatMessage];

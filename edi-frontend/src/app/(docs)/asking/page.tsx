@@ -17,11 +17,11 @@ export default function Asking() {
             </p>
 
             <div className="edi-note">
-                Every example below was run against a real sheet, and the &ldquo;rough
-                edges&rdquo; at the bottom are the ones that failed when we tried them.
-                Answer quality depends on the model you configured, so a weaker one will
-                do worse on the questions even where the plumbing is identical — see{' '}
-                <Link href="/models">Choosing a model</Link>.
+                Every example below was run against a real sheet rather than taken
+                from a list of intents, and the ones that failed were fixed rather than
+                written up. Answer quality still depends on the model you configured, so
+                a weaker one will do worse on the questions even where the plumbing is
+                identical — see <Link href="/models">Choosing a model</Link>.
             </div>
 
             <h2>Questions about the data</h2>
@@ -126,6 +126,14 @@ plot total revenue by region as a bar chart`}</code></pre>
                             <td>Same, matching on part of a value</td>
                         </tr>
                         <tr>
+                            <td><code>filter rows where Revenue is over 5000</code></td>
+                            <td>A numeric comparison</td>
+                        </tr>
+                        <tr>
+                            <td><code>filter Units at least 10</code></td>
+                            <td>Same. <code>&gt;=</code>, <code>under</code>, <code>at most</code> and the rest all read</td>
+                        </tr>
+                        <tr>
                             <td><code>show all rows again</code></td>
                             <td>Every filter cleared</td>
                         </tr>
@@ -137,10 +145,11 @@ plot total revenue by region as a bar chart`}</code></pre>
                 </table>
             </div>
             <p>
-                Filters match on <strong>equals</strong> or <strong>contains</strong>, by
-                column name or by letter (<code>filter column C with the value West</code>).
-                Comparisons like <em>over 5000</em> are not implemented — ask the question
-                instead, and you will get the answer without touching the sheet.
+                Filters match on <strong>equals</strong>, <strong>contains</strong>, or a
+                numeric comparison, and take a column by name or by letter
+                (<code>filter column C with the value West</code>). Rows whose value is not
+                a number are hidden by a comparison rather than kept, so a column with
+                stray text in it does not quietly widen the result.
             </p>
 
             <h2>Changing how it looks</h2>
@@ -187,11 +196,23 @@ plot total revenue by region as a bar chart`}</code></pre>
                         </tr>
                         <tr>
                             <td><code>delete column I</code></td>
-                            <td>The column removed</td>
+                            <td>The column removed. <code>delete the Rep column</code> works too</td>
                         </tr>
                         <tr>
-                            <td><code>hide column D</code></td>
-                            <td>Hidden, not deleted</td>
+                            <td><code>hide the Rep column</code></td>
+                            <td>Hidden, not deleted. <code>show the Rep column</code> brings it back</td>
+                        </tr>
+                        <tr>
+                            <td><code>rename column C to Area</code></td>
+                            <td>A new header, the data untouched</td>
+                        </tr>
+                        <tr>
+                            <td><code>add a column called Margin</code></td>
+                            <td>An empty column on the end, headed <code>Margin</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>insert 2 columns before D</code></td>
+                            <td>Two empty columns. <code>after D</code> puts them on the other side</td>
                         </tr>
                         <tr>
                             <td><code>translate the Region column to French</code></td>
@@ -205,39 +226,35 @@ plot total revenue by region as a bar chart`}</code></pre>
                 <strong>Download as CSV</strong> in the workbook menu gets it back out.
             </p>
 
-            <h2>Rough edges</h2>
+            <h2>Naming a column</h2>
             <p>
-                Worth knowing before you hit them. These are things the app will accept and
-                then fail at, rather than things it refuses:
+                Anywhere a column is called for, three ways of naming it all work: the
+                spreadsheet letter (<code>C</code>, and <code>AA</code> past Z), the
+                position (<code>column 3</code>), or the header itself
+                (<code>the Rep column</code>). They used to differ per operation —
+                sorting and filtering took names while deleting and hiding took a single
+                letter — which meant <code>delete the Rep column</code> failed for no
+                reason a reader could see.
             </p>
-            <ul>
-                <li>
-                    <strong>Column operations want a letter, not a header name.</strong>{' '}
-                    <code>delete column I</code> works; <code>delete the Rep column</code>{' '}
-                    does not. This applies to deleting and hiding, not to sorting,
-                    filtering or asking questions — those all take names happily.
-                </li>
-                <li>
-                    <strong>Adding and inserting columns does not work.</strong> Neither{' '}
-                    <code>insert a column after B</code> nor{' '}
-                    <code>add a column called Margin</code> succeeds.
-                </li>
-                <li>
-                    <strong>Renaming a column does not work</strong> from the chat.
-                </li>
-                <li>
-                    <strong>Comments, hyperlinks and data validation are not implemented.</strong>{' '}
-                    The classifier recognises them and the sidebar then has nothing to hand
-                    them to, so you get &ldquo;unable to process spreadsheet command&rdquo;.
-                </li>
-                <li>
-                    <strong>Filters do not do comparisons.</strong> Equals and contains
-                    only, as above.
-                </li>
-            </ul>
             <p>
-                For anything the chat cannot do, the sheet is a real spreadsheet — Univer,
-                with its own toolbar — so you can do it by hand.
+                A header wins over a letter when they collide, so a sheet with a column
+                genuinely headed &ldquo;C&rdquo; is still reachable by name. A partial
+                match only counts when exactly one header contains what you typed;
+                otherwise you are told nothing matched rather than given a coin flip.
+            </p>
+
+            <h2>What is not there</h2>
+            <p>
+                Cell comments, hyperlinks and data validation are recognised by the
+                classifier and then have nothing to run: they live in Univer plugins this
+                build does not install, and the <code>@univerjs/*</code> packages are
+                pinned as a set, so adding one is a dependency change rather than a bug
+                fix. Asking for them gets you &ldquo;unable to process spreadsheet
+                command&rdquo;.
+            </p>
+            <p>
+                For those, and anything else the chat does not cover, the sheet is a real
+                spreadsheet — Univer, with its own toolbar — so you can do it by hand.
             </p>
 
             <h2>How it decides</h2>
