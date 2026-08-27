@@ -238,6 +238,32 @@ plot total revenue by region as a bar chart`}</code></pre>
                 <strong>Download as CSV</strong> in the workbook menu gets it back out.
             </p>
 
+            <h2>Formulas</h2>
+            <p>
+                Ask for a formula and you get the formula, not the answer — with an{' '}
+                <strong>Apply</strong> button under it. Nothing changes in the sheet
+                until you press it, which is the point: a formula lands in cells you
+                picked, so a wrong one should be something you read and ignore rather
+                than something you undo.
+            </p>
+            <pre><code>{`what formula would sum revenue for the South region
+add a column called unit_price that is revenue divided by units
+give me a formula for the average units per order`}</code></pre>
+            <p>
+                Two things can come back. An <strong>aggregate</strong> —{' '}
+                <code>=SUMIF(B:B,&quot;South&quot;,E:E)</code> — goes into one cell, and
+                the button names which: click a cell in the sheet first and it goes
+                there. A <strong>per-row calculation</strong> —{' '}
+                <code>=E2/D2</code> — becomes a new column at the end, headed with the
+                name you gave, filled down every row with the references shifted as a
+                spreadsheet would shift them.
+            </p>
+            <p>
+                It is a real formula in a real cell, not a computed value: edit a number
+                the formula depends on and it recalculates, which is the reason to want
+                one rather than asking for the number.
+            </p>
+
             <h2>Naming a column</h2>
             <p>
                 Anywhere a column is called for, three ways of naming it all work: the

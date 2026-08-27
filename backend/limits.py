@@ -111,6 +111,7 @@ _METERED_PREFIXES = (
     "/api/query",
     "/api/orchestrate",
     "/api/classify-command",
+    "/api/formula",
 )
 
 # Nested under /api/workspace/{id}/, which is otherwise unmetered.

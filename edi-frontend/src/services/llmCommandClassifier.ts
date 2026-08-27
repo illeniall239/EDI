@@ -8,7 +8,7 @@
 import { API_ENDPOINTS } from '@/config';
 
 export interface CommandClassification {
-  intent: 'conditional_format' | 'data_modification' | 'find_replace' | 'filter' | 'sort' | 'column_operation' | 'row_operation' | 'cell_operation' | 'range_operation' | 'freeze_operation' | 'table_operation' | 'hyperlink_operation' | 'data_validation' | 'comment_operation' | 'image_operation' | 'named_range_operation' | 'intelligent_analysis' | 'smart_format' | 'data_entry' | 'general_query' | 'compound_operation' | 'unknown';
+  intent: 'conditional_format' | 'data_modification' | 'find_replace' | 'filter' | 'sort' | 'column_operation' | 'row_operation' | 'cell_operation' | 'range_operation' | 'freeze_operation' | 'table_operation' | 'hyperlink_operation' | 'data_validation' | 'comment_operation' | 'image_operation' | 'named_range_operation' | 'intelligent_analysis' | 'smart_format' | 'data_entry' | 'formula' | 'general_query' | 'compound_operation' | 'unknown';
   action: string;
   target: {
     type: 'cell' | 'column' | 'row' | 'range' | 'all_data' | 'specific_value' | 'table' | 'compound';

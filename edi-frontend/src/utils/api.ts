@@ -1,5 +1,5 @@
 import { API_ENDPOINTS, API_BASE_URL, SUPPORTED_FILE_TYPES, MAX_FILE_SIZE } from '@/config';
-import { DataPreview, QueryResponse, Chat, ChatMessage } from '@/types';
+import { DataPreview, QueryResponse, Chat, ChatMessage, FormulaSuggestion } from '@/types';
 
 /**
  * A refusal from the demo's usage limits: 429 (too many questions) or 413
@@ -202,6 +202,27 @@ export async function forgetProviderKey(provider: string): Promise<void> {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.detail || 'Could not remove that key');
     }
+}
+
+export async function generateFormula(
+    description: string,
+    options?: { workspaceId?: string; scope?: 'cell' | 'column'; header?: string },
+): Promise<FormulaSuggestion> {
+    const response = await fetch(API_ENDPOINTS.formula, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            description,
+            workspace_id: options?.workspaceId,
+            scope: options?.scope,
+            header: options?.header,
+        }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw limitRefusal(response, data.detail) || new Error(data.detail || 'Could not write a formula');
+    }
+    return data;
 }
 
 export async function cancelOperation(operationId?: string): Promise<void> {

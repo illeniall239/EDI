@@ -810,6 +810,138 @@ async def health_check():
     }
 
 
+class FormulaRequest(BaseModel):
+    description: str
+    workspace_id: Optional[str] = None
+    # What the caller means to do with it, when it already knows. "column" is
+    # a per-row expression to fill down; "cell" is one aggregate. Left unset,
+    # the model decides from the wording, which is right more often than a
+    # keyword test would be.
+    scope: Optional[str] = None
+    header: Optional[str] = None
+
+
+def _column_letter(index):
+    """0 -> A, 25 -> Z, 26 -> AA. Spreadsheet columns, not array indices."""
+    letters = ""
+    index += 1
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
+
+
+_FORMULA_PROMPT = """You write spreadsheet formulas. Return JSON and nothing else.
+
+The sheet has {rows} rows of data. Row 1 holds the headers, so data occupies
+rows 2 to {last_row}. The columns are:
+
+{columns}
+
+Write a formula for this request:
+{description}
+
+Return exactly this shape, with no markdown fences:
+{{"formula": "=...", "explanation": "one sentence, plain English",
+  "scope": "cell" or "column", "header": "short column name or null"}}
+
+Rules:
+- Start the formula with =.
+- "scope": "column" when the request describes a value for every row -- a per
+  row calculation like revenue divided by units. Write the formula for the
+  FIRST data row (row 2) using relative references; it will be filled down.
+  Give "header" a short column name.
+- "scope": "cell" when the request is one number over the whole sheet -- a
+  sum, an average, a count, a lookup. Reference whole columns where that is
+  natural, and set "header" to null.
+- Use the column letters above, never the header text, inside the formula.
+- Prefer functions every spreadsheet has: SUM, SUMIF, SUMIFS, AVERAGE,
+  AVERAGEIF, COUNT, COUNTIF, IF, ROUND, VLOOKUP, INDEX, MATCH.
+- Quote text criteria exactly as they appear in the data.
+"""
+
+
+@app.post("/api/formula")
+async def generate_formula(request: FormulaRequest):
+    """
+    Turn a description into a formula, without touching the sheet.
+
+    Deliberately returns the formula rather than applying it. The client shows
+    it with an Apply button, so a wrong formula is something you read and
+    discard rather than something you undo -- which matters more here than
+    elsewhere in the app, because a formula lands in cells the user picked
+    rather than in a chat bubble.
+    """
+    if settings.LLM is None:
+        raise HTTPException(
+            status_code=503,
+            detail="No model is configured. See /api/health.",
+        )
+
+    description = limits.enforce_question_length(request.description)
+    handler = hydrate(request.workspace_id)
+    df = handler.get_df() if handler else None
+    if df is None or df.empty:
+        raise HTTPException(status_code=400, detail="No data loaded.")
+
+    columns = "\n".join(
+        f"  {_column_letter(i)}: {name}  ({df[name].dtype})"
+        for i, name in enumerate(df.columns)
+    )
+    prompt = _FORMULA_PROMPT.format(
+        rows=len(df),
+        last_row=len(df) + 1,
+        columns=columns,
+        description=description,
+    )
+
+    try:
+        raw = content_of(settings.LLM.invoke(prompt))
+    except Exception as exc:
+        logger.error("Formula generation failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"The model failed: {exc}") from exc
+
+    # Same de-fencing the rest of the app does: asked for bare JSON, models
+    # still wrap it about half the time.
+    text = re.sub(r"^\s*```(?:json)?|```\s*$", "", (raw or "").strip()).strip()
+    try:
+        payload = json.loads(text)
+    except (ValueError, TypeError):
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            raise HTTPException(
+                status_code=502,
+                detail="The model did not return a formula.",
+            )
+        try:
+            payload = json.loads(match.group(0))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=502, detail="The model did not return a formula.",
+            ) from exc
+
+    formula = (payload.get("formula") or "").strip()
+    if not formula.startswith("="):
+        raise HTTPException(
+            status_code=502,
+            detail=f"That is not a formula: {formula[:80] or '(empty)'}",
+        )
+
+    scope = request.scope or payload.get("scope") or "cell"
+    if scope not in ("cell", "column"):
+        scope = "cell"
+
+    return {
+        "formula": formula,
+        "explanation": (payload.get("explanation") or "").strip() or None,
+        "scope": scope,
+        "header": request.header or (payload.get("header") or None),
+        # So the client can fill down without asking the grid how big it is,
+        # and so the two halves cannot disagree about it.
+        "rows": len(df),
+    }
+
+
 class ModelSelection(BaseModel):
     provider: str
     model: Optional[str] = None
@@ -949,7 +1081,7 @@ _CLASSIFIER_INTENTS = {
     "freeze_operation", "table_operation", "hyperlink_operation",
     "data_validation", "comment_operation", "image_operation",
     "named_range_operation", "intelligent_analysis", "smart_format",
-    "data_entry", "general_query", "compound_operation", "unknown",
+    "data_entry", "formula", "general_query", "compound_operation", "unknown",
 }
 _CLASSIFIER_TARGETS = {
     "cell", "column", "row", "range", "all_data", "specific_value", "table",

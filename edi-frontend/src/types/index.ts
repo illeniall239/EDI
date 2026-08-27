@@ -62,6 +62,23 @@ export interface ChatMessage {
         confidence: 'high' | 'medium' | 'low';
     };
     analysisError?: string;
+    /** A formula the model wrote, shown with an Apply button rather than
+     *  written straight into the sheet. See FormulaCard. */
+    formula?: FormulaSuggestion;
+}
+
+export interface FormulaSuggestion {
+    formula: string;
+    explanation?: string | null;
+    /** 'column' is a per-row expression to fill down a new column; 'cell' is
+     *  one aggregate that goes wherever the cursor is. */
+    scope: 'cell' | 'column';
+    header?: string | null;
+    /** Data rows, so the client fills down exactly as far as the data goes
+     *  without asking the grid and getting a different answer. */
+    rows: number;
+    /** Set once applied, so the button does not invite a second copy. */
+    appliedTo?: string;
 }
 
 export type WorkspaceType = 'work';

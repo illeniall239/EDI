@@ -30,6 +30,7 @@ export const API_ENDPOINTS = {
     // The model picker. `models` reports what this machine can reach and
     // never returns a key -- only whether one exists. See backend/model_prefs.py
     // for why a key posted to `providerKey` stays on the machine it was typed on.
+    formula: `${API_BASE_URL}/api/formula`,
     models: `${API_BASE_URL}/api/models`,
     selectModel: `${API_BASE_URL}/api/models/select`,
     resetModel: `${API_BASE_URL}/api/models/reset`,

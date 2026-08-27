@@ -4,12 +4,12 @@ import React from 'react';
 import { Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, Upload } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, LimitError } from '@/utils/api';
+import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, generateFormula, LimitError } from '@/utils/api';
 import { commandService } from '@/services/commandService';
 import { llmCommandClassifier, CommandClassification } from '@/services/llmCommandClassifier';
 // NEW: Universal Query Router for intelligent routing
 import { universalQueryRouter, ProcessorType, UniversalQueryType } from '@/services/universalQueryRouter';
-import { ChatMessage, Chat } from '@/types';
+import { ChatMessage, Chat, FormulaSuggestion } from '@/types';
 import { TypeAnimation } from 'react-type-animation';
 import Image from 'next/image';
 import { API_BASE_URL } from '@/config';
@@ -22,6 +22,9 @@ import remarkGfm from 'remark-gfm';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import AIPrompt from '@/components/AIPrompt';
 import ModelPicker from '@/components/ModelPicker';
+import FormulaCard from '@/components/FormulaCard';
+import { parseFormulaRequest } from '@/utils/formulaRequest';
+import { shiftFormulaRows } from '@/utils/formulaFill';
 import { UniverAdapter } from '@/utils/univerAdapter';
 import { findDuplicateRows, parseColumnSpec } from '@/utils/duplicateDetector';
 
@@ -2141,6 +2144,46 @@ export default function ChatSidebar({
         });
     };
 
+    /**
+     * A formula, asked for in words.
+     *
+     * Returns true when it handled the message. Answered here rather than
+     * from a `case 'formula'` in the switch below, because the switch only
+     * runs on a high-confidence classification and half of these are phrased
+     * as questions -- "what formula would sum revenue for the South region"
+     * classifies as a general query and would go to the backend to be
+     * answered with the number, which is what it used to do.
+     *
+     * The parser is a local regex, so asking costs nothing when the answer
+     * is no.
+     */
+    const handleFormulaRequest = async (query: string): Promise<boolean> => {
+        const ask = parseFormulaRequest(query);
+        if (!ask) return false;
+
+        const suggestion = await generateFormula(ask.description, {
+            workspaceId: currentWorkspace?.id,
+            scope: ask.scope,
+            header: ask.header,
+        });
+
+        setMessages(prev => {
+            const next = [...prev.filter(msg => !msg.isAnalyzing), {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                type: 'assistant',
+                content: suggestion.scope === 'column'
+                    ? 'Here is a formula for that column. Nothing has changed in the sheet yet.'
+                    : 'Here is a formula for that. Nothing has changed in the sheet yet.',
+                formula: suggestion,
+                timestamp: new Date()
+            } as ChatMessage];
+            saveChatMessagesToActiveChat(next);
+            return next;
+        });
+        return true;
+    };
+
     // Helper function to process classification results consistently
     const processClassificationResult = async (classification: any, query: string) => {
         if (!classification || classification.confidence < 0.8) {
@@ -2539,6 +2582,64 @@ export default function ChatSidebar({
     // -- but its only caller passes { action: 'natural_language' }, with no type
     // field for the table to switch on, so every step already failed here with
     // "Unknown action type". This says what is actually missing instead.
+    /**
+     * Write a suggested formula into the sheet, and say where it went.
+     *
+     * Nothing calls this except the Apply button on a FormulaCard, which is
+     * the point: the model writes formulas, the user places them. Univer has
+     * no autofill through the Facade, so a column is filled a row at a time
+     * with the references shifted -- see utils/formulaFill.ts.
+     */
+    const applyFormula = useCallback(async (
+        suggestion: FormulaSuggestion,
+        target: { row: number; col: number } | null,
+    ): Promise<string> => {
+        if (!univerAdapter || !univerAdapter.isReady()) {
+            throw new Error('The sheet is not ready yet.');
+        }
+
+        if (suggestion.scope === 'column') {
+            // getHeaders(), not getAllData(). getAllData reads a fixed
+            // 2000x100 window and trims it, and it came back empty on a sheet
+            // that plainly had data -- which put the new column at index 0,
+            // shifting every existing column one to the right and writing the
+            // formulas into A. getHeaders walks row 1 until the first blank,
+            // which is the question being asked, and an empty answer is
+            // refused here rather than silently meaning "column A".
+            const headers = univerAdapter.getHeaders();
+            if (!headers.length) {
+                throw new Error('Could not read the sheet\'s columns. Try again in a moment.');
+            }
+            const at = headers.length;
+            const header = (suggestion.header || 'formula').trim();
+
+            if (!univerAdapter.insertColumn(at, 1)) {
+                throw new Error('Could not add the column.');
+            }
+            if (!univerAdapter.setCellValue(0, at, header)) {
+                throw new Error('The column was added but its header could not be written.');
+            }
+            for (let i = 0; i < suggestion.rows; i++) {
+                // The model wrote the formula for the first data row, so row
+                // i needs its relative references moved down by i.
+                if (!univerAdapter.setFormula(i + 1, at, shiftFormulaRows(suggestion.formula, i))) {
+                    throw new Error(`Could not write the formula into row ${i + 2}.`);
+                }
+            }
+            return `column ${columnLabel(at)}, "${header}"`;
+        }
+
+        // The cell the card said it would use, resolved at click time and
+        // passed in. Reading the selection again here is what let the label
+        // and the action disagree: the card said G1 and the formula went to
+        // A1, over the header of the column that had just been added.
+        const cell = target || univerAdapter.getCurrentSelection() || { row: 0, col: 0 };
+        if (!univerAdapter.setFormula(cell.row, cell.col, suggestion.formula)) {
+            throw new Error('Could not write the formula into that cell.');
+        }
+        return `${columnLabel(cell.col)}${cell.row + 1}`;
+    }, [univerAdapter]);
+
     const executeUniversalCommand = async (actionPayload: any): Promise<{ success: boolean; message?: string }> => {
         console.warn('⚠️ No frontend executor for spreadsheet step:', actionPayload);
         return {
@@ -2570,6 +2671,21 @@ export default function ChatSidebar({
         setIsProcessing(true);
 
         try {
+            // A formula, before anything else looks at the message.
+            //
+            // It has to be here rather than in the classifier switch, and
+            // here rather than in the add-a-column branch. "Add a column
+            // called unit_price that is revenue divided by units" reaches the
+            // column branch, which can only hear the first half of it and
+            // used to leave an empty column headed with the second. "What
+            // formula would sum revenue for the South region" never reaches
+            // that branch at all -- it classifies as a question and went to
+            // the backend, which answered with the number.
+            if (await handleFormulaRequest(userMessage)) {
+                setIsProcessing(false);
+                return;
+            }
+
             // Simple command detection: Check if this is a spreadsheet operation
             const looksLikeSpreadsheetCmd = /autofit|fit|bold|italic|underline|highlight|background|color|font|cell|range|column|row|undo|redo|freeze|sort|filter|delete\s+column|remove\s+column|order\s+by|arrange/i.test(userMessage);
             const isSpreadsheetOperation = (univerAdapter && univerAdapter.isReady()) && looksLikeSpreadsheetCmd;
@@ -5159,6 +5275,13 @@ export default function ChatSidebar({
                                                     {normalized}
 
                                                 </ReactMarkdown>
+                                                {message.formula && (
+                                                    <FormulaCard
+                                                        suggestion={message.formula}
+                                                        getTarget={() => univerAdapter?.getCurrentSelection() ?? null}
+                                                        onApply={applyFormula}
+                                                    />
+                                                )}
                                                 {message.visualization && (
                                                     <div className="mt-3 space-y-2">
                                                         {message.visualization.type === 'chart_spec' ? (
