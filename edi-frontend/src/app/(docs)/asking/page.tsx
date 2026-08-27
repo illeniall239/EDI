@@ -281,17 +281,24 @@ give me a formula for the average units per order`}</code></pre>
                 otherwise you are told nothing matched rather than given a coin flip.
             </p>
 
+            <h2>Notes, links and dropdowns</h2>
+            <p>
+                <code>add a note to A1 saying checked by hand</code>,{' '}
+                <code>add a hyperlink on B2 pointing to https://example.com</code> and{' '}
+                <code>add validation on C1:C10 with dropdown values: Red, Green, Blue</code>{' '}
+                all work, in both directions: you can ask what a note or link says, and
+                remove either. Number-range and date validation are there too.
+            </p>
+
             <h2>What is not there</h2>
             <p>
-                Cell comments, hyperlinks and data validation are recognised by the
-                classifier and then have nothing to run: they live in Univer plugins this
-                build does not install, and the <code>@univerjs/*</code> packages are
-                pinned as a set, so adding one is a dependency change rather than a bug
-                fix. Asking for them gets you &ldquo;unable to process spreadsheet
-                command&rdquo;.
+                Images and drawings. The classifier does not recognise a request for one,
+                and there is nothing behind it if it did: inserting a picture goes through
+                Univer&rsquo;s drawing system rather than a cell, which this has not been
+                wired to.
             </p>
             <p>
-                For those, and anything else the chat does not cover, the sheet is a real
+                For that, and anything else the chat does not cover, the sheet is a real
                 spreadsheet (Univer, with its own toolbar) so you can do it by hand.
             </p>
 
