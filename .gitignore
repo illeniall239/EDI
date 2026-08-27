@@ -39,7 +39,12 @@ data_exports/
 .edi-data/
 
 # Editor and tool state
-.claude/settings.local.json
+#
+# The assistant's own configuration and instructions, which are how one person
+# works rather than anything a clone of this repository needs.
+.claude/
+CLAUDE.md
+**/CLAUDE.md
 
 # IDE
 .cursor/
