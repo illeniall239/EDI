@@ -10,9 +10,11 @@ that needs an account, an API key, or an upload.
 There is no sign-up because there is nothing to sign up to. Clone it, point it
 at [Ollama](https://ollama.com), and the whole thing runs on localhost.
 
-![Uploading a CSV, asking which region had the highest revenue, charting revenue by month, and sorting the sheet -- all from the chat](assets/edi-demo.gif)
+![Choosing a local model on first run, then asking a spreadsheet which region earned most and charting revenue by product -- all from the chat](assets/edi-demo.gif)
 
-*Real answers from a real model. The pauses while it thinks are cut; nothing else is.*
+*A real model on a real machine -- qwen3:4b through Ollama, with the workspace
+in a local file. Nothing in this recording talks to a hosted provider. The
+pauses while it thinks are cut; nothing else is.*
 
 ## Local sheet, local model
 

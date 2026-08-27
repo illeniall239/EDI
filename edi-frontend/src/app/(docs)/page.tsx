@@ -38,16 +38,17 @@ export default function DocsHome() {
                 controls
                 preload="metadata"
                 poster="/edi-demo-poster.jpg"
-                aria-label="Uploading a CSV, asking which region had the highest revenue, charting revenue by month, and sorting the sheet -- all from the chat"
+                aria-label="Choosing a local model on first run, then asking a spreadsheet which region earned most and charting revenue by product -- all from the chat"
             >
-                {/* MP4 first, which is not the usual order. WebM normally
-                    wins on size, but not on this footage: the zooms rescale
-                    text and a canvas every frame, and VP9 came out larger
-                    than H.264 at matched quality however it was tuned. So
-                    the file nearly everyone downloads should be the mp4,
-                    and WebM stays as the patent-free fallback. */}
-                <source src="/edi-demo.mp4" type="video/mp4" />
+                {/* WebM first, which is the usual order but was not always
+                    the right one here. On the previous recording VP9 came
+                    out larger than H.264 however it was tuned, so the mp4
+                    led. On this one -- more static dialog, fewer canvas
+                    frames -- VP9 wins again: 5.74MB against 6.93MB at the
+                    settings in the build script. Measured per recording,
+                    because the answer has now changed once. */}
                 <source src="/edi-demo.webm" type="video/webm" />
+                <source src="/edi-demo.mp4" type="video/mp4" />
             </video>
 
             <h2>What it does</h2>
