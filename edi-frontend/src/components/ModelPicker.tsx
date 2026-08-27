@@ -27,7 +27,7 @@
  *   control surface is disabled server-side, and `can_change` says so.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Cpu, Cloud, KeyRound, Loader2, RefreshCw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -37,15 +37,8 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import {
-    ActiveModel,
-    ModelCatalog,
-    ProviderState,
-    fetchModelCatalog,
-    forgetProviderKey,
-    saveProviderKey,
-    selectModel,
-} from '@/utils/api';
+import { useModelCatalog } from '@/hooks/useModelCatalog';
+import { ActiveModel, ProviderState } from '@/utils/api';
 
 interface ModelPickerProps {
     disabled?: boolean;
@@ -61,93 +54,31 @@ function shortLabel(model: string | null): string {
 }
 
 export default function ModelPicker({ disabled = false, onModelChange }: ModelPickerProps) {
-    const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [busy, setBusy] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const {
+        catalog, active, loading, busy, error, setError, reload, choose, saveKey, dropKey,
+    } = useModelCatalog();
     const [keyFor, setKeyFor] = useState<string | null>(null);
     const [keyValue, setKeyValue] = useState('');
     const [open, setOpen] = useState(false);
     const [filter, setFilter] = useState('');
     const keyInputRef = useRef<HTMLInputElement>(null);
 
-    const load = useCallback(async (refresh = false) => {
-        setLoading(true);
-        try {
-            setCatalog(await fetchModelCatalog(refresh));
-            setError(null);
-        } catch {
-            setError('Could not reach the backend.');
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    // Once on mount, so the button names the real model rather than a
-    // placeholder. Written out rather than calling load() because every
-    // setState here has to happen in a callback: React's lint rule against
-    // synchronous setState in an effect body is correct, and load() sets
-    // `loading` on its first line.
-    //
-    // Re-probing when the menu opens is handled in onOpenChange instead --
-    // an event handler, where calling load() directly is fine, and where it
-    // belongs anyway. Starting Ollama with the app already open should not
-    // need a reload to be noticed.
-    useEffect(() => {
-        let cancelled = false;
-        fetchModelCatalog()
-            .then((next) => { if (!cancelled) { setCatalog(next); setError(null); } })
-            .catch(() => { if (!cancelled) setError('Could not reach the backend.'); })
-            .finally(() => { if (!cancelled) setLoading(false); });
-        return () => { cancelled = true; };
-    }, []);
-
     useEffect(() => {
         if (keyFor) keyInputRef.current?.focus();
     }, [keyFor]);
 
-    const active = catalog?.active;
-
-    const choose = async (provider: string, model: string) => {
-        setBusy(`${provider}:${model}`);
-        setError(null);
-        try {
-            const next = await selectModel(provider, model);
-            setCatalog((current) => (current ? { ...current, active: next } : current));
+    const pick = async (provider: string, model: string) => {
+        const next = await choose(provider, model);
+        if (next) {
             onModelChange?.(next);
             setOpen(false);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Could not switch model');
-        } finally {
-            setBusy(null);
         }
     };
 
     const submitKey = async (provider: string) => {
-        if (!keyValue.trim()) return;
-        setBusy(`key:${provider}`);
-        setError(null);
-        try {
-            await saveProviderKey(provider, keyValue.trim());
+        if (await saveKey(provider, keyValue)) {
             setKeyValue('');
             setKeyFor(null);
-            await load(true);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Could not save that key');
-        } finally {
-            setBusy(null);
-        }
-    };
-
-    const dropKey = async (provider: string) => {
-        setBusy(`key:${provider}`);
-        try {
-            await forgetProviderKey(provider);
-            await load(true);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Could not remove that key');
-        } finally {
-            setBusy(null);
         }
     };
 
@@ -190,7 +121,7 @@ export default function ModelPicker({ disabled = false, onModelChange }: ModelPi
                                     key={model}
                                     type="button"
                                     disabled={!catalog?.can_change || busy !== null}
-                                    onClick={() => void choose(provider.id, model)}
+                                    onClick={() => void pick(provider.id, model)}
                                     className={cn(
                                         'flex items-center justify-between gap-3 rounded px-2 py-1.5 text-left text-[13px]',
                                         'text-white/85 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60',
@@ -281,7 +212,8 @@ export default function ModelPicker({ disabled = false, onModelChange }: ModelPi
                 setOpen(next);
                 setFilter('');
                 setKeyFor(null);
-                if (next) void load(true);
+                setError(null);
+                if (next) void reload(true);
             }}
         >
             <DropdownMenuTrigger asChild>
@@ -309,7 +241,7 @@ export default function ModelPicker({ disabled = false, onModelChange }: ModelPi
                     </span>
                     <button
                         type="button"
-                        onClick={() => void load(true)}
+                        onClick={() => void reload(true)}
                         className="flex items-center gap-1 text-[11px] text-white/40 hover:text-white/80"
                     >
                         <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} />

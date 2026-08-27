@@ -22,6 +22,13 @@ export default function Models() {
 
             <h2>You probably do not have to configure this</h2>
             <p>
+                The first time you open a new install, EDI asks which model should answer
+                your questions and shows what it found on the machine. Pick one and that
+                is the end of it — the choice is written next to your workspaces, so it
+                survives a restart, a cleared browser and a different browser. The dialog
+                only appears while nothing has been chosen.
+            </p>
+            <p>
                 The dropdown at the bottom of the chat box lists what this machine can
                 actually reach, asked fresh each time it opens: the models Ollama has
                 pulled, Claude if the CLI is signed in, and any provider whose key is

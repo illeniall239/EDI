@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import WorkModeWorkspace from '@/components/WorkModeWorkspace';
 import WorkbookOpener from '@/components/WorkbookOpener';
+import ModelSetupDialog from '@/components/ModelSetupDialog';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import {
     uploadFile,
@@ -429,6 +430,11 @@ export default function HomePage() {
                 onAdapterReady={handleAdapterReady}
             />
 
+            {/* Renders nothing unless the backend says this install has no
+                model chosen yet. Mounted here rather than in the chat sidebar
+                so it covers the sheet too: with no model, nothing in either
+                half of the app can answer anything. */}
+            <ModelSetupDialog />
         </>
     );
 }

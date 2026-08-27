@@ -49,8 +49,10 @@ pulled. Claude, if `claude auth status` says the CLI is signed in. Any provider
 whose key is already in your environment. Pick one and the next question uses
 it; there is no restart and no `.env` to edit.
 
-With nothing configured at all, EDI starts on the first provider that answers
-and reports which in `GET /api/health`. Changing it is the same dropdown.
+The first time you open a new install it asks, showing what it found rather
+than making you go looking. Pick one and that is the end of it: the choice is
+written next to your workspaces, so it survives a restart, a cleared browser
+and a different browser, and the dialog does not come back.
 
 A provider you have no key for offers **Add a key** instead of a model list.
 That key is written to `.edi-data/model.json` on the machine running the
