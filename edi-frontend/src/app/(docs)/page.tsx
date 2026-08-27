@@ -38,13 +38,13 @@ export default function DocsHome() {
                 controls
                 preload="metadata"
                 poster="/edi-demo-poster.jpg"
-                aria-label="Choosing a local model on first run, then adding a formula column, highlighting another, and charting revenue by product -- all from the chat"
+                aria-label="Asking a spreadsheet which region earned most, following that up, adding a formula column, charting revenue by product and sorting the rows -- all from the chat, answered by a model on the same machine"
             >
                 {/* WebM first, which is the usual order but was not always
                     the right one here. On the previous recording VP9 came
                     out larger than H.264 however it was tuned, so the mp4
                     led. On this one -- more static dialog, fewer canvas
-                    frames -- VP9 wins again: 5.36MB against 6.33MB at the
+                    frames -- VP9 wins again: 5.63MB against 6.99MB at the
                     settings in the build script. Measured per recording,
                     because the answer has now changed once. */}
                 <source src="/edi-demo.webm" type="video/webm" />
