@@ -10,11 +10,15 @@ nothing uploaded.
 There is no sign-up because there is nothing to sign up to. Clone it, point it
 at a model, and the whole thing runs on localhost.
 
-![Asking a spreadsheet which region earned most, following that up, adding a formula column, charting revenue by product and sorting the rows -- all from the chat, answered by a model on the same machine](assets/edi-demo.gif)
+<p align="center">
+  <img src="assets/edi-demo.gif" alt="Asking a spreadsheet which region earned most, following that up, adding a formula column, charting revenue by product and sorting the rows: all from the chat, answered by a model on the same machine">
+</p>
 
-*A real model on a real machine -- qwen3:4b through Ollama, with the workspace
-in a local file. Nothing in this recording talks to a hosted provider. The
-pauses while it thinks are cut; nothing else is.*
+<p align="center">
+  <em>A real model on a real machine: qwen3:4b through Ollama, with the
+  workspace in a local file. Nothing in this recording talks to a hosted
+  provider. The pauses while it thinks are cut; nothing else is.</em>
+</p>
 
 ## Nothing leaves your machine
 
