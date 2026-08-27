@@ -19,69 +19,31 @@ export default function SelfHosting() {
             </p>
 
             <h2>Storage</h2>
-            <p>Two backends behind one set of functions:</p>
-            <div className="table-scroll">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>EDI_STORE</th>
-                            <th>Keeps data in</th>
-                            <th>Use when</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><code>sqlite</code></td>
-                            <td>a local file</td>
-                            <td>running on your own machine or any server with a disk</td>
-                        </tr>
-                        <tr>
-                            <td><code>supabase</code></td>
-                            <td>Postgres</td>
-                            <td>serverless, or more than one instance</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-
             <p>
-                The choice is made for you unless you state it: a{' '}
-                <code>SUPABASE_SERVICE_ROLE_KEY</code> in the environment selects Supabase,
-                since configuring one is a clear statement of intent, and its absence selects
-                the local file. <code>EDI_STORE</code> overrides both. The local store writes
-                to <code>EDI_DATA_DIR</code>, <code>./.edi-data/</code> by default.
+                A SQLite file, holding workspaces, chats and the usage counters. It
+                writes to <code>EDI_DATA_DIR</code>, <code>./.edi-data/</code> by
+                default. There is nothing to provision, no migration to run and no
+                second set of credentials to keep out of the browser bundle.
             </p>
 
             <div className="edi-note">
-                <strong>SQLite will not work on serverless.</strong> Vercel Functions, as one example, have a
-                read-only filesystem apart from <code>/tmp</code>, which does not survive
-                between invocations, and two consecutive requests are not guaranteed to reach
-                the same instance. Whichever instance handled your upload is rarely the one
-                that handles your next question, so the dataset has to live somewhere both
-                can see.
+                <strong>Which means the host needs a disk.</strong> Vercel Functions, as
+                one example, have a read-only filesystem apart from <code>/tmp</code>,
+                which does not survive between invocations, and two consecutive requests
+                are not guaranteed to reach the same instance. Whichever one handled your
+                upload is rarely the one handling your next question, so there is nowhere
+                for a workspace to live. A VPS, a container with a volume, or any host
+                that gives you persistent storage is fine.
             </div>
 
-            <h2>Supabase setup</h2>
             <p>
-                Only if you are using it. On SQLite there is no database to migrate and
-                none of this applies.
-            </p>
-            <pre><code>{`supabase db push`}</code></pre>
-            <p>
-                One migration, holding the whole schema: <code>workspaces</code>,{' '}
-                <code>chats</code>, and the counters the usage limits use if you switch
-                them on. Every statement is guarded, so applying it to a project that
-                already has the tables is a no-op rather than an error.
-            </p>
-
-            <p>
-                Row-level security is enabled on every table with <strong>no policies at
-                all</strong>. That looks like an oversight and is not. The anon key ships
-                inside the browser bundle by design, so any policy written for it is a policy
-                written for the public. The browser never queries these tables. Every read
-                and write goes through the backend with the service-role key, which bypasses
-                RLS. Closed by default is the correct posture here; opening it up is what
-                would be the bug.
+                There used to be a Postgres backend beside this one, through Supabase,
+                for exactly that case. It went with the hosted app it existed to serve.
+                What it cost was a schema to provision, a service-role key to keep
+                server-side, a row-level-security posture to explain, and a setup path
+                that was never verified end to end. The seam it left is still in{' '}
+                <code>backend/stores/</code>, so a second store is one module and one
+                import rather than a hunt through the app.
             </p>
 
             <h2>Deploying</h2>
@@ -92,9 +54,8 @@ export default function SelfHosting() {
             </p>
             <ul>
                 <li>
-                    <strong>Somewhere to keep workspaces.</strong> A disk is enough. Postgres
-                    becomes necessary only when the backend has no persistent disk, or runs
-                    as more than one instance.
+                    <strong>A disk.</strong> Somewhere writable that survives a restart,
+                    for the SQLite file the workspaces live in.
                 </li>
                 <li>
                     <strong>A route from the browser to the API.</strong> Simplest is one

@@ -13,9 +13,8 @@ export default function Quickstart() {
             <h1>Quickstart</h1>
             <p className="lede">
                 The first path is the one to take: EDI on your own machine, with a local
-                model, needing no account anywhere. The second is for putting it on a
-                server, which needs a Postgres database because serverless has nowhere to
-                keep a file.
+                model, needing no account anywhere. The second is putting it on a server,
+                which is the same thing plus a reverse proxy.
             </p>
 
             <h2>Prerequisites</h2>
@@ -89,18 +88,16 @@ npm run dev`}</code></pre>
 
             <h2>Deployed</h2>
             <p>
-                Two long-running processes and a way for the browser to reach both. On a
-                server with a disk that is the same two commands as above plus a reverse
-                proxy sending <code>/api/*</code> to the backend and everything else to
-                Next. One origin, so no CORS, and <code>EDI_STORE</code> can stay on
-                SQLite.
+                Two long-running processes and a way for the browser to reach both. That
+                is the same two commands as above plus a reverse proxy sending{' '}
+                <code>/api/*</code> to the backend and everything else to Next. One
+                origin, so no CORS.
             </p>
             <p>
-                On a platform without a persistent disk (serverless, or anything running
-                more than one instance) add a Supabase project and run{' '}
-                <code>supabase db push</code>, because the workspace has to live somewhere
-                every instance can see. Set a model key and{' '}
-                <code>SUPABASE_SERVICE_ROLE_KEY</code> in the environment.
+                What the host has to give you is a disk. Workspaces are a SQLite file
+                under <code>EDI_DATA_DIR</code>, so it needs to be writable and to
+                survive a restart. Serverless platforms give you neither, and no two of
+                their instances share one, so the app does not run there.
             </p>
             <p>
                 <Link href="/self-hosting">Self-hosting</Link> goes through both,

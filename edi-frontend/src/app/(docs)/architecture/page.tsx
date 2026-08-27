@@ -19,7 +19,7 @@ export default function Architecture() {
             <pre><code>{`browser ──── /api/* ────► FastAPI ────► your model
    │                         │
    │                         └────────► workspace store
-   │                                    (Postgres, or a local file)
+   │                                    (a local SQLite file)
    │
    └── remembers its anonymous workspace ids in localStorage`}</code></pre>
 
@@ -170,8 +170,7 @@ export default function Architecture() {
   data_handler.py         file parsing, in-memory SQLite
   limits.py               usage limits
   stores/
-    __init__.py           picks a backend
-    supabase_store.py     Postgres
+    __init__.py           the storage API
     sqlite_store.py       a local file
 edi-frontend/
   src/app/app/page.tsx    the app, one route, at /app

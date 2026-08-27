@@ -1,10 +1,9 @@
 """
 Backwards-compatible alias for the `stores` package.
 
-Workspace persistence used to be this single Supabase-only module. It now has
-two backends and lives in stores/, but ~30 call sites across main.py and
-agent_services.py import this name, so it stays as a re-export rather than
-churning all of them.
+Workspace persistence used to be this module. It lives in stores/ now, but
+~30 call sites across main.py and agent_services.py import this name, so it
+stays as a re-export rather than churning all of them.
 
 New code should import `stores` directly.
 """

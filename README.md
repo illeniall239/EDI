@@ -82,13 +82,13 @@ browser ──── /api/* ────► FastAPI ────► your model
    │                         │          (Ollama on localhost, by default)
    │                         │
    │                         └────────► workspace store
-   │                                    (a local file, or Postgres)
+   │                                    (a local SQLite file)
    │
    └── remembers its anonymous workspace ids in localStorage
 ```
 
-A workspace is a row keyed by a UUID -- in a local SQLite file by default, or
-in Postgres when you have put EDI on a server. The browser keeps that UUID
+A workspace is a row keyed by a UUID in a local SQLite file, under
+`EDI_DATA_DIR`. The browser keeps that UUID
 in `localStorage` and sends it with every request; that is the whole identity
 model. You can keep several workbooks, and the browser holds the list of them
 -- there is no "list all workspaces" endpoint, because with no sign-in it
@@ -125,13 +125,9 @@ it answers confidently and wrongly:
 EDI_LLM_PROVIDER=ollama python backend/check_model.py
 ```
 
-That is the whole local setup. If you would rather use a hosted model and
-Postgres, copy `sample.env` to `.env`, fill in a key and your Supabase details,
-and apply the schema:
-
-```bash
-supabase db push
-```
+That is the whole local setup. To use a hosted model instead, copy
+`sample.env` to `.env` and put a key in it. Storage does not change: workspaces
+are a SQLite file either way.
 
 Then start the two halves:
 
@@ -163,10 +159,12 @@ host those. Nothing here is written for a particular platform.
 
 What the app needs from wherever you put it:
 
-- **Somewhere to keep workspaces.** A disk is enough: `EDI_STORE=sqlite`
-  writes to `EDI_DATA_DIR`. Postgres via Supabase is the alternative, and
-  becomes necessary when the backend has no persistent disk or runs as more
-  than one instance.
+- **A disk.** Workspaces are a SQLite file under `EDI_DATA_DIR`, so the
+  backend needs somewhere writable that survives a restart, and wants to be
+  one instance rather than several sharing a volume. A VPS, a container with
+  a volume, or any host that gives you persistent storage. Serverless
+  platforms give you none of that, which is why the hosted site here serves
+  documentation only.
 - **A route from the browser to the API.** Simplest is one origin: put a
   reverse proxy in front and send `/api/*` to the Python process, everything
   else to Next. Then there is no CORS to think about. If you would rather run
@@ -198,11 +196,12 @@ look like something else:
   only reads `vercel.json` from the directory it is given. Pointed at the
   subdirectory it ignores the file, serves the frontend alone, and every
   `/api/*` call lands on Next's 404 page.
-- **Supabase is required rather than optional**, because the filesystem is
-  read-only apart from `/tmp`, that does not survive between invocations, and
-  two consecutive requests are not guaranteed to reach the same instance.
-  This is a property of serverless, not of EDI. A VPS with a disk has neither
-  problem and can stay on SQLite.
+- **The app itself will not run there**, only the documentation. The
+  filesystem is read-only apart from `/tmp`, that does not survive between
+  invocations, and two consecutive requests are not guaranteed to reach the
+  same instance, so there is nowhere to keep a workspace. This is a property
+  of serverless, not of EDI. Set `EDI_DOCS_ONLY=1` and host the app somewhere
+  with a disk.
 
 ## Simple and Complex
 
@@ -253,12 +252,11 @@ can do casually but is not an identity. The *global* daily cap is what
 actually bounds the bill, because it counts calls rather than callers and so
 survives rotated IPs and cleared browser storage.
 
-Daily counters live in Postgres, not process memory: serverless instances
-share no state, so an in-memory counter only sees the traffic that happened to
-land on that instance. **They fail open.** If the `usage_counters` migration
-has not been applied the app still works, protected only by the per-instance
-burst limit. `GET /api/health` reports which of the two you are actually
-running under:
+Daily counters live in the SQLite file rather than process memory, so they
+survive a restart and are incremented in one statement, which two concurrent
+requests cannot race. **They fail open.** If the store cannot be written the
+app still works, protected only by the per-instance burst limit.
+`GET /api/health` reports which of the two you are actually running under:
 
 ```json
 "limits": { "daily_counters": "active", "daily_total": 1000, ... }
@@ -289,7 +287,7 @@ backend/
   check_model.py        tests whether your model can do the job
   agent_services.py     LangChain agents, SQL generation, chart specs
   data_handler.py       file parsing, in-memory SQLite
-  stores/               workspace persistence (Postgres or a local file)
+  stores/               workspace persistence, a local SQLite file
 edi-frontend/
   src/app/page.tsx      the entire app, one route
   src/app/(docs)/       the documentation site, served at /
@@ -315,7 +313,7 @@ The rest:
 | [FastAPI](https://fastapi.tiangolo.com), [Uvicorn](https://www.uvicorn.org) | the backend (MIT, BSD-3) |
 | [LangChain](https://www.langchain.com) | one interface across the model providers (MIT) |
 | [pandas](https://pandas.pydata.org) | parsing and everything done to the data (BSD-3) |
-| [Supabase](https://supabase.com) or SQLite | where workspaces live |
+| SQLite | where workspaces live, in a file you can delete |
 
 And the model, which is yours to pick.
 

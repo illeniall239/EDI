@@ -19,8 +19,8 @@ export const API_ENDPOINTS = {
     resetState: `${API_BASE_URL}/api/reset-state`,
     // NEW: Universal Query Router endpoint
     orchestrate: `${API_BASE_URL}/api/orchestrate`,
-    // Workspace + chat persistence. These go through the backend rather than
-    // straight to Supabase so the table can stay closed to the public anon key.
+    // Workspace + chat persistence. These go through the backend, which is the
+    // only thing that touches the store.
     initializeData: `${API_BASE_URL}/api/initialize-data`,
     createWorkspace: `${API_BASE_URL}/api/workspace`,
     workspace: (id: string) => `${API_BASE_URL}/api/workspace/${id}`,

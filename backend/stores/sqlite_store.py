@@ -1,18 +1,19 @@
 """
 Workspace storage in a local SQLite file.
 
-This is what makes `git clone` and run work with no accounts: paired with
-Ollama, the whole app needs no API key, no Postgres and no signup. It is the
-default whenever SUPABASE_SERVICE_ROLE_KEY is absent.
+This is what makes `git clone` and run work with no accounts: paired with a
+local model, the whole app needs no API key, no database service and no
+signup. It is the only store, and it used to be one of two: a Postgres
+backend sat beside it for deployments without a disk, and went when the
+hosted app did.
 
 Do not confuse this database with the one in data_handler.py. That one is an
 in-memory SQLite built per request so the agent can run SQL against the
 dataset, and is thrown away. This one is a file that persists workspaces and
-chats between runs -- the local equivalent of the Postgres tables.
+chats between runs.
 
-The schema mirrors supabase/migrations/20240101000000_baseline_schema.sql, with
-jsonb becoming TEXT holding JSON. SQLite has no array type either, so
-column_order is stored as a JSON array.
+Everything is stored plainly: JSON goes in TEXT columns, and column_order is a
+JSON array because SQLite has no array type.
 """
 
 import json

@@ -85,14 +85,14 @@ class AgentServices:
         self.data_handler = None
         
         # No database client here on purpose: history is read through the
-        # stores package, which is already the thing that knows whether this
-        # install keeps its data in SQLite or in Postgres.
+        # stores package, which is the one thing that knows where this install
+        # keeps its data.
         #
-        # What stood here was a supabase client built from the ANON key, and
-        # RLS is enabled on chats with no policies granting that role anything
-        # -- so the select it ran could only ever come back empty. It logged
-        # "Supabase client initialized for persistent conversation memory" on
-        # the way past, which is why nobody looked.
+        # What stood here was a database client of its own, built with a key
+        # that row-level security gave nothing to, so the select it ran could
+        # only ever come back empty. It logged a line about initialising
+        # persistent conversation memory on the way past, which is why nobody
+        # looked.
 
     def initialize_agents(self, data_handler_instance):
         self.data_handler = data_handler_instance
@@ -315,14 +315,14 @@ Reply with the question and nothing else."""
 
     def _load_chat_messages(self, chat_id: str) -> list:
         """
-        Load a chat's messages from whichever store is configured.
+        Load a chat's messages from the store.
 
-        This used to talk to Supabase directly, which meant the default
-        install had no memory across restarts at all: with the SQLite store
-        there was no Supabase client, the loader returned nothing, and the
-        model began every question with an empty history while the frontend
-        went on displaying the conversation from the store. The chat looked
-        continuous and was not.
+        This used to reach for a database client of its own rather than going
+        through the store, which meant the default install had no memory
+        across restarts at all: the client was never there, the loader
+        returned nothing, and the model began every question with an empty
+        history while the frontend went on displaying the conversation. The
+        chat looked continuous and was not.
         """
         # A chat only gets a row once it has been saved, and until then the
         # client sends a placeholder -- "default" for the one every new

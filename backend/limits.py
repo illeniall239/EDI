@@ -218,8 +218,8 @@ def _bump(bucket):
         _counter_unavailable = True
         logger.warning(
             "Usage counters unavailable (%s). Falling back to the in-memory "
-            "burst limit only. On Supabase this usually means the "
-            "usage_counters migration has not been applied.",
+            "burst limit only. Usually this means EDI_DATA_DIR is not "
+            "writable.",
             exc,
         )
         return None

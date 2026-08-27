@@ -6,7 +6,7 @@ fine.
 
 ## Getting set up
 
-The fastest loop needs no accounts — a local model through Ollama and a local
+The fastest loop needs no accounts: a local model through Ollama and a local
 file for storage:
 
 ```bash
@@ -35,7 +35,7 @@ ruff check backend
 cd edi-frontend && npm run lint && npm run build
 ```
 
-**There are no tests.** Not "the suite is small" — there is no test suite and no
+**There are no tests.** Not "the suite is small": there is no test suite and no
 test runner configured. Adding one to a 146 KB `agent_services.py` is its own
 project, and a worthwhile contribution if you want one. Until then, changes are
 verified by running the thing.
@@ -44,14 +44,14 @@ verified by running the thing.
 something you introduced.
 
 `npm run lint` is clean too, and CI runs it. It includes the React Compiler
-rules, which are stricter than most projects are used to — setting state from
+rules, which are stricter than most projects are used to. Setting state from
 an effect, or reading a ref during render, is an error rather than a warning.
 If one fires, the fix is usually to derive the value instead of storing it.
 
 ## House style
 
 The code is commented at the level of *why*, not *what*, and comments that
-record a decision or a measurement are load-bearing — several exist because
+record a decision or a measurement are load-bearing: several exist because
 someone lost an afternoon to the thing they describe. If you change behaviour a
 comment explains, update the comment in the same commit.
 

@@ -559,7 +559,7 @@ async def reset_state():
 @app.post("/api/initialize-data")
 async def initialize_backend_with_data(request: Dict[str, Any]):
     """
-    Initialize the backend data_handler with data loaded from Supabase.
+    Initialize the backend data_handler with data loaded from the store.
     This ensures all backend features work when data is restored from a previous session.
     """
     try:
@@ -574,7 +574,7 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
         # -- otherwise it is a way around it.
         limits.enforce_dataset_size(len(data), len(data[0]) if isinstance(data[0], dict) else 0)
 
-        logger.debug(f"🔄 Initializing backend with {len(data)} rows from Supabase")
+        logger.debug(f"🔄 Initializing backend with {len(data)} rows from the store")
         logger.debug(f"📄 Filename: {filename}")
         
         # Create DataFrame from the provided data
@@ -611,9 +611,9 @@ async def create_workspace_endpoint(request: Optional[Dict[str, Any]] = None):
     Create an empty workspace and hand back its id.
 
     The app has no sign-in: the browser keeps this id in localStorage and sends
-    it with every request. Supabase is reached only from here, with the
-    service-role key, so the public anon key never needs read access to the
-    table.
+    it with every request. There is deliberately no endpoint that lists them
+    all, because without a sign-in that would hand every visitor everyone
+    else's sheets.
     """
     name = (request or {}).get("name") or "Untitled"
     try:
@@ -795,12 +795,8 @@ async def health_check():
         # the alternative is discovering a misconfiguration through answers
         # that look merely bad rather than absent.
         "llm_config": settings.llm_status(),
-        # Which persistence backend this instance chose. Supabase on the hosted
-        # deployment; a local file when no service-role key is configured.
+        # Where this instance keeps workspaces, and the directory it writes to.
         "store": workspace_store.status(),
-        "api_keys": {
-            "supabase": "configured" if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY else "missing"
-        },
         # Reported because the daily caps fail open: if the usage_counters
         # migration has not been applied, the demo keeps working but is
         # protected only by the per-instance burst limit. That is invisible

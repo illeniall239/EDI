@@ -23,16 +23,6 @@ LLM_MODEL = LLM_CONFIG.model
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = LLM_CONFIG.model if LLM_CONFIG.provider == "google" else None
 
-# Where uploaded datasets live when the store is Supabase. A host that gives
-# the backend no persistent disk -- serverless platforms generally do not --
-# cannot keep the dataset locally between requests, so it is re-read from
-# Postgres on each one. On a server with a disk, EDI_STORE=sqlite avoids the
-# round trip entirely.
-SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
-SUPABASE_DATASET_BUCKET = os.getenv("SUPABASE_DATASET_BUCKET", "datasets")
-
-
 def _build_llm(temperature=0.4):
     """
     Construct a chat model for the configured provider.
