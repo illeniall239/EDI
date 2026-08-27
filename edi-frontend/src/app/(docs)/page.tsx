@@ -44,7 +44,7 @@ export default function DocsHome() {
                     the right one here. On the previous recording VP9 came
                     out larger than H.264 however it was tuned, so the mp4
                     led. On this one -- more static dialog, fewer canvas
-                    frames -- VP9 wins again: 5.74MB against 6.93MB at the
+                    frames -- VP9 wins again: 4.07MB against 4.91MB at the
                     settings in the build script. Measured per recording,
                     because the answer has now changed once. */}
                 <source src="/edi-demo.webm" type="video/webm" />
