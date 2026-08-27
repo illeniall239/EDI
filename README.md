@@ -218,61 +218,31 @@ thought/action/observation format across several turns. Capable hosted models
 do; smaller local ones often do not, and fail back with a message saying so.
 It is also more model calls, so it is slower and costs more.
 
-## Usage limits, if you put this on a public URL
+## If you put this on a public URL
 
-**Off by default.** Running EDI for yourself there is nobody to rate limit,
-and a cap of a few questions a minute is only an obstacle.
+Don't, without putting authentication in front of it.
 
-Turn them on before anyone else can reach it:
+There are no usage caps. There used to be, sized for a public demo that no
+longer exists, and every one of them was off unless you switched it on. On
+your own machine they were an obstacle and nothing else: it is your model,
+your key and your bill, and a cap of a few questions a minute helps nobody.
 
-```bash
-EDI_LIMITS_ENABLED=1
-```
+Which leaves the shape of a public deployment plain. There is no sign-up, so
+every visitor is anonymous; every question is a model call charged to you; and
+the model picker will let a visitor repoint the backend or store a key on your
+disk unless `EDI_ALLOW_MODEL_SWITCHING=0`. A reverse proxy asking for a
+password is a better answer than any of the settings this project could
+offer, and it is the one this project expects you to use.
 
-What they defend against is specific to that situation: there is no sign-up,
-so every visitor is anonymous, and every question is a model call billed to
-you. Without limits one visitor with a loop can spend the whole quota, and
-the deployment doubles as a free LLM proxy for anyone who finds it.
+## Worth knowing
 
-`backend/limits.py` holds the whole policy, and every number is overridable.
-The defaults were sized for a handful of people trying out a link, not for a
-deployment with real users:
-
-| | Default | Override |
-|---|---|---|
-| Questions per visitor per minute | 5 | `EDI_BURST_CALLS`, `EDI_BURST_WINDOW_SECONDS` |
-| Questions per visitor per day | 50 | `EDI_DAILY_CALLS_PER_VISITOR` |
-| Questions per day, everyone | 1000 | `EDI_DAILY_CALLS_TOTAL` |
-| Question length | 2000 chars | `EDI_MAX_QUESTION_CHARS` |
-| Upload size | 4 MB | `EDI_MAX_UPLOAD_BYTES` |
-| Rows / columns | 20000 / 100 | `EDI_MAX_ROWS`, `EDI_MAX_COLUMNS` |
-
-The per-visitor limits are keyed on client IP, which bounds what one person
-can do casually but is not an identity. The *global* daily cap is what
-actually bounds the bill, because it counts calls rather than callers and so
-survives rotated IPs and cleared browser storage.
-
-Daily counters live in the SQLite file rather than process memory, so they
-survive a restart and are incremented in one statement, which two concurrent
-requests cannot race. **They fail open.** If the store cannot be written the
-app still works, protected only by the per-instance burst limit.
-`GET /api/health` reports which of the two you are actually running under:
-
-```json
-"limits": { "daily_counters": "active", "daily_total": 1000, ... }
-```
-
-`"unavailable"` there means the migration is missing. `"untested"` means no
-question has been asked yet since the instance started.
-
-## Other limits worth knowing
-
-- Vercel caps a request or response body at **4.5 MB**, which is why the upload
-  limit is 4 MB. Larger files need the backend hosted somewhere without that
-  cap.
+- **Uploads are not capped.** The grid renders about 70,000 rows without
+  complaint and stops being usable somewhere past that; a 4 MB CSV is roughly
+  120,000 rows. Nothing stops you loading more, and nothing will save you if
+  you do.
 - The backend is stateless. Every request that touches the data re-reads it
-  from the store and rebuilds an in-memory SQLite database, with a per-instance
-  cache keyed on a hash of the rows so a warm instance skips the rebuild.
+  from the store and rebuilds an in-memory SQLite database, with a per-process
+  cache keyed on a hash of the rows so a warm process skips the rebuild.
 - Anyone who knows a workspace UUID can open it. They are unguessable, but
   this is not a substitute for access control. Don't put anything sensitive
   in a deployment you have shared.

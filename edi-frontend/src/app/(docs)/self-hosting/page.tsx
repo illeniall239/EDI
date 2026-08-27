@@ -114,93 +114,38 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
                 supported setup, and guessing would break it.
             </p>
 
-            <h2>Usage limits</h2>
+            <h2>Putting it on a public URL</h2>
             <p>
-                <strong>Off by default.</strong> Running EDI for yourself there is nobody to
-                rate limit, and a cap of a few questions a minute is only an obstacle. Turn
-                them on before anyone else can reach it:
-            </p>
-            <pre><code>{`EDI_LIMITS_ENABLED=1`}</code></pre>
-            <p>
-                What they defend against is specific to a public link: no sign-up, so every
-                visitor is anonymous, and every question is a model call charged to whoever
-                deployed it. Without them one visitor with a loop can spend the whole quota,
-                and the deployment doubles as a free LLM proxy for anyone who finds it.
+                Put authentication in front of it. A reverse proxy asking for a password
+                is the whole answer, and it is a better one than any setting this project
+                could offer.
             </p>
             <p>
-                <code>backend/limits.py</code> holds the whole policy. Every number is
-                overridable. These defaults were sized for a handful of people trying out
-                a link, not for a deployment with real users:
+                There are no usage caps. There used to be, sized for a public demo that no
+                longer exists, and every one of them was off unless you switched it on. On
+                your own machine they were an obstacle and nothing else: your model, your
+                key, your bill.
             </p>
-            <div className="table-scroll">
-                <table>
-                    <thead>
-                        <tr><th>Limit</th><th>Default</th><th>Variable</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>Questions per visitor per minute</td>
-                            <td>5</td>
-                            <td><code>EDI_BURST_CALLS</code>, <code>EDI_BURST_WINDOW_SECONDS</code></td>
-                        </tr>
-                        <tr>
-                            <td>Questions per visitor per day</td>
-                            <td>50</td>
-                            <td><code>EDI_DAILY_CALLS_PER_VISITOR</code></td>
-                        </tr>
-                        <tr>
-                            <td>Questions per day, everyone</td>
-                            <td>1000</td>
-                            <td><code>EDI_DAILY_CALLS_TOTAL</code></td>
-                        </tr>
-                        <tr>
-                            <td>Question length</td>
-                            <td>2000 chars</td>
-                            <td><code>EDI_MAX_QUESTION_CHARS</code></td>
-                        </tr>
-                        <tr>
-                            <td>Upload size</td>
-                            <td>4 MB</td>
-                            <td><code>EDI_MAX_UPLOAD_BYTES</code></td>
-                        </tr>
-                        <tr>
-                            <td>Rows / columns</td>
-                            <td>20000 / 100</td>
-                            <td><code>EDI_MAX_ROWS</code>, <code>EDI_MAX_COLUMNS</code></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-
             <p>
-                The per-visitor limits are keyed on client IP, which bounds what one person
-                does casually but is not an identity. The <strong>global</strong> daily cap is
-                what actually bounds the bill, because it counts calls rather than callers and
-                so survives rotated IPs and cleared browser storage.
+                Which leaves the shape of a public deployment plain, and worth stating
+                rather than mitigating badly. There is no sign-up, so every visitor is
+                anonymous. Every question is a model call charged to you, and nothing
+                counts them. Anyone who knows a workspace UUID can open it. And the model
+                picker will let a visitor repoint the backend or store a key on your disk
+                unless you turn it off:
+            </p>
+            <pre><code>{`EDI_ALLOW_MODEL_SWITCHING=0`}</code></pre>
+            <p>
+                That last one is worth setting even behind a password, because it is the
+                only one where a visitor&apos;s action lands on your filesystem.
             </p>
 
-            <p>
-                Daily counters live in the database rather than process memory: serverless
-                instances share no state, so an in-memory counter only ever sees the traffic
-                that happened to land on that instance.
-            </p>
-
-            <div className="edi-note">
-                <strong>They fail open.</strong> If the <code>usage_counters</code> migration
-                has not been applied the app still works, protected only by the per-instance
-                burst limit. <code>GET /api/health</code> reports which of the two you are
-                actually running under. <code>&quot;daily_counters&quot;</code> reads{' '}
-                <code>&quot;unavailable&quot;</code> when the migration is missing, and{' '}
-                <code>&quot;untested&quot;</code> when no question has been asked yet.
-            </div>
-
-            <h2>Other limits worth knowing</h2>
+            <h2>Worth knowing</h2>
             <ul>
                 <li>
-                    The 4 MB upload limit is set for Vercel, which caps a request
-                    or response body at 4.5 MB. It is a default, not a constraint of the
-                    project: raise <code>EDI_MAX_UPLOAD_BYTES</code> on a host without that
-                    cap.
+                    Uploads are not capped. The grid renders about 70,000 rows without
+                    complaint and stops being usable somewhere past that, and a 4 MB CSV is
+                    roughly 120,000 rows. Nothing stops you loading more.
                 </li>
                 <li>
                     Anyone who knows a workspace UUID can open it. They are unguessable, but

@@ -98,13 +98,6 @@ def _connect() -> sqlite3.Connection:
 
         create index if not exists idx_chats_workspace_id on chats(workspace_id);
         create index if not exists idx_chats_updated_at on chats(updated_at desc);
-
-        create table if not exists usage_counters (
-            bucket text not null,
-            day text not null,
-            count integer not null default 0,
-            primary key (bucket, day)
-        );
         """
     )
     conn.commit()
@@ -432,24 +425,3 @@ def delete_chat(chat_id: str) -> None:
         conn.commit()
     except sqlite3.Error as exc:
         raise WorkspaceStoreError(f"Could not delete chat {chat_id}: {exc}") from exc
-
-
-def bump_usage(bucket: str) -> int:
-    """
-    Increment today's usage counter and return the new total.
-
-    One statement, like the Postgres version, so two concurrent requests cannot
-    read the same count and write the same total back. Local runs will usually
-    want EDI_LIMITS_ENABLED=0 anyway -- the caps exist to protect a public
-    demo's bill, which a local model does not have.
-    """
-    day = datetime.now(timezone.utc).date().isoformat()
-    conn = _connect()
-    row = conn.execute(
-        "insert into usage_counters (bucket, day, count) values (?, ?, 1)"
-        " on conflict (bucket, day) do update set count = count + 1"
-        " returning count",
-        (bucket, day),
-    ).fetchone()
-    conn.commit()
-    return int(row["count"])

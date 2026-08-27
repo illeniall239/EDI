@@ -48,11 +48,11 @@ export default function Models() {
                 A provider with no key yet offers <strong>Add a key</strong> instead of a
                 model list. What you type goes to a file on the machine running the
                 backend and is never sent back to the browser. There is no endpoint that
-                returns a key, only one that reports whether a key exists. Which is also
-                why the whole control surface is switched off when{' '}
-                <code>EDI_LIMITS_ENABLED=1</code> marks this as a public deployment: there
-                the disk belongs to somebody else. <code>EDI_ALLOW_MODEL_SWITCHING</code>{' '}
-                overrides that guess either way.
+                returns a key, only one that reports whether a key exists. That is fine
+                while the disk is yours. Where it is not, set{' '}
+                <code>EDI_ALLOW_MODEL_SWITCHING=0</code>, which switches the whole control
+                surface off: otherwise a visitor can repoint your backend and a key typed
+                into the picker lands on your disk rather than theirs.
             </p>
 
             <h2>Providers</h2>

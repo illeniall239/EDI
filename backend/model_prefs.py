@@ -49,21 +49,24 @@ def control_allowed() -> bool:
     """
     May the browser change which model this backend uses, or store a key?
 
-    Yes when EDI is running for the person in front of it, no when it is on a
-    public URL. There is no sign-in, so "who is asking" is not a question this
-    app can answer -- the proxy for it is EDI_LIMITS_ENABLED, which the README
-    already tells you to set before anyone else can reach the deployment. If
-    that is on, this is off.
+    Yes, unless told otherwise. This app is meant to run for the person in
+    front of it, where the browser and the server are the same machine and the
+    picker is a settings screen.
 
-    EDI_ALLOW_MODEL_SWITCHING overrides in both directions, for the two cases
-    the proxy gets wrong: a private deployment that wants the caps on anyway,
-    and a shared one that has limits off but still should not let visitors
-    repoint the server at an endpoint of their choosing.
+    It used to infer the answer from whether the usage caps were on, which was
+    a reasonable proxy while there was a public demo to protect and is now a
+    reference to something that no longer exists. So it is a flag of its own,
+    with a name that says what it decides.
+
+    Set EDI_ALLOW_MODEL_SWITCHING=0 where strangers can reach the app: without
+    it a visitor can repoint the backend at an endpoint of their choosing, and
+    a key typed into the picker is written to the operator's disk rather than
+    their own. That is worth knowing but it is not a substitute for putting
+    authentication in front of a public deployment, which has no usage caps
+    either.
     """
     explicit = _flag("EDI_ALLOW_MODEL_SWITCHING")
-    if explicit is not None:
-        return explicit
-    return _flag("EDI_LIMITS_ENABLED") is not True
+    return True if explicit is None else explicit
 
 
 def load() -> Dict[str, Any]:

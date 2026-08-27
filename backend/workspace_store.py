@@ -11,7 +11,6 @@ New code should import `stores` directly.
 from stores import (  # noqa: F401
     BACKEND,
     WorkspaceStoreError,
-    bump_usage,
     create_chat,
     create_workspace,
     delete_chat,

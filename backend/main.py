@@ -1,6 +1,5 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
 import os
@@ -29,7 +28,6 @@ from query_orchestrator import get_orchestrator
 import workspace_store
 from intelligent_analysis import IntelligentAnalyzer
 from smart_formatter import SmartFormatter
-import limits
 import llm_providers
 import model_catalog
 import model_prefs
@@ -38,39 +36,6 @@ from llm_text import content_of
 
 app = FastAPI()
 
-
-# Demo limits. Registered before CORS so that it ends up *inside* it --
-# add_middleware prepends, so the last one registered is the outermost, and a
-# 429 raised here still comes back with the CORS headers on it rather than as
-# an opaque network error in the browser.
-@app.middleware("http")
-async def apply_demo_limits(request: Request, call_next):
-    """
-    Refuse a request before it costs anything.
-
-    Doing this in middleware rather than as a per-route dependency means a
-    route added later is metered by default if its path matches, instead of
-    being unprotected until somebody remembers to decorate it.
-    """
-    try:
-        if request.url.path == "/api/upload":
-            # Checked from the header so an oversized body is refused without
-            # being read into memory first.
-            declared = request.headers.get("content-length")
-            limits.enforce_upload_size(int(declared) if declared and declared.isdigit() else None)
-
-        if limits.is_metered(request.url.path):
-            limits.enforce_call_budget(request)
-    except HTTPException as exc:
-        # An HTTPException raised inside middleware never reaches FastAPI's
-        # handler -- it would surface as a 500 -- so it is rendered here.
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.detail, "error": exc.detail, "success": False},
-            headers=exc.headers,
-        )
-
-    return await call_next(request)
 
 
 # CORS is off unless you ask for it.
@@ -116,9 +81,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s  %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-# Now that logging is configured, say which way the limits are set.
-limits.log_status()
 
 # Initialize our services
 data_handler = DataHandler()
@@ -245,7 +207,6 @@ async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
         # The middleware already checked the declared Content-Length. This
         # re-checks the bytes actually received, since the header is the
         # client's claim about the body rather than the body itself.
-        limits.enforce_upload_size(len(content))
 
         response, df = data_handler.load_bytes(
             content, file.filename, lambda x, y: print(f"Progress: {x}, {y}")
@@ -254,7 +215,6 @@ async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
         if df is None:
             raise HTTPException(status_code=400, detail=response)
 
-        limits.enforce_dataset_size(len(df), len(df.columns))
 
         # Initialize agents with the new data
         agent_services.initialize_agents(data_handler)
@@ -281,7 +241,7 @@ async def process_query(query: QueryRequest):
     hydrate(query.workspace_id)
 
     try:
-        question = limits.enforce_question_length(query.question)
+        question = query.question
         chat_id = query.chat_id
         mode = query.mode
 
@@ -572,7 +532,6 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
         # This path takes rows straight from the request body rather than from
         # a parsed file, so it needs the same size check the upload path gets
         # -- otherwise it is a way around it.
-        limits.enforce_dataset_size(len(data), len(data[0]) if isinstance(data[0], dict) else 0)
 
         logger.debug(f"🔄 Initializing backend with {len(data)} rows from the store")
         logger.debug(f"📄 Filename: {filename}")
@@ -684,13 +643,6 @@ async def save_workspace_endpoint(workspace_id: str, request: Dict[str, Any]):
     Save whatever the client sends. Fields that are absent are left alone, so a
     chat-only save does not wipe the dataset.
     """
-    # Unmetered, because the sheet saves on every edit and throttling that
-    # would break ordinary use. It is still a write into Postgres that anyone
-    # can call, so the payload is bounded even though it costs no LLM call.
-    rows = request.get("data")
-    if isinstance(rows, list) and rows:
-        limits.enforce_dataset_size(len(rows), len(rows[0]) if isinstance(rows[0], dict) else 0)
-
     try:
         workspace_store.save_workspace(
             workspace_id,
@@ -797,12 +749,6 @@ async def health_check():
         "llm_config": settings.llm_status(),
         # Where this instance keeps workspaces, and the directory it writes to.
         "store": workspace_store.status(),
-        # Reported because the daily caps fail open: if the usage_counters
-        # migration has not been applied, the demo keeps working but is
-        # protected only by the per-instance burst limit. That is invisible
-        # from the outside, so it is stated here rather than left to be
-        # discovered from a bill.
-        "limits": limits.status()
     }
 
 
@@ -874,7 +820,7 @@ async def generate_formula(request: FormulaRequest):
             detail="No model is configured. See /api/health.",
         )
 
-    description = limits.enforce_question_length(request.description)
+    description = request.description
     handler = hydrate(request.workspace_id)
     df = handler.get_df() if handler else None
     if df is None or df.empty:
@@ -1097,8 +1043,8 @@ async def classify_command(request: ClassifyCommandRequest):
     This used to happen in the browser, calling Groq directly with a key read
     from NEXT_PUBLIC_GROQ_API_KEY. NEXT_PUBLIC_ variables are inlined into the
     bundle at build time, so that key was readable by every visitor and
-    spendable by any of them -- the exact abuse this app's limits.py exists to
-    prevent, bypassing it entirely one file away.
+    spendable by any of them, which is the whole problem with putting a
+    provider key in the browser.
 
     The prompt is still built client-side, because it is long and encodes the
     intent taxonomy the client acts on; duplicating it here would guarantee the
@@ -1107,7 +1053,7 @@ async def classify_command(request: ClassifyCommandRequest):
     classification shape, and nothing else escapes. Ask it to write you a poem
     and you get {"intent": "unknown"}.
     """
-    prompt = limits.enforce_question_length(request.prompt)
+    prompt = request.prompt
     if not prompt.strip():
         raise HTTPException(status_code=400, detail="Nothing to classify.")
 
@@ -1191,7 +1137,6 @@ async def orchestrate_compound_query(request: CompoundQueryRequest):
     logger.debug(f"🔷 Workspace ID: {request.workspace_id}")
     logger.debug(f"👁️ Preview Only: {request.preview_only}")
 
-    limits.enforce_question_length(request.query)
 
     try:
         orchestrator = get_orchestrator()

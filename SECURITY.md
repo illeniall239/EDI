@@ -32,11 +32,12 @@ split them.
   into the browser bundle at build time, so every visitor can read them. The
   only secret this project holds is a model key, and it is held by the backend;
   if the frontend needs something from a model, add an endpoint.
-- **A public deployment is a public model budget.** `backend/limits.py` caps
-  per-visitor and global daily usage. The global cap is the one that bounds the
-  bill, because it counts calls rather than callers. The caps **fail open** if
-  the store cannot be written: `GET /api/health` reports which mode you are
-  in.
+- **A public deployment is a public model budget, with nothing bounding it.**
+  There are no usage caps: every visitor is anonymous and every question is a
+  model call charged to you. There is also nothing stopping a visitor changing
+  the model or storing a key on your disk unless `EDI_ALLOW_MODEL_SWITCHING=0`.
+  Put authentication in front of anything public. This project is built to run
+  on your own machine and does not try to be safe on an open URL.
 - **Uploaded data goes to whichever model you configured.** If that is a hosted
   provider, the contents of the sheet leave your machine. If that matters, run
   a local model through Ollama.

@@ -45,7 +45,8 @@ export const SUPPORTED_FILE_TYPES = [
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 ];
 
-// Matches EDI_MAX_UPLOAD_BYTES on the backend. 4MB is the demo's setting,
-// chosen to stay under the 4.5MB body cap Vercel Functions impose; a host
-// without that cap can raise both.
-export const MAX_FILE_SIZE = 4 * 1024 * 1024; 
+// Nothing enforces a size any more. This is kept as a reference point, not a
+// rule: the grid renders about 70,000 rows comfortably and degrades past
+// that, and a 4MB CSV is roughly 120,000 rows. It is your machine and your
+// file; the app will try whatever you give it.
+export const LARGE_FILE_HINT = 4 * 1024 * 1024; 

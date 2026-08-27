@@ -96,6 +96,18 @@ export default function WorkModeWorkspace({
                 <div className="text-center">
                   <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                   <p className="text-gray-600">Processing your data...</p>
+                  {/* Nothing refuses a large file any more, so the spinner has
+                      to say what a large one costs. Measured: the grid renders
+                      about 70,000 rows comfortably, slows past that, and a
+                      150,000-row sheet did not finish in eight minutes. A
+                      silent spinner for that long reads as a hang. */}
+                  {data.length > 70000 && (
+                    <p className="mt-2 max-w-sm text-sm text-gray-500">
+                      That is {data.length.toLocaleString()} rows. The grid gets slow past
+                      about 70,000 and very large sheets may not finish rendering. The
+                      questions still work; the grid is what struggles.
+                    </p>
+                  )}
                 </div>
               </div>
             ) : (

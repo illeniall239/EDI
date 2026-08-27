@@ -28,7 +28,7 @@ jobs:
         # Catches the failure mode a linter misses: a provider or store module
         # that parses fine but blows up on import.
         working-directory: backend
-        run: python -c "import llm_providers, stores, settings, limits"
+        run: python -c "import llm_providers, stores, settings, model_catalog"
 
       - name: workspace_store re-exports everything stores has
         # The shim lists its re-exports by hand, so a function added to stores

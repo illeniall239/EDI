@@ -14,8 +14,7 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\act
 pip install -r backend/requirements.txt
 pip install langchain-ollama==0.3.3
 
-EDI_LLM_PROVIDER=ollama EDI_LIMITS_ENABLED=0 \
-  uvicorn main:app --reload --port 8000 --app-dir backend
+EDI_LLM_PROVIDER=ollama uvicorn main:app --reload --port 8000 --app-dir backend
 ```
 
 ```bash
@@ -63,9 +62,6 @@ A few conventions worth knowing:
 - **Adding a storage backend** means implementing the same functions as
   `backend/stores/sqlite_store.py` and adding it to the dispatch in
   `stores/__init__.py`.
-- **Anything that spends a model call** should be listed in
-  `_METERED_PREFIXES` or `_METERED_SUFFIXES` in `backend/limits.py`. Anything
-  that does not, should not be.
 - **Never put a secret in a `NEXT_PUBLIC_` variable.** Next inlines them into
   the browser bundle at build time, so it is readable by every visitor. If the
   frontend needs something a model can answer, add a backend endpoint.

@@ -1,4 +1,4 @@
-import { API_ENDPOINTS, API_BASE_URL, SUPPORTED_FILE_TYPES, MAX_FILE_SIZE } from '@/config';
+import { API_ENDPOINTS, API_BASE_URL, SUPPORTED_FILE_TYPES } from '@/config';
 import { DataPreview, QueryResponse, Chat, ChatMessage, FormulaSuggestion } from '@/types';
 
 /**
@@ -32,10 +32,6 @@ function limitRefusal(response: Response, detail?: string): LimitError | null {
 export async function uploadFile(file: File, workspaceId: string = 'default'): Promise<DataPreview> {
     if (!SUPPORTED_FILE_TYPES.includes(file.type as string)) {
         throw new Error('Unsupported file type. Please upload a CSV or Excel file.');
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-        throw new Error('File size exceeds the maximum limit of 4MB.');
     }
 
     const formData = new FormData();

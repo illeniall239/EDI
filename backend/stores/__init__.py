@@ -39,7 +39,6 @@ fetch_chat = _impl.fetch_chat
 create_chat = _impl.create_chat
 save_chat = _impl.save_chat
 delete_chat = _impl.delete_chat
-bump_usage = _impl.bump_usage
 
 # The names above, as data. workspace_store.py re-exports this API by hand for
 # the call sites that predate this package, and CI checks it against this list
@@ -60,7 +59,6 @@ STORAGE_API = (
     "create_chat",
     "save_chat",
     "delete_chat",
-    "bump_usage",
 )
 
 
@@ -77,7 +75,6 @@ def sqlite_data_dir():
 __all__ = [
     "BACKEND",
     "WorkspaceStoreError",
-    "bump_usage",
     "create_chat",
     "create_workspace",
     "delete_chat",

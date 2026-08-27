@@ -8,7 +8,7 @@ export const metadata = {
 type Row = { method: string; path: string; note: string; metered?: boolean };
 
 const CORE: Row[] = [
-    { method: 'GET', path: '/api/health', note: 'Resolved provider and model, storage backend, limit state. Start here when something is wrong.' },
+    { method: 'GET', path: '/api/health', note: 'Resolved provider and model, and where workspaces are kept. Start here when something is wrong.' },
     { method: 'POST', path: '/api/upload', note: 'Upload a CSV or Excel file.' },
     { method: 'POST', path: '/api/query', note: 'Ask a question about the data. The main one.', metered: true },
     { method: 'POST', path: '/api/initialize-data', note: 'Load rows into a workspace without a file upload.' },
@@ -66,7 +66,7 @@ function Table({ rows }: { rows: Row[] }) {
                                 {r.note}
                                 {r.metered && (
                                     <span className="ml-1.5 whitespace-nowrap text-[11px] text-white/35">
-                                        · metered
+                                        · costs a model call
                                     </span>
                                 )}
                             </td>
@@ -91,11 +91,10 @@ export default function Api() {
             </p>
 
             <div className="edi-note">
-                <strong>Metered</strong> means the endpoint spends a model call and counts
-                against the usage limits. Everything else (the workspace and chat
-                persistence in particular) is unmetered, because the sheet writes on every
-                edit and capping that at a few calls a minute would break ordinary use while
-                protecting nothing.
+                <strong>Costs a model call</strong> marks the endpoints that reach the
+                model, which is the difference that matters if you are paying per token.
+                Nothing is rate limited: the caps this project used to carry existed for a
+                public demo that no longer does.
             </div>
 
             <h2>Core</h2>
@@ -125,8 +124,7 @@ export default function Api() {
     "configured": true,
     "detail": null
   },
-  "store": { "backend": "sqlite", "location": ".edi-data" },
-  "limits": { "enabled": false, "daily_counters": "untested", ... }
+  "store": { "backend": "sqlite", "location": ".edi-data" }
 }`}</code></pre>
             <p>
                 <code>llm_config.detail</code> carries the reason when a model could not be
@@ -136,10 +134,10 @@ export default function Api() {
             <h2>Errors</h2>
             <p>
                 Refusals come back as JSON with a <code>detail</code> string written for the
-                person who will read it. A <code>429</code> means a usage limit was hit and
-                carries <code>Retry-After</code>; <code>503</code> means no model is
-                configured; <code>502</code> means the model was reached but returned
-                something unusable.
+                person who will read it. <code>503</code> means no model is configured;{' '}
+                <code>502</code> means the model was reached but returned something
+                unusable; <code>403</code> means the model picker was switched off with{' '}
+                <code>EDI_ALLOW_MODEL_SWITCHING=0</code>.
             </p>
 
             <div className="edi-note">
