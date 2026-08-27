@@ -41,10 +41,14 @@ data_exports/
 # Editor and tool state
 #
 # The assistant's own configuration and instructions, which are how one person
-# works rather than anything a clone of this repository needs.
+# works rather than anything a clone of this repository needs. AGENTS.md is
+# written by `next dev`, so it comes back on its own and does not need to be
+# in the repository for that to keep happening.
 .claude/
 CLAUDE.md
 **/CLAUDE.md
+AGENTS.md
+**/AGENTS.md
 
 # IDE
 .cursor/
