@@ -30,6 +30,13 @@ import UniverPresetSheetsFindReplaceEnUS from '@univerjs/preset-sheets-find-repl
 // The /facade entry is what puts sort() on FWorksheet and FRange. Registering
 // the plugin alone gives you the toolbar command but not the scripting API, and
 // UniverAdapter.sort() calls the scripting API.
+// Registering a plugin gives the sheet the feature; importing its /facade is
+// what puts the matching methods on the objects UniverAdapter holds. Without
+// these two, range.setNote and worksheet.newDataValidationRule are undefined
+// and every note or dropdown asked for in the chat fails at the last step.
+import '@univerjs/sheets-note/facade';
+import '@univerjs/sheets-data-validation/facade';
+import '@univerjs/sheets-hyper-link/facade';
 import '@univerjs/sheets-sort/facade';
 import { UniverSheetsSortPlugin } from '@univerjs/sheets-sort';
 import { UniverSheetsSortUIPlugin } from '@univerjs/sheets-sort-ui';

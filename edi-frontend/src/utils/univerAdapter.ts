@@ -9,7 +9,6 @@
  */
 
 import { ICommandService } from '@univerjs/core';
-import { AddHyperLinkCommand, CancelHyperLinkCommand, HyperLinkModel } from '@univerjs/sheets-hyper-link';
 import { RemoveRowByRangeCommand } from '@univerjs/sheets';
 
 export class UniverAdapter {
@@ -2300,52 +2299,24 @@ export class UniverAdapter {
    * @param label Optional display text (defaults to URL)
    * @returns Success boolean
    */
-  setHyperlink(row: number, col: number, url: string, label?: string): boolean {
+async setHyperlink(row: number, col: number, url: string, label?: string): Promise<boolean> {
     try {
       this.refresh();
 
-      if (!this.workbook || !this.worksheet) {
-        console.error('[UniverAdapter] No workbook or worksheet available');
+      if (!this.worksheet) {
+        console.error('[UniverAdapter] No worksheet available');
         return false;
       }
 
-      // Get the command service from Univer instance
-      if (!this.univerInstance) {
-        console.error('[UniverAdapter] No Univer instance available');
+      const range = this.worksheet.getRange(row, col);
+      if (!range?.setHyperLink) {
+        console.error('[UniverAdapter] Hyperlink facade not available');
         return false;
       }
 
-      // Generate unique ID for the hyperlink
-      const linkId = `hyperlink_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Get unit and subunit IDs
-      const unitId = this.workbook.getId();
-      const subUnitId = this.worksheet.getSheetId();
-
-      // Create hyperlink object
-      const link = {
-        id: linkId,
-        row: row,
-        column: col,
-        payload: url,
-        display: label || url
-      };
-
-      // Execute the command
-      const commandService = this.univerInstance.__getInjector().get(ICommandService);
-
-      const result = commandService.executeCommand(AddHyperLinkCommand.id, {
-        unitId: unitId,
-        subUnitId: subUnitId,
-        link: link
-      });
-
-      if (result) {
-        return true;
-      } else {
-        console.error('[UniverAdapter] Failed to execute AddHyperLinkCommand');
-        return false;
-      }
+      // setHyperLink resolves to whether the command ran. Awaiting it matters:
+      // an unawaited Promise is truthy whether or not the link was written.
+      return await range.setHyperLink(url, label || url);
     } catch (error) {
       console.error('[UniverAdapter] Error setting hyperlink:', error);
       return false;
@@ -2362,26 +2333,11 @@ export class UniverAdapter {
     try {
       this.refresh();
 
-      if (!this.workbook || !this.worksheet) {
-        console.error('[UniverAdapter] No workbook or worksheet available');
-        return null;
-      }
+      if (!this.worksheet) return null;
 
-      // Get the hyperlink model service
-      if (!this.univerInstance) {
-        console.error('[UniverAdapter] No Univer instance available');
-        return null;
-      }
-
-      const hyperlinkModel = this.univerInstance.__getInjector().get(HyperLinkModel);
-
-      const unitId = this.workbook.getId();
-      const subUnitId = this.worksheet.getSheetId();
-
-      // Get hyperlink at specific position
-      const hyperlink = hyperlinkModel.getHyperLink(unitId, subUnitId, row, col);
-
-      return hyperlink ? hyperlink.payload : null;
+      const range = this.worksheet.getRange(row, col);
+      const links = range?.getHyperLinks?.() || [];
+      return links.length ? links[0].url : null;
     } catch (error) {
       console.error('[UniverAdapter] Error getting hyperlink:', error);
       return null;
@@ -2394,50 +2350,24 @@ export class UniverAdapter {
    * @param col Column index (0-based)
    * @returns Success boolean
    */
-  removeHyperlink(row: number, col: number): boolean {
+  async removeHyperlink(row: number, col: number): Promise<boolean> {
     try {
       this.refresh();
 
-      if (!this.workbook || !this.worksheet) {
-        console.error('[UniverAdapter] No workbook or worksheet available');
+      if (!this.worksheet) {
+        console.error('[UniverAdapter] No worksheet available');
         return false;
       }
 
-      // First, get the existing hyperlink to find its ID
-      if (!this.univerInstance) {
-        console.error('[UniverAdapter] No Univer instance available');
-        return false;
-      }
-
-      const hyperlinkModel = this.univerInstance.__getInjector().get(HyperLinkModel);
-      const commandService = this.univerInstance.__getInjector().get(ICommandService);
-
-      const unitId = this.workbook.getId();
-      const subUnitId = this.worksheet.getSheetId();
-
-      // Get the hyperlink to find its ID
-      const hyperlink = hyperlinkModel.getHyperLink(unitId, subUnitId, row, col);
-
-      if (!hyperlink) {
+      const range = this.worksheet.getRange(row, col);
+      const links = range?.getHyperLinks?.() || [];
+      if (!links.length) {
         console.warn('[UniverAdapter] No hyperlink found at this position');
         return false;
       }
 
-      // Execute cancel command
-      const result = commandService.executeCommand(CancelHyperLinkCommand.id, {
-        unitId: unitId,
-        subUnitId: subUnitId,
-        id: hyperlink.id,
-        row: row,
-        column: col
-      });
-
-      if (result) {
-        return true;
-      } else {
-        console.error('[UniverAdapter] Failed to execute CancelHyperLinkCommand');
-        return false;
-      }
+      // A cell can carry more than one link when its text is rich; clear them all.
+      return links.every((link: { id: string }) => range.cancelHyperLink(link.id));
     } catch (error) {
       console.error('[UniverAdapter] Error removing hyperlink:', error);
       return false;
@@ -2484,12 +2414,14 @@ export class UniverAdapter {
     try {
       this.refresh();
 
-      if (!this.worksheet) {
-        console.error('[UniverAdapter] No worksheet available');
+      // The builder hangs off univerAPI, not the worksheet -- the rule is not
+      // bound to a sheet until setDataValidation puts it on a range.
+      if (!this.univerAPI?.newDataValidation) {
+        console.error('[UniverAdapter] Data validation facade not available');
         return null;
       }
 
-      return this.worksheet.newDataValidationRule();
+      return this.univerAPI.newDataValidation();
     } catch (error) {
       console.error('[UniverAdapter] Error creating data validation rule:', error);
       return null;
@@ -2582,7 +2514,8 @@ export class UniverAdapter {
         return false;
       }
 
-      range.removeDataValidation();
+      // There is no removeDataValidation on the facade; a null rule clears it.
+      range.setDataValidation(null);
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error removing data validation:', error);
@@ -2609,8 +2542,10 @@ export class UniverAdapter {
       builder.requireValueInList(values);
       builder.setAllowInvalid(allowInvalid);
 
+      // There is no setHelpText on the builder; the message a bad entry gets
+      // is an option on the rule.
       if (helpText) {
-        builder.setHelpText(helpText);
+        builder.setOptions({ showErrorMessage: true, error: helpText });
       }
 
       return builder.build();
@@ -2640,7 +2575,7 @@ export class UniverAdapter {
       builder.setAllowInvalid(false);
 
       if (helpText) {
-        builder.setHelpText(helpText);
+        builder.setOptions({ showErrorMessage: true, error: helpText });
       }
 
       return builder.build();
@@ -2660,11 +2595,14 @@ export class UniverAdapter {
       const builder = this.newDataValidationRule();
       if (!builder) return null;
 
-      builder.requireDate();
+      // The builder has no bare "must be a date" rule -- every date criterion
+      // takes a bound. An open-ended floor is the closest thing to it, and 1900
+      // is early enough that anything a spreadsheet holds passes.
+      builder.requireDateOnOrAfter(new Date(1900, 0, 1));
       builder.setAllowInvalid(false);
 
       if (helpText) {
-        builder.setHelpText(helpText);
+        builder.setOptions({ showErrorMessage: true, error: helpText });
       }
 
       return builder.build();
@@ -2698,7 +2636,9 @@ export class UniverAdapter {
         return false;
       }
 
-      range.setNote(text);
+      // The note facade takes a shape, not a string, and the box has to be
+      // given a size: a note with no width or height renders as nothing.
+      range.createOrUpdateNote({ note: text, width: 160, height: 100, show: false });
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error adding note:', error);
@@ -2721,7 +2661,8 @@ export class UniverAdapter {
       const range = this.worksheet.getRange(row, col);
       if (!range) return null;
 
-      return range.getNote() || null;
+      // getNote returns the whole note record; the caller wants its text.
+      return range.getNote()?.note || null;
     } catch (error) {
       console.error('[UniverAdapter] Error getting note:', error);
       return null;
@@ -2749,7 +2690,7 @@ export class UniverAdapter {
         return false;
       }
 
-      range.clearNote();
+      range.deleteNote();
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error removing note:', error);
@@ -2778,7 +2719,7 @@ export class UniverAdapter {
         return false;
       }
 
-      rangeObj.setNote(text);
+      rangeObj.createOrUpdateNote({ note: text, width: 160, height: 100, show: false });
       return true;
     } catch (error) {
       console.error('[UniverAdapter] Error adding note to range:', error);
@@ -2922,7 +2863,7 @@ export class UniverAdapter {
       }
 
       // Build reference with sheet prefix
-      const sheetName = this.worksheet?.getName() || 'Sheet1';
+      const sheetName = this.worksheet?.getSheetName() || 'Sheet1';
       const ref = `${sheetName}!$${rangeA1.replace(':', ':$')}`;
 
 
@@ -2980,7 +2921,7 @@ export class UniverAdapter {
       for (const dn of workbookNames) {
         results.push({
           name: dn.getName(),
-          ref: dn.getRef(),
+          ref: dn.getFormulaOrRefString(),
           scope: 'workbook'
         });
       }
@@ -2989,7 +2930,7 @@ export class UniverAdapter {
       for (const dn of worksheetNames) {
         results.push({
           name: dn.getName(),
-          ref: dn.getRef(),
+          ref: dn.getFormulaOrRefString(),
           scope: 'worksheet'
         });
       }
@@ -3066,7 +3007,7 @@ export class UniverAdapter {
       }
 
       // Build new reference
-      const sheetName = this.worksheet?.getName() || 'Sheet1';
+      const sheetName = this.worksheet?.getSheetName() || 'Sheet1';
       const ref = `${sheetName}!$${newRangeA1.replace(':', ':$')}`;
 
       existing.setRef(ref);
