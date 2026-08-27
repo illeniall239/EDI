@@ -6,6 +6,13 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
+  // Next 16 serves dev chunks only to `localhost` unless told otherwise, and
+  // browsing to 127.0.0.1:3000 instead gets a page whose JavaScript is all
+  // blocked. What you see is an empty shell that never hydrates, with the
+  // reason only in the terminal, so it reads as a broken app rather than a
+  // rejected origin. The two spellings are the same machine; treat them the
+  // same. Development only: it has no effect on `next build` or `next start`.
+  allowedDevOrigins: ['127.0.0.1'],
   // The client calls plain /api/* and expects to reach the backend on whatever
   // origin it was served from. In a deployment that is a proxy's job. Locally
   // the two halves are separate processes on separate ports, which used to
