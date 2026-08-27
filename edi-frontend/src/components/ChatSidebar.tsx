@@ -274,8 +274,9 @@ export default function ChatSidebar({
             const blob = new Blob([csvContent], { type: 'text/csv' });
             const file = new File([blob], filename || 'workspace_data.csv', { type: 'text/csv' });
             
-            // Upload to backend to initialize data handler
-            await uploadFile(file, currentWorkspace.id);
+            // Upload to backend to initialize data handler. Rows already in the
+            // workspace, so the row cap does not apply.
+            await uploadFile(file, currentWorkspace.id, { rehydrate: true });
             setIsBackendInitialized(true);
         } catch (error) {
             console.error('❌ Failed to initialize backend:', error);
@@ -4852,8 +4853,9 @@ export default function ChatSidebar({
                     const blob = new Blob([csvContent], { type: 'text/csv' });
                     const file = new File([blob], 'workspace_data.csv', { type: 'text/csv' });
                     
-                    // Re-upload to backend to restore data handler state
-                    await uploadFile(file, currentWorkspace.id);
+                    // Re-upload to backend to restore data handler state. Same rows
+                    // as before, so the row cap does not apply.
+                    await uploadFile(file, currentWorkspace.id, { rehydrate: true });
                 } catch (error) {
                     console.error('❌ Failed to re-sync backend data after reset:', error);
                     // Don't throw - chat reset should still work even if re-sync fails

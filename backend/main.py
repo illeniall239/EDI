@@ -28,6 +28,7 @@ from query_orchestrator import get_orchestrator
 import workspace_store
 from intelligent_analysis import IntelligentAnalyzer
 from smart_formatter import SmartFormatter
+import capacity
 import llm_providers
 import model_catalog
 import model_prefs
@@ -198,15 +199,24 @@ class CompoundQueryRequest(BaseModel):
     preview_only: bool = False  # If true, return execution plan without executing
 
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
+async def upload_file(
+    file: UploadFile = File(...),
+    workspace_id: str = None,
+    rehydrate: bool = False,
+):
+    """
+    Parse an uploaded file into the in-memory database.
+
+    `rehydrate=true` marks the calls that re-send a sheet the workspace
+    already holds, to rebuild that database after a restart. Those skip the
+    row cap: it exists to stop somebody opening a sheet the grid cannot draw,
+    and refusing to reload one that is already open would strand them rather
+    than protect them.
+    """
     try:
         # Read straight from the request. Writing a temp file would fail on a
         # read-only filesystem, and buys nothing when the bytes are in memory.
         content = await file.read()
-
-        # The middleware already checked the declared Content-Length. This
-        # re-checks the bytes actually received, since the header is the
-        # client's claim about the body rather than the body itself.
 
         response, df = data_handler.load_bytes(
             content, file.filename, lambda x, y: print(f"Progress: {x}, {y}")
@@ -214,6 +224,12 @@ async def upload_file(file: UploadFile = File(...), workspace_id: str = None):
 
         if df is None:
             raise HTTPException(status_code=400, detail=response)
+
+        # Counted after parsing rather than guessed from the byte count, which
+        # is the only way to know: rows per megabyte depends entirely on how
+        # wide the sheet is.
+        if not rehydrate:
+            capacity.enforce_row_count(len(df))
 
 
         # Initialize agents with the new data
@@ -529,9 +545,9 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
         if not data or len(data) == 0:
             raise HTTPException(status_code=400, detail="No data provided for initialization")
 
-        # This path takes rows straight from the request body rather than from
-        # a parsed file, so it needs the same size check the upload path gets
-        # -- otherwise it is a way around it.
+        # No row cap here. This path exists to put rows the store already
+        # holds back into the in-memory database, so it is a rehydrate by
+        # definition; see the note on /api/upload.
 
         logger.debug(f"🔄 Initializing backend with {len(data)} rows from the store")
         logger.debug(f"📄 Filename: {filename}")

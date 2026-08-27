@@ -2,12 +2,12 @@ import { API_ENDPOINTS, API_BASE_URL, SUPPORTED_FILE_TYPES } from '@/config';
 import { DataPreview, QueryResponse, Chat, ChatMessage, FormulaSuggestion } from '@/types';
 
 /**
- * A refusal from the demo's usage limits: 429 (too many questions) or 413
- * (question, file, or dataset too large).
+ * A refusal rather than a failure: 413, the file has more rows than the grid
+ * can draw.
  *
- * Kept distinct from an ordinary failure because the backend's message is
+ * Kept distinct from an ordinary error because the backend's message is
  * already a complete explanation written for the person who hit it -- it says
- * what the limit is and what to do about it. Callers render it as-is rather
+ * what the ceiling is and what to do about it. Callers render it as-is rather
  * than wrapping it in "something went wrong", which would read as a bug in the
  * app instead of a deliberate boundary.
  */
@@ -22,14 +22,24 @@ export class LimitError extends Error {
 }
 
 function limitRefusal(response: Response, detail?: string): LimitError | null {
-    if (response.status !== 429 && response.status !== 413) return null;
-    return new LimitError(
-        detail || 'This demo limits how much it will do at once. Please try again in a moment.',
-        response.status
-    );
+    if (response.status !== 413) return null;
+    return new LimitError(detail || 'That file is larger than this can open.', response.status);
 }
 
-export async function uploadFile(file: File, workspaceId: string = 'default'): Promise<DataPreview> {
+/**
+ * Send a file to the backend to be parsed.
+ *
+ * `rehydrate` is for the calls that re-send a sheet the workspace already
+ * holds, to rebuild the backend's in-memory database after a restart. Those
+ * skip the row cap: the cap exists to stop somebody opening a sheet the grid
+ * cannot draw, and refusing to reload one that is already open would strand
+ * them instead of protecting them.
+ */
+export async function uploadFile(
+    file: File,
+    workspaceId: string = 'default',
+    options: { rehydrate?: boolean } = {}
+): Promise<DataPreview> {
     if (!SUPPORTED_FILE_TYPES.includes(file.type as string)) {
         throw new Error('Unsupported file type. Please upload a CSV or Excel file.');
     }
@@ -38,7 +48,8 @@ export async function uploadFile(file: File, workspaceId: string = 'default'): P
     formData.append('file', file);
 
     // Add workspace_id as query parameter instead of form data
-    const uploadUrl = `${API_ENDPOINTS.upload}?workspace_id=${encodeURIComponent(workspaceId)}`;
+    const uploadUrl = `${API_ENDPOINTS.upload}?workspace_id=${encodeURIComponent(workspaceId)}`
+        + (options.rehydrate ? '&rehydrate=true' : '');
 
     const response = await fetch(uploadUrl, {
         method: 'POST',

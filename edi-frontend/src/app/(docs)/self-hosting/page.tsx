@@ -143,9 +143,11 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
             <h2>Worth knowing</h2>
             <ul>
                 <li>
-                    Uploads are not capped. The grid renders about 70,000 rows without
-                    complaint and stops being usable somewhere past that, and a 4 MB CSV is
-                    roughly 120,000 rows. Nothing stops you loading more.
+                    Sheets are capped at 100,000 rows and a bigger file is refused. The
+                    ceiling is the browser: measured on one machine, 110,000 rows opened in
+                    eight seconds and 120,000 never finished rendering, while the backend
+                    parsed and stored 200,000 in three. Set <code>EDI_MAX_ROWS</code> to move
+                    the cap, or <code>EDI_MAX_ROWS=0</code> to remove it.
                 </li>
                 <li>
                     Anyone who knows a workspace UUID can open it. They are unguessable, but

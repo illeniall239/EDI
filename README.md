@@ -236,10 +236,12 @@ offer, and it is the one this project expects you to use.
 
 ## Worth knowing
 
-- **Uploads are not capped.** The grid renders about 70,000 rows without
-  complaint and stops being usable somewhere past that; a 4 MB CSV is roughly
-  120,000 rows. Nothing stops you loading more, and nothing will save you if
-  you do.
+- **Sheets are capped at 100,000 rows**, and a bigger file is refused with a
+  message saying so. The ceiling is the browser, not the server: measured on
+  one machine, 110,000 rows opened in eight seconds and 120,000 never finished
+  rendering at all, while the backend parsed and stored 200,000 in three. Past
+  the cliff you get a spinner that never stops, so it says no instead.
+  `EDI_MAX_ROWS` moves the cap; `EDI_MAX_ROWS=0` removes it.
 - The backend is stateless. Every request that touches the data re-reads it
   from the store and rebuilds an in-memory SQLite database, with a per-process
   cache keyed on a hash of the rows so a warm process skips the rebuild.

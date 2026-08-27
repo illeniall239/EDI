@@ -168,6 +168,7 @@ export default function Architecture() {
   check_model.py          tests whether your model can do the job
   agent_services.py       SQL generation, chart specs, conversation memory
   data_handler.py         file parsing, in-memory SQLite
+  capacity.py             how many rows this will open
   stores/
     __init__.py           the storage API
     sqlite_store.py       a local file

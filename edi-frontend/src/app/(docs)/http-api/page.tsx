@@ -134,9 +134,11 @@ export default function Api() {
             <h2>Errors</h2>
             <p>
                 Refusals come back as JSON with a <code>detail</code> string written for the
-                person who will read it. <code>503</code> means no model is configured;{' '}
-                <code>502</code> means the model was reached but returned something
-                unusable; <code>403</code> means the model picker was switched off with{' '}
+                person who will read it. <code>413</code> means the file has more rows
+                than the grid can draw, which <code>EDI_MAX_ROWS</code> sets;{' '}
+                <code>503</code> means no model is configured; <code>502</code> means the
+                model was reached but returned something unusable; <code>403</code> means the
+                model picker was switched off with{' '}
                 <code>EDI_ALLOW_MODEL_SWITCHING=0</code>.
             </p>
 

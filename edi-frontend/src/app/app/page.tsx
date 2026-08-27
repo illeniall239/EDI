@@ -14,7 +14,8 @@ import {
     fetchWorkspaceSummaries,
     renameWorkspace,
     deleteWorkspace,
-    WorkspaceSummary
+    WorkspaceSummary,
+    LimitError
 } from '@/utils/api';
 import {
     getOrCreateWorkspaceId,
@@ -260,7 +261,9 @@ export default function HomePage() {
                 alert('Failed to process the uploaded file. Please try again.');
             }
         } catch (err) {
-            console.error('Upload error:', err);
+            // A LimitError is a boundary, not a fault: its message already
+            // explains itself, so show it and leave the console alone.
+            if (!(err instanceof LimitError)) console.error('Upload error:', err);
             alert(err instanceof Error ? err.message : 'Failed to upload file.');
         } finally {
             setIsCreatingSheet(false);
