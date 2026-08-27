@@ -49,11 +49,8 @@ pulled. Claude, if `claude auth status` says the CLI is signed in. Any provider
 whose key is already in your environment. Pick one and the next question uses
 it; there is no restart and no `.env` to edit.
 
-Nothing in the list is marked recommended. Which model suits a sheet depends on
-the sheet, the question, the hardware and whose bill it is, and none of that is
-something a dropdown knows. With nothing configured at all EDI starts on the
-first one that answers and says which in `GET /api/health`; that is a starting
-point, not advice.
+With nothing configured at all, EDI starts on the first provider that answers
+and reports which in `GET /api/health`. Changing it is the same dropdown.
 
 A provider you have no key for offers **Add a key** instead of a model list.
 That key is written to `.edi-data/model.json` on the machine running the

@@ -115,9 +115,9 @@ export default function DocsHome() {
                 Picking is a dropdown in the chat box, not a config file. It lists what
                 your machine can actually reach — the models Ollama has pulled, Claude if
                 the CLI is signed in, any provider whose key is already in your
-                environment — and switches between them without a restart. Nothing in it
-                is marked recommended. A key typed in there is written to a file next to
-                your workspaces and never sent back to the browser.{' '}
+                environment, each listed under the provider it came from — and switches
+                between them without a restart. A key typed in there is written to a file
+                next to your workspaces and never sent back to the browser.{' '}
                 <Link href="/models">Choosing a model</Link> has the rest.
             </p>
             <div className="edi-note">

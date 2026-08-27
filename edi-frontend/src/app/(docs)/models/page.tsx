@@ -25,10 +25,9 @@ export default function Models() {
                 The dropdown at the bottom of the chat box lists what this machine can
                 actually reach, asked fresh each time it opens: the models Ollama has
                 pulled, Claude if the CLI is signed in, and any provider whose key is
-                already in your environment. Pick one and it takes effect on the next
-                question — no restart, no <code>.env</code>. Nothing in the list is
-                marked recommended, because which one suits your sheet is not something
-                this app is in a position to know.
+                already in your environment, each under the provider it came from.
+                Pick one and it takes effect on the next question — no restart, no{' '}
+                <code>.env</code>.
             </p>
             <p>
                 The choice is written to <code>.edi-data/model.json</code> next to your
@@ -162,13 +161,12 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
                 <li>whatever on this machine answers first.</li>
             </ol>
             <p>
-                Step 4 is the one that matters on a clean checkout, and &quot;first&quot;
-                there means the order the provider table declares them — not a ranking.
-                Something has to be tried first when three of them answer, and any rule
-                for choosing would be a guess about your hardware, your bill and your
-                data. It is a starting point; the picker is one click away.{' '}
-                <code>GET /api/health</code> reports which step produced the answer, under{' '}
-                <code>llm_config.source</code>.
+                Step 4 is the one that matters on a clean checkout: it is what makes a
+                fresh clone answer questions without being configured first.{' '}
+                &quot;First&quot; there is the order the provider table declares them,
+                and whatever it lands on is a starting point — the picker changes it in
+                a click. <code>GET /api/health</code> reports which step produced the
+                answer, under <code>llm_config.source</code>.
             </p>
 
             <p>

@@ -293,8 +293,6 @@ def _probe(provider: str) -> Dict[str, Any]:
         logger.debug("Probe for %s raised: %s", provider, exc)
         entry["detail"] = "Could not be reached."
 
-    if entry["reachable"] and not entry["detail"] and entry["models"]:
-        entry["detail"] = f"{len(entry['models'])} model{'s' if len(entry['models']) != 1 else ''} available."
     if api_key and not entry["reachable"] and not entry["detail"]:
         entry["detail"] = "The key was not accepted, or the provider is unreachable."
     return entry

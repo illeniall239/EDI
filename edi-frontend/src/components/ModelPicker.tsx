@@ -10,19 +10,17 @@
  * common case is that someone opens this and their own setup is already in
  * it, selected, working.
  *
- * It lists; it does not rank. Providers appear in the order the backend
- * declares them, with the ones that can actually answer first, and there is
- * no recommended option and no default anybody has to undo. Which model suits
- * a sheet depends on the sheet, the question, the hardware and whose bill it
- * is, none of which a dropdown is in a position to know.
+ * Models grouped under the provider they come from, in the order the backend
+ * declares them, with providers that cannot answer last. No recommended
+ * option and nothing to undo.
  *
  * Two things it is careful about:
  *
- * - **"On this machine" is a fact, not a nudge.** It is computed from the
- *   endpoint rather than the provider's name, so it is right about LM Studio
- *   on localhost versus the same provider pointed at OpenRouter. Claude does
- *   not carry it -- local binary, remote model -- because the front page
- *   makes a specific promise about where the rows go.
+ * - **"On this machine" is computed from the endpoint**, not the provider's
+ *   name, so it is right about LM Studio on localhost versus the same
+ *   provider pointed at OpenRouter. Claude does not carry it -- local binary,
+ *   remote model -- because the front page makes a specific promise about
+ *   where the rows go.
  * - **A key typed in here goes to the machine running the backend and is
  *   never read back.** The component can ask whether a key exists; there is
  *   no endpoint that would return one. On a public deployment the whole
@@ -213,7 +211,9 @@ export default function ModelPicker({ disabled = false, onModelChange }: ModelPi
                     </p>
                 )}
 
-                {provider.models.length > 0 && provider.detail && (
+                {/* Only when there is nothing to click. A provider that is
+                    working needs no caption -- its models are the caption. */}
+                {provider.models.length > 0 && provider.detail && !provider.reachable && (
                     <p className="px-2 pt-1 text-[10px] leading-snug text-white/35">
                         {provider.detail}
                     </p>
