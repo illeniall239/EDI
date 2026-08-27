@@ -143,11 +143,12 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
             <h2>Worth knowing</h2>
             <ul>
                 <li>
-                    Sheets are capped at 100,000 rows and a bigger file is refused. The
-                    ceiling is the browser: measured on one machine, 110,000 rows opened in
-                    eight seconds and 120,000 never finished rendering, while the backend
-                    parsed and stored 200,000 in three. Set <code>EDI_MAX_ROWS</code> to move
-                    the cap, or <code>EDI_MAX_ROWS=0</code> to remove it.
+                    Sheets are capped at 11 MB of data and a bigger one is refused, which is
+                    about 100,000 rows six columns wide, 50,000 at twelve columns, 13,000 at
+                    forty. The ceiling is the browser rather than the server: the grid holds
+                    an object per cell and runs out of memory, while the backend parsed and
+                    stored 200,000 rows in three seconds. Set <code>EDI_MAX_DATA_MB</code> to
+                    move the cap, or <code>EDI_MAX_DATA_MB=0</code> to remove it.
                 </li>
                 <li>
                     Anyone who knows a workspace UUID can open it. They are unguessable, but

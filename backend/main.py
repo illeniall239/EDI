@@ -209,7 +209,7 @@ async def upload_file(
 
     `rehydrate=true` marks the calls that re-send a sheet the workspace
     already holds, to rebuild that database after a restart. Those skip the
-    row cap: it exists to stop somebody opening a sheet the grid cannot draw,
+    size cap: it exists to stop somebody opening a sheet the grid cannot draw,
     and refusing to reload one that is already open would strand them rather
     than protect them.
     """
@@ -225,12 +225,13 @@ async def upload_file(
         if df is None:
             raise HTTPException(status_code=400, detail=response)
 
-        # Counted after parsing rather than guessed from the byte count, which
-        # is the only way to know: rows per megabyte depends entirely on how
-        # wide the sheet is.
+        # Measured after parsing rather than from the uploaded bytes: an xlsx
+        # is compressed, so the same sheet arrives a fraction of the size of
+        # its CSV. These are the rows the browser is about to be handed, which
+        # is the thing that has a ceiling.
+        records = df.to_dict(orient="records")
         if not rehydrate:
-            capacity.enforce_row_count(len(df))
-
+            capacity.enforce_payload(records, len(df.columns))
 
         # Initialize agents with the new data
         agent_services.initialize_agents(data_handler)
@@ -240,7 +241,7 @@ async def upload_file(
             "preview": df.head(100).to_dict(orient="records"),
             "columns": df.columns.tolist(),
             "filename": file.filename,
-            "data": df.to_dict(orient="records"),
+            "data": records,
             "rows": len(df),
             "success": True
         }
@@ -545,7 +546,7 @@ async def initialize_backend_with_data(request: Dict[str, Any]):
         if not data or len(data) == 0:
             raise HTTPException(status_code=400, detail="No data provided for initialization")
 
-        # No row cap here. This path exists to put rows the store already
+        # No size cap here. This path exists to put rows the store already
         # holds back into the in-memory database, so it is a rehydrate by
         # definition; see the note on /api/upload.
 
