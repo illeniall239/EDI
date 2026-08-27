@@ -130,6 +130,26 @@ export default function Models() {
                 in, it appears in the picker with no setup at all — EDI never reads those
                 credentials, it runs a binary that is already holding them.
             </p>
+            <p>
+                The picker lists the four aliases the CLI accepts —{' '}
+                <code>sonnet</code>, <code>opus</code>, <code>haiku</code>,{' '}
+                <code>fable</code> — each shown with the model it currently resolves
+                to, so <code>sonnet · claude-sonnet-5</code> rather than{' '}
+                <code>sonnet</code> alone. The alias is what gets sent, which is what
+                keeps you on the current model in that tier; the version is there so you
+                can see which one that is.
+            </p>
+            <p>
+                There is nothing to read that mapping from — the ids live inside a
+                250MB binary, and <code>claude models</code> is not a command, it is a
+                prompt. So EDI asks the CLI the only way that works: one one-word
+                completion per alias, in the background, cached against the CLI version
+                and never repeated. Ordinary answers report their own model id too, so
+                the mapping mostly keeps itself current for free. An alias your account
+                cannot reach — a tier off your plan, or one that has hit its spend
+                limit — simply shows without a version.
+            </p>
+
             <div className="edi-note">
                 <strong>Local binary, remote model.</strong> Your question and up to 200
                 result rows go to Anthropic exactly as they would with an API key, so

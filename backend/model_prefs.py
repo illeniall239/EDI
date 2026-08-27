@@ -163,6 +163,66 @@ def forget_key(provider: str) -> bool:
     return True
 
 
+def claude_models() -> Dict[str, Any]:
+    """
+    The alias -> model id mapping learned from the CLI, and which CLI said so.
+
+    Kept with the preferences rather than in memory because resolving it costs
+    a model call per alias, and a process restart is not a reason to pay again.
+    Tagged with the CLI version: an upgrade is exactly when `sonnet` starts
+    meaning something new, and a stale mapping shown as fact is worse than no
+    mapping at all.
+    """
+    stored = load().get("claude_models")
+    return stored if isinstance(stored, dict) else {}
+
+
+def save_claude_models(
+    version: Optional[str],
+    mapping: Dict[str, str],
+    tried: Optional[list] = None,
+) -> None:
+    """
+    Store the mapping, and which aliases have been asked about at all.
+
+    `tried` is the half that stops this costing money forever. An alias can
+    fail to resolve for reasons that will not fix themselves on a retry -- the
+    account has hit its spend limit for that model, the tier is not on this
+    plan -- and without a record of the attempt, every time someone opened the
+    dropdown would start another round of calls that fail the same way.
+    """
+    data = load()
+    stored = data.get("claude_models")
+    previous = set()
+    if isinstance(stored, dict) and stored.get("version") == version:
+        previous = set(stored.get("tried") or [])
+    data["claude_models"] = {
+        "version": version,
+        "map": mapping,
+        "tried": sorted(previous | set(tried or []) | set(mapping)),
+    }
+    _write(data)
+
+
+def claude_models_tried(version: Optional[str]) -> set:
+    """Aliases already asked about under this CLI version, resolved or not."""
+    stored = claude_models()
+    if stored.get("version") != version:
+        return set()
+    return set(stored.get("tried") or [])
+
+
+def note_claude_model(version: Optional[str], alias: str, model_id: str) -> None:
+    """Record one mapping, learned from an answer that was happening anyway."""
+    stored = claude_models()
+    same_version = stored.get("version") == version
+    mapping = dict(stored.get("map") or {}) if same_version else {}
+    if mapping.get(alias) == model_id:
+        return
+    mapping[alias] = model_id
+    save_claude_models(version, mapping, tried=[alias])
+
+
 def location() -> str:
     """Where the file is, for telling a person what to delete."""
     return str(_path())

@@ -125,6 +125,11 @@ export interface ProviderState {
     default_model: string;
     reachable: boolean;
     models: string[];
+    /** Display name for a model whose id is not the whole story. Claude's
+     *  aliases use it: the value sent stays `sonnet`, which is what keeps you
+     *  on the current model in that tier, while the label says which one that
+     *  currently is. Absent for providers whose ids are already explicit. */
+    model_labels?: Record<string, string>;
     detail: string | null;
 }
 

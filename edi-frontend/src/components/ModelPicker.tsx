@@ -128,7 +128,9 @@ export default function ModelPicker({ disabled = false, onModelChange }: ModelPi
                                         selected && 'bg-white/[0.07]'
                                     )}
                                 >
-                                    <span className="truncate font-mono text-[12px]">{model}</span>
+                                    <span className="truncate font-mono text-[12px]">
+                                        {provider.model_labels?.[model] ?? model}
+                                    </span>
                                     {working
                                         ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-white/50" />
                                         : selected && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />}

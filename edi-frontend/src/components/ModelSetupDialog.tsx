@@ -117,7 +117,7 @@ export default function ModelSetupDialog() {
                                 )}
                             >
                                 {working && <Loader2 className="h-3 w-3 animate-spin" />}
-                                {model}
+                                {provider.model_labels?.[model] ?? model}
                             </button>
                         );
                     })}

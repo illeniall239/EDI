@@ -24,6 +24,7 @@ import concurrent.futures
 import json
 import logging
 import os
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -81,6 +82,23 @@ _NOT_CHAT = (
 )
 
 _cache: Dict[str, Any] = {"at": 0.0, "value": None}
+
+
+def _note_claude_model(alias: str, model_id: str) -> None:
+    """An answer just told us what an alias means. Keep it."""
+    try:
+        import claude_code_llm
+
+        model_prefs.note_claude_model(claude_code_llm.version(), alias, model_id)
+        invalidate()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Could not record Claude model id: %s", exc)
+
+
+def _install_sink() -> None:
+    import claude_code_llm
+
+    claude_code_llm.set_resolution_sink(_note_claude_model)
 
 
 def _get_json(url: str, headers: Optional[Dict[str, str]] = None) -> Optional[Any]:
@@ -198,6 +216,53 @@ def probe_google(api_key: str) -> Dict[str, Any]:
     return {"reachable": True, "models": sorted(m for m in models if _is_chat_model(m))}
 
 
+_claude_resolving = threading.Lock()
+
+
+def _claude_mapping(version: Optional[str]) -> Dict[str, str]:
+    """The alias -> model id mapping, for this CLI version only."""
+    stored = model_prefs.claude_models()
+    if stored.get("version") != version:
+        return {}
+    return dict(stored.get("map") or {})
+
+
+def _resolve_claude_in_background(version: Optional[str]) -> None:
+    """
+    Fill in the aliases nobody has used yet, off the request path.
+
+    Resolving costs one model call per alias, which is small but not nothing
+    and, more to the point, takes a few seconds each. Doing it inline would
+    put that in front of whoever just opened the dropdown -- to relabel four
+    entries they can already read. So the first catalog build starts this and
+    returns the aliases; the next one, a rescan or a reopen, has the versions.
+    """
+    if not _claude_resolving.acquire(blocking=False):
+        return
+    try:
+        import claude_code_llm
+
+        tried = model_prefs.claude_models_tried(version)
+        missing = [a for a in claude_code_llm.MODEL_ALIASES if a not in tried]
+        if not missing:
+            return
+
+        resolved = claude_code_llm.resolve_aliases(missing)
+        mapping = _claude_mapping(version)
+        mapping.update(resolved)
+        # Written even when nothing resolved, so `tried` records the attempt
+        # and this does not run again on every dropdown open.
+        model_prefs.save_claude_models(version, mapping, tried=missing)
+        invalidate()
+        unresolved = [a for a in missing if a not in resolved]
+        logger.info("Resolved Claude aliases: %s%s", resolved,
+                    f"; no answer for {unresolved}" if unresolved else "")
+    except Exception as exc:  # noqa: BLE001 - a label is not worth an error
+        logger.debug("Could not resolve Claude aliases: %s", exc)
+    finally:
+        _claude_resolving.release()
+
+
 def probe_claude_code() -> Dict[str, Any]:
     import claude_code_llm
 
@@ -210,10 +275,27 @@ def probe_claude_code() -> Dict[str, Any]:
             "models": [],
             "detail": "The claude CLI is installed but not signed in. Run `claude auth login`.",
         }
+
+    version = claude_code_llm.version()
+    mapping = _claude_mapping(version)
+    # Asked about, not resolved: an alias this account cannot reach -- a tier
+    # off the plan, or one that has hit its spend limit -- never resolves, and
+    # retrying it every time the menu opens would spend a call to fail again.
+    # It simply shows without a version, and picks itself up for free if the
+    # model is ever used successfully.
+    if model_prefs.claude_models_tried(version) < set(claude_code_llm.MODEL_ALIASES):
+        threading.Thread(
+            target=_resolve_claude_in_background, args=(version,), daemon=True,
+        ).start()
+
     plan = status.get("plan")
     return {
         "reachable": True,
         "models": list(claude_code_llm.MODEL_ALIASES),
+        # The alias stays the value that gets sent -- it is what keeps you on
+        # the current model in that tier -- and the resolved id is what gets
+        # shown beside it, so "sonnet" is not the whole story a picker tells.
+        "model_labels": {a: f"{a} · {mapping[a]}" for a in mapping},
         # Both halves of this are load-bearing. The credentials are the
         # user's and stay on their machine; the spreadsheet rows do not.
         "detail": f"Signed in{f' on the {plan} plan' if plan else ''} through the "
@@ -250,6 +332,7 @@ def _probe(provider: str) -> Dict[str, Any]:
         "default_model": spec.default_model,
         "reachable": False,
         "models": [],
+        "model_labels": {},
         "detail": None,
     }
 
@@ -325,6 +408,11 @@ def invalidate() -> None:
     """Forget the cached catalog -- after a key is added, or one is removed."""
     _cache["at"] = 0.0
     _cache["value"] = None
+
+
+# Wired at import: every Claude answer reports its own model id, so the
+# mapping stays current without anyone paying to resolve it.
+_install_sink()
 
 
 # Names that suggest a model can write SQL, which is the one genuinely
