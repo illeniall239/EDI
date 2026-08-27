@@ -35,6 +35,8 @@ interface WorkModeWorkspaceProps {
   onFileUploadFromSpreadsheet: (event: React.ChangeEvent<HTMLInputElement>) => void;
   currentFilename?: string;
   initialSheets?: any[];
+  /** Passed straight through to the spreadsheet -- see sheetSnapshot.ts. */
+  initialSnapshot?: unknown;
   onAdapterReady?: (adapter: any) => void;
 }
 
@@ -55,6 +57,7 @@ export default function WorkModeWorkspace({
   onFileUploadFromSpreadsheet,
   currentFilename,
   initialSheets,
+  initialSnapshot,
   onAdapterReady
 }: WorkModeWorkspaceProps) {
 
@@ -106,6 +109,7 @@ export default function WorkModeWorkspace({
                 filename={currentFilename}
                 isFromSavedWorkspace={true}
                 initialSheets={initialSheets}
+                initialSnapshot={initialSnapshot}
                 onAdapterReady={onAdapterReady}
               />
             )}

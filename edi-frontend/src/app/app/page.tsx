@@ -25,6 +25,7 @@ import {
     hasTabChosenWorkspace
 } from '@/utils/workspace';
 import { downloadCSV } from '@/utils/exportSheet';
+import { snapshotMatchesData } from '@/utils/sheetSnapshot';
 import { Workspace } from '@/types';
 
 /**
@@ -50,6 +51,10 @@ export default function HomePage() {
     const [isCreatingSheet, setIsCreatingSheet] = useState(false);
     const [currentFilename, setCurrentFilename] = useState<string | undefined>();
     const [initialSheets, setInitialSheets] = useState<unknown[] | undefined>(undefined);
+    // The Univer snapshot, when the stored one still describes these rows.
+    // Everything the rows do not carry -- column widths, number formats, bold
+    // headers, fills -- is in here and nowhere else.
+    const [initialSnapshot, setInitialSnapshot] = useState<unknown>(undefined);
     const { setCurrentWorkspace } = useWorkspace();
 
     // Univer adapter, used to snapshot the sheet exactly as the user left it.
@@ -131,11 +136,23 @@ export default function HomePage() {
             setData(restored.data);
             setCurrentFilename(restored.filename);
             setInitialSheets(Array.isArray(restored.sheetState) ? restored.sheetState : undefined);
+
+            // Only when it agrees with the rows it was stored beside. They
+            // are written together and normally match; they come apart when
+            // the data is replaced without the grid catching up, and
+            // restoring a stale snapshot would show the previous file.
+            const columns = Object.keys((restored.data[0] as object) || {}).length;
+            setInitialSnapshot(
+                snapshotMatchesData(restored.sheetState, restored.data.length, columns)
+                    ? restored.sheetState
+                    : undefined,
+            );
         } else {
             // An empty workbook must not inherit the last one's rows.
             setData([]);
             setCurrentFilename(undefined);
             setInitialSheets(undefined);
+            setInitialSnapshot(undefined);
             try {
                 await resetState(id);
             } catch (err) {
@@ -445,6 +462,7 @@ export default function HomePage() {
                 onFileUploadFromSpreadsheet={handleFileUploadFromSpreadsheet}
                 currentFilename={currentFilename}
                 initialSheets={initialSheets}
+                initialSnapshot={initialSnapshot}
                 onAdapterReady={handleAdapterReady}
             />
 

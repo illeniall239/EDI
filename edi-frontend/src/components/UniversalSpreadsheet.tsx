@@ -68,6 +68,9 @@ interface UniversalSpreadsheetProps {
   data?: Array<any>;
   onCommand?: (command: string) => Promise<any>;
   onDataUpdate?: (newData: Array<any>) => void;
+  /** A Univer workbook snapshot to restore instead of rebuilding from rows.
+   *  The parent only passes one that still matches the rows. */
+  initialSnapshot?: unknown;
   onFileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onClearData?: () => void;
   isDataEmpty?: boolean;
@@ -83,6 +86,7 @@ export default function UniversalSpreadsheet({
   data = [],
   onCommand,
   onDataUpdate,
+  initialSnapshot,
   onFileUpload,
   isDataEmpty,
   filename,
@@ -239,9 +243,26 @@ export default function UniversalSpreadsheet({
       }
 
 
-      // Create workbook with data
-      const workbookData = UniverConverter.arrayToUniver(initialSheets || data, columnOrder);
-      univerAPI.createWorkbook(workbookData);
+      // Restore the workbook the user left, or rebuild one from the rows.
+      //
+      // The snapshot is preferred because the rows do not carry any of the
+      // formatting -- widths, number formats, colours -- and rebuilding from
+      // them has been quietly discarding all of it. It is still only a
+      // preference: a snapshot Univer refuses to open must not cost anyone
+      // their spreadsheet, so a failure falls back to the rows, which is
+      // exactly what happened before there was a snapshot to try.
+      let created = false;
+      if (initialSnapshot) {
+        try {
+          univerAPI.createWorkbook(initialSnapshot as any);
+          created = true;
+        } catch (error) {
+          console.warn('[Univer] Snapshot would not open, rebuilding from rows:', error);
+        }
+      }
+      if (!created) {
+        univerAPI.createWorkbook(UniverConverter.arrayToUniver(initialSheets || data, columnOrder));
+      }
 
       // Set up event listener for auto-save on changes
       if (univerAPI && univerAPI.Event && typeof univerAPI.addEvent === 'function') {
