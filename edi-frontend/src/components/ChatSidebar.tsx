@@ -466,7 +466,7 @@ export default function ChatSidebar({
                         break;
                     }
 
-                    success = univerAdapter.setHyperlink(row, col, url);
+                    success = await univerAdapter.setHyperlink(row, col, url);
                     message = success
                         ? `✅ Hyperlink added to ${target.identifier}: ${url}`
                         : `❌ Failed to add hyperlink to ${target.identifier}`;
@@ -481,14 +481,14 @@ export default function ChatSidebar({
                         break;
                     }
 
-                    success = univerAdapter.setHyperlink(row, col, urlWithLabel, label);
+                    success = await univerAdapter.setHyperlink(row, col, urlWithLabel, label);
                     message = success
                         ? `✅ Hyperlink "${label}" added to ${target.identifier}: ${urlWithLabel}`
                         : `❌ Failed to add hyperlink to ${target.identifier}`;
                     break;
 
                 case 'remove_hyperlink':
-                    success = univerAdapter.removeHyperlink(row, col);
+                    success = await univerAdapter.removeHyperlink(row, col);
                     message = success
                         ? `✅ Hyperlink removed from ${target.identifier}`
                         : `❌ Failed to remove hyperlink from ${target.identifier}`;
@@ -761,7 +761,9 @@ export default function ChatSidebar({
 
             switch (action) {
                 case 'add_note':
-                    const noteText = typeof parameters?.text === 'string' ? parameters.text.trim() : '';
+                    // The prompt asks for `note`; the regex fallback fills `text`.
+                    const rawNote = parameters?.note ?? parameters?.text;
+                    const noteText = typeof rawNote === 'string' ? rawNote.trim() : '';
                     if (!noteText) {
                         message = '❌ No note text provided';
                         break;
@@ -854,7 +856,9 @@ export default function ChatSidebar({
 
             switch (action) {
                 case 'insert_image':
-                    const imageUrl = typeof parameters?.imageUrl === 'string' ? parameters.imageUrl.trim() : '';
+                    // The prompt asks for `image_url`; older callers send `imageUrl`.
+                    const rawImageUrl = parameters?.image_url ?? parameters?.imageUrl;
+                    const imageUrl = typeof rawImageUrl === 'string' ? rawImageUrl.trim() : '';
                     if (!imageUrl) {
                         message = '❌ No image URL provided';
                         break;
@@ -867,8 +871,9 @@ export default function ChatSidebar({
                     break;
 
                 case 'create_drawing':
-                    const shapeType = typeof parameters?.shapeType === 'string'
-                        ? parameters.shapeType.toLowerCase()
+                    const rawShape = parameters?.shape ?? parameters?.shapeType;
+                    const shapeType = typeof rawShape === 'string'
+                        ? rawShape.toLowerCase()
                         : 'rectangle';
 
                     // Default dimensions for shapes
@@ -3511,7 +3516,20 @@ export default function ChatSidebar({
             // 🎯 DIRECT CLASSIFICATION (Ambiguity detection removed)
             let classification: CommandClassification | null = null;
             let response: any | null = null;
-            const newFeatureIntents: Array<CommandClassification['intent']> = [];
+            // Intents whose only implementation is the switch in
+            // processClassificationResult. Nothing else downstream claims them:
+            // the universal router sends them to the backend, which has no SQL
+            // to write for "add a note to A1", and the DIRECT_FRONTEND whitelist
+            // does not list them either, so an empty array here meant every one
+            // of them answered with a shrug. Kept as a list rather than folded
+            // into that whitelist because these run before the router, not after.
+            const newFeatureIntents: Array<CommandClassification['intent']> = [
+                'hyperlink_operation', 'data_validation', 'comment_operation',
+                'named_range_operation'
+            ];
+            // image_operation is deliberately absent: UniverAdapter.insertImage
+            // is a stub that logs and returns false, so routing it here would
+            // only change which sentence the failure arrives in.
             
             // Use LLM classifier directly
             try {
