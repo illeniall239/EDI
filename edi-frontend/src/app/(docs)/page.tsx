@@ -1,25 +1,25 @@
 import Link from 'next/link';
 
 export const metadata = {
-    // The layout supplies the "— EDI.ai" suffix; `absolute` opts this one page
-    // out of it so the landing page is not "EDI.ai — EDI.ai".
-    title: { absolute: 'EDI.ai — a local spreadsheet with a local model' },
+    // The layout supplies the "· EDI.ai" suffix; `absolute` opts this one page
+    // out of it so the landing page is not "EDI.ai · EDI.ai".
+    title: { absolute: 'EDI.ai · your data, your model, your machine' },
     description:
-        'A spreadsheet you can ask questions, answered by a model running on your '
-        + 'own machine. No account, no API key, nothing uploaded.',
+        'Ask CSV and Excel files questions in plain English, answered by a model '
+        + 'running on your own machine. No account, no API key, nothing uploaded.',
 };
 
 export default function DocsHome() {
     return (
         <>
             <div className="edi-kicker-doc">Overview</div>
-            <h1>A local spreadsheet, with a local model in the sidebar.</h1>
+            <h1>Your data, your model, your machine.</h1>
             <p className="lede">
-                Open a CSV or Excel file and ask it things in plain English — filter it,
-                clean it, chart it, or have it explained back to you. The sheet stays on
-                your disk. The model answering questions about it runs on your hardware.
-                Neither half of that needs an account, an API key, or an upload. The
-                cloud is there if you want it, and off by default.
+                Open a CSV or Excel file and ask it things in plain English: filter it,
+                clean it, chart it, write formulas for it, or have it explained back to
+                you. You pick the model, and by default it runs on your own hardware.
+                No account, no API key, nothing uploaded. The cloud is there if you want
+                it, and off by default.
             </p>
 
             <video
@@ -54,7 +54,7 @@ export default function DocsHome() {
             <h2>What it does</h2>
             <p>
                 A question typed into the sidebar becomes read-only SQL, run against your
-                sheet, and the result comes back as prose — or as a chart, when the answer
+                sheet, and the result comes back as prose, or as a chart when the answer
                 is shaped like one. Asking it to filter, sort, clean or reformat the sheet
                 works the same way: the chat is the whole interface, and everything the app
                 does goes through it. <Link href="/asking">What you can ask</Link> lists
@@ -71,8 +71,8 @@ export default function DocsHome() {
                 Both halves run on your machine, and that is the default rather than a
                 mode you switch into: <a href="https://ollama.com">Ollama</a> on{' '}
                 <code>localhost:11434</code> answers the questions, a local SQLite file
-                holds the workspaces. Nothing your sheet contains crosses the network —
-                not the rows, not the column names, not the question you asked. There is
+                holds the workspaces. Nothing your sheet contains crosses the network.
+                Not the rows, not the column names, not the question you asked. There is
                 no account to make and no key to paste, because there is nobody on the
                 other end.
             </p>
@@ -90,8 +90,8 @@ export default function DocsHome() {
             </p>
             <ul>
                 <li>the question you typed, and the last few messages of the conversation;</li>
-                <li>your column names — and, when it draws a chart, the distinct values of
-                    small text columns, so it does not invent categories;</li>
+                <li>your column names, plus the distinct values of small text columns
+                    when it draws a chart, so it does not invent categories;</li>
                 <li>up to 200 rows of that query&apos;s results, with totals computed
                     locally over all of them;</li>
                 <li>on the pandas path, the first five rows of the sheet.</li>
@@ -106,7 +106,7 @@ export default function DocsHome() {
             <p>
                 Local is the default, not the limit. EDI is a harness: it talks to a local
                 model through <strong>Ollama</strong>, to anything speaking the
-                OpenAI-compatible wire format — LM Studio, vLLM, llama.cpp, OpenRouter —
+                OpenAI-compatible wire format (LM Studio, vLLM, llama.cpp, OpenRouter),
                 to <strong>Claude</strong> through the CLI you are already signed in
                 to, or to Google, OpenAI, Anthropic and Groq. Pick one, and the quality
                 of the answers follows from that choice rather than from anything in this
@@ -114,15 +114,15 @@ export default function DocsHome() {
             </p>
             <p>
                 Picking is a dropdown in the chat box, not a config file. It lists what
-                your machine can actually reach — the models Ollama has pulled, Claude if
+                your machine can actually reach: the models Ollama has pulled, Claude if
                 the CLI is signed in, any provider whose key is already in your
-                environment, each listed under the provider it came from — and switches
+                environment, each listed under the provider it came from. It switches
                 between them without a restart. A key typed in there is written to a file
                 next to your workspaces and never sent back to the browser.{' '}
                 <Link href="/models">Choosing a model</Link> has the rest.
             </p>
             <div className="edi-note">
-                <strong>That cuts both ways.</strong> A weak model does not error — it
+                <strong>That cuts both ways.</strong> A weak model does not error. It
                 answers confidently and wrongly. Before trusting a model you have not used
                 here, run <code>python backend/check_model.py</code>, which tests the four
                 things this app actually asks of one. See{' '}
@@ -131,7 +131,7 @@ export default function DocsHome() {
 
             <h2>Running it with no accounts</h2>
             <p>
-                There is nothing to configure for the local path — it is what you get by
+                There is nothing to configure for the local path; it is what you get by
                 default. Six lines, none of which asks you for a key:
             </p>
             <pre><code>{`git clone https://github.com/illeniall239/EDI.git
@@ -152,7 +152,7 @@ EDI_LLM_PROVIDER=ollama uvicorn main:app --app-dir backend --port 8000`}</code><
                 office suite under Apache-2.0. EDI is a harness around it rather than a
                 spreadsheet of its own: every cell, formula, filter and sort you touch is
                 Univer&apos;s work. What this project adds is the part that answers
-                questions about what is in those cells — and the adapter that lets a model
+                questions about what is in those cells, and the adapter that lets a model
                 edit the sheet the way you would, through the same API.
             </p>
             <p>
@@ -168,27 +168,27 @@ EDI_LLM_PROVIDER=ollama uvicorn main:app --app-dir backend --port 8000`}</code><
             <h2>Where to go next</h2>
             <ul>
                 <li>
-                    <Link href="/quickstart">Quickstart</Link> — clone to running on
+                    <Link href="/quickstart">Quickstart</Link>: clone to running on
                     your own machine, in about five minutes.
                 </li>
                 <li>
-                    <Link href="/asking">What you can ask</Link> — the questions and
+                    <Link href="/asking">What you can ask</Link>: the questions and
                     commands it handles, tested against a real sheet.
                 </li>
                 <li>
-                    <Link href="/models">Choosing a model</Link> — what to run locally,
+                    <Link href="/models">Choosing a model</Link>: what to run locally,
                     the hosted options, and how to tell whether yours is good enough.
                 </li>
                 <li>
-                    <Link href="/self-hosting">Self-hosting</Link> — optional: what
+                    <Link href="/self-hosting">Self-hosting</Link>, optional: what
                     changes when EDI lives somewhere other than your machine.
                 </li>
                 <li>
-                    <Link href="/architecture">How it works</Link> — what happens between
+                    <Link href="/architecture">How it works</Link>: what happens between
                     a question and an answer.
                 </li>
                 <li>
-                    <Link href="/http-api">HTTP API</Link> — the endpoints.
+                    <Link href="/http-api">HTTP API</Link>: the endpoints.
                 </li>
             </ul>
         </>

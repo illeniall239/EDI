@@ -1744,7 +1744,7 @@ export default function ChatSidebar({
                 markdown += `${idx + 1}. ${emoji} **${anomaly.column}** (Row ${anomaly.row_index}): `;
                 markdown += `${anomaly.value?.toLocaleString() || 'N/A'}`;
                 if (anomaly.zscore) {
-                    markdown += ` — ${Math.abs(anomaly.zscore).toFixed(2)}σ ${anomaly.value > 0 ? 'above' : 'below'} mean`;
+                    markdown += `, ${Math.abs(anomaly.zscore).toFixed(2)}σ ${anomaly.value > 0 ? 'above' : 'below'} mean`;
                 }
                 markdown += `\n`;
                 markdown += `   *${anomaly.severity.charAt(0).toUpperCase() + anomaly.severity.slice(1)} severity anomaly - investigate for data quality or legitimate rare event*\n\n`;
@@ -1860,7 +1860,7 @@ export default function ChatSidebar({
             highSeverityAnomalies.slice(0, 3).forEach((anomaly: any) => {
                 markdown += `- [ ] Review Row ${anomaly.row_index} (${anomaly.column} = ${anomaly.value?.toLocaleString() || 'N/A'})`;
                 if (anomaly.zscore) {
-                    markdown += ` — ${Math.abs(anomaly.zscore).toFixed(2)}σ deviation`;
+                    markdown += `, ${Math.abs(anomaly.zscore).toFixed(2)}σ deviation`;
                 }
                 markdown += `\n`;
             });
@@ -3137,7 +3137,7 @@ export default function ChatSidebar({
                         }
                     }
 
-                    // Filter by column value (equals/contains) — Univer-only (hide non-matching rows)
+                    // Filter by column value (equals/contains), Univer-only (hide non-matching rows)
                     {
                         // "filter column E with the value Valve", "filter Name
                         // contains Valve", "filter rows where Revenue is over 5000".

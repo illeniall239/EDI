@@ -1,14 +1,14 @@
 # EDI
 
-**A local spreadsheet, with a local model in the sidebar.**
+**Your data, your model, your machine.**
 
-Open a CSV or Excel file and ask it things in plain English — filter it, clean
-it, chart it, or have it explained back to you. The sheet stays on your disk.
-The model answering questions about it runs on your hardware. Neither half of
-that needs an account, an API key, or an upload.
+Open a CSV or Excel file and ask it things in plain English: filter it, clean
+it, chart it, write formulas for it, or have it explained back to you. You pick
+the model, and by default it runs on your own hardware. No account, no API key,
+nothing uploaded.
 
 There is no sign-up because there is nothing to sign up to. Clone it, point it
-at [Ollama](https://ollama.com), and the whole thing runs on localhost.
+at a model, and the whole thing runs on localhost.
 
 ![Asking a spreadsheet which region earned most, following that up, adding a formula column, charting revenue by product and sorting the rows -- all from the chat, answered by a model on the same machine](assets/edi-demo.gif)
 
@@ -16,13 +16,13 @@ at [Ollama](https://ollama.com), and the whole thing runs on localhost.
 in a local file. Nothing in this recording talks to a hosted provider. The
 pauses while it thinks are cut; nothing else is.*
 
-## Local sheet, local model
+## Nothing leaves your machine
 
-Both halves run on your machine, and that is the default rather than a mode you
-switch into. **Ollama** on `localhost:11434` answers the questions; a local
-SQLite file holds the workspaces. Nothing your sheet contains crosses the
-network -- not the rows, not the column names, not the question you asked.
-There is nobody on the other end to send it to.
+Both halves run where you are, and that is the default rather than a mode you
+switch into. A model on `localhost:11434` answers the questions; a local SQLite
+file holds the workspaces. Nothing your sheet contains crosses the network. Not
+the rows, not the column names, not the question you asked. There is nobody on
+the other end to send it to.
 
 That is the point. The spreadsheets people actually have are salaries, patient
 lists, client records, things under an NDA, things an employer's policy says
@@ -96,8 +96,8 @@ backend using the service-role key, which lets row-level security stay closed
 against the public anon key.
 
 Charts are returned as data, not images. The backend asks the model for
-read-only SQL, runs it, and sends back a spec — chart type, axis key, series,
-rows — that the client renders with Recharts. Nothing is written to disk, which
+read-only SQL, runs it, and sends back a spec (chart type, axis key, series,
+rows) that the client renders with Recharts. Nothing is written to disk, which
 is what lets the whole thing run on serverless functions.
 
 ## Running it
@@ -114,7 +114,7 @@ ollama serve
 EDI_LLM_PROVIDER=ollama uvicorn main:app --reload --port 8000 --app-dir backend
 ```
 
-Check the model can do the job before trusting it — a weak one does not error,
+Check the model can do the job before trusting it. A weak one does not error,
 it answers confidently and wrongly:
 
 ```bash
@@ -159,7 +159,7 @@ host those. Nothing here is written for a particular platform.
 
 What the app needs from wherever you put it:
 
-- **Somewhere to keep workspaces.** A disk is enough — `EDI_STORE=sqlite`
+- **Somewhere to keep workspaces.** A disk is enough: `EDI_STORE=sqlite`
   writes to `EDI_DATA_DIR`. Postgres via Supabase is the alternative, and
   becomes necessary when the backend has no persistent disk or runs as more
   than one instance.
@@ -167,7 +167,7 @@ What the app needs from wherever you put it:
   reverse proxy in front and send `/api/*` to the Python process, everything
   else to Next. Then there is no CORS to think about. If you would rather run
   them on separate domains, name the frontend's origin in `EDI_CORS_ORIGINS`
-  — the API refuses a wildcard, because that would let any page on the
+  The API refuses a wildcard, because that would let any page on the
   internet call it.
 - **A model.** A key for a hosted provider, or an Ollama the backend can
   reach. See [Choosing a model](https://github.com/illeniall239/EDI#the-model).
@@ -183,7 +183,7 @@ cd edi-frontend && npm run build && npm start      # BACKEND_ORIGIN unset if pro
 
 `vercel.json` is in the repository because it is what the demo runs on. It is
 read only by Vercel and ignored everywhere else, so it costs nothing if you
-deploy elsewhere — and it is a reasonable thing to copy if you want the same
+deploy elsewhere, and it is a reasonable thing to copy if you want the same
 shape: both halves as services of one project, `/api/*` to Python, everything
 else to Next, one domain, no CORS.
 
@@ -197,7 +197,7 @@ look like something else:
 - **Supabase is required rather than optional**, because the filesystem is
   read-only apart from `/tmp`, that does not survive between invocations, and
   two consecutive requests are not guaranteed to reach the same instance.
-  This is a property of serverless, not of EDI — a VPS with a disk has neither
+  This is a property of serverless, not of EDI. A VPS with a disk has neither
   problem and can stay on SQLite.
 
 ## Simple and Complex
@@ -205,9 +205,9 @@ look like something else:
 The dropdown by the message box picks how a question is answered, not how hard
 the model tries:
 
-- **Simple** — one SQL query, run, and the rows written up. Two model calls.
+- **Simple**: one SQL query, run, and the rows written up. Two model calls.
   The default, and what nearly every question wants.
-- **Complex** — a LangChain SQL agent that can query, read the result, and
+- **Complex**: a LangChain SQL agent that can query, read the result, and
   query again. Worth it when one query cannot answer the question.
 
 Complex runs a ReAct loop, so the model has to keep a strict
@@ -231,8 +231,8 @@ so every visitor is anonymous, and every question is a model call billed to
 you. Without limits one visitor with a loop can spend the whole quota, and
 the deployment doubles as a free LLM proxy for anyone who finds it.
 
-`backend/limits.py` holds the whole policy, and every number is overridable —
-the defaults were sized for a handful of people trying out a link, not for a
+`backend/limits.py` holds the whole policy, and every number is overridable.
+The defaults were sized for a handful of people trying out a link, not for a
 deployment with real users:
 
 | | Default | Override |
@@ -245,7 +245,7 @@ deployment with real users:
 | Rows / columns | 20000 / 100 | `EDI_MAX_ROWS`, `EDI_MAX_COLUMNS` |
 
 The per-visitor limits are keyed on client IP, which bounds what one person
-can do casually but is not an identity — the *global* daily cap is what
+can do casually but is not an identity. The *global* daily cap is what
 actually bounds the bill, because it counts calls rather than callers and so
 survives rotated IPs and cleared browser storage.
 
@@ -272,7 +272,7 @@ question has been asked yet since the instance started.
   from the store and rebuilds an in-memory SQLite database, with a per-instance
   cache keyed on a hash of the rows so a warm instance skips the rebuild.
 - Anyone who knows a workspace UUID can open it. They are unguessable, but
-  this is not a substitute for access control — don't put anything sensitive
+  this is not a substitute for access control. Don't put anything sensitive
   in a deployment you have shared.
 
 ## Layout
@@ -297,7 +297,7 @@ edi-frontend/
 ## Built on
 
 **The spreadsheet is [Univer](https://univer.ai)** (Apache-2.0). EDI is a
-harness around it, not a spreadsheet of its own — every cell, formula, filter
+harness around it, not a spreadsheet of its own: every cell, formula, filter
 and sort you interact with is Univer's work. What this project adds is the
 part that answers questions about what is in those cells, and the plumbing
 that lets a model edit the sheet the way you would.

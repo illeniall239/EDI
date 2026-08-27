@@ -49,7 +49,7 @@ export default function Architecture() {
             <h2>A question, end to end</h2>
             <ol>
                 <li>
-                    <strong>Route it.</strong> The message is classified — is this about the
+                    <strong>Route it.</strong> The message is classified. Is this about the
                     data, or conversation? Small models fail here first.
                 </li>
                 <li>
@@ -60,7 +60,7 @@ export default function Architecture() {
                 </li>
                 <li>
                     <strong>Generate SQL.</strong> The model is given the schema and the
-                    question, and asked for read-only SQL. Markdown fences are stripped —
+                    question, and asked for read-only SQL. Markdown fences are stripped,
                     models emit them regardless of instructions.
                 </li>
                 <li>
@@ -68,7 +68,7 @@ export default function Architecture() {
                 </li>
                 <li>
                     <strong>Write the answer.</strong> The rows go back to the model to be put
-                    into prose, and, when the shape suits it, a chart spec — type, axis key,
+                    into prose, and, when the shape suits it, a chart spec: type, axis key,
                     series, rows.
                 </li>
                 <li>
@@ -81,7 +81,7 @@ export default function Architecture() {
             <div className="edi-note">
                 <strong>Charts are data, not images.</strong> The backend returns a spec and
                 the browser draws it. Nothing is written to disk, which is what lets the whole
-                thing run on serverless functions — and it means charts stay sharp and
+                thing run on serverless functions, and it means charts stay sharp and
                 themeable rather than being a PNG rendered at one size.
             </div>
 
@@ -94,8 +94,8 @@ export default function Architecture() {
             </p>
             <p>
                 So the dataset lives in the workspace row and is re-read per request. Writing
-                changes back through the same row means an edit the model makes — a
-                deduplication, a filter — is picked up by the spreadsheet UI through its
+                changes back through the same row means an edit the model makes (a
+                deduplication, a filter) is picked up by the spreadsheet UI through its
                 normal load path, with no extra syncing.
             </p>
             <p>
@@ -127,7 +127,7 @@ export default function Architecture() {
                         <tr>
                             <td><strong>Complex</strong></td>
                             <td>
-                                A LangChain SQL agent instead — the model can look at the
+                                A LangChain SQL agent instead: the model can look at the
                                 schema, run a query, read the result and decide to run
                                 another. Useful when one query cannot answer the question.
                             </td>
@@ -148,7 +148,7 @@ export default function Architecture() {
 
             <h2>What the model is and is not asked to do</h2>
             <p>
-                Every call is a plain completion — <code>invoke(prompt)</code>, read{' '}
+                Every call is a plain completion: <code>invoke(prompt)</code>, read{' '}
                 <code>.content</code>. There is no tool calling, no structured-output binding,
                 no streaming, no async, and no embeddings or vector store anywhere. Structured
                 replies are produced by asking for JSON and parsing what comes back.
@@ -156,7 +156,7 @@ export default function Architecture() {
             <p>
                 That is a deliberate constraint, and it is why the provider layer is a table
                 rather than an integration: the providers differ only in what they name their
-                constructor arguments. It is also what makes modest local models viable —
+                constructor arguments. It is also what makes modest local models viable.
                 nothing here requires a model that can survive an agent loop.
             </p>
 

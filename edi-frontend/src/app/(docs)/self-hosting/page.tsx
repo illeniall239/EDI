@@ -13,7 +13,7 @@ export default function SelfHosting() {
             <h1>Self-hosting</h1>
             <p className="lede">
                 Everything here is optional. Run EDI on your own machine and the local
-                SQLite store is already doing the job. This page is for the other case —
+                SQLite store is already doing the job. This page is for the other case:
                 putting it on a server, where the storage changes, the data leaves your
                 machine, and a public URL can spend your money.
             </p>
@@ -57,7 +57,7 @@ export default function SelfHosting() {
                 read-only filesystem apart from <code>/tmp</code>, which does not survive
                 between invocations, and two consecutive requests are not guaranteed to reach
                 the same instance. Whichever instance handled your upload is rarely the one
-                that handles your next question — so the dataset has to live somewhere both
+                that handles your next question, so the dataset has to live somewhere both
                 can see.
             </div>
 
@@ -78,7 +78,7 @@ export default function SelfHosting() {
                 Row-level security is enabled on every table with <strong>no policies at
                 all</strong>. That looks like an oversight and is not. The anon key ships
                 inside the browser bundle by design, so any policy written for it is a policy
-                written for the public. The browser never queries these tables — every read
+                written for the public. The browser never queries these tables. Every read
                 and write goes through the backend with the service-role key, which bypasses
                 RLS. Closed by default is the correct posture here; opening it up is what
                 would be the bug.
@@ -86,7 +86,7 @@ export default function SelfHosting() {
 
             <h2>Deploying</h2>
             <p>
-                Two processes — a Python ASGI app and a Next.js app — so host them the way
+                Two processes, a Python ASGI app and a Next.js app, so host them the way
                 you host those. Nothing in this project is written for a particular
                 platform. What it needs from wherever you put it is three things:
             </p>
@@ -102,7 +102,7 @@ export default function SelfHosting() {
                     and everything else to Next. Then CORS never enters into it.
                 </li>
                 <li>
-                    <strong>A model</strong> — a provider key, or an Ollama the backend can
+                    <strong>A model</strong>: a provider key, or an Ollama the backend can
                     reach.
                 </li>
             </ul>
@@ -118,14 +118,14 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
             <p>
                 A wildcard is refused rather than accepted with a warning. It used to be the
                 default here, and what it meant in practice was that any page on the
-                internet could call this API from a visitor&apos;s browser — including the
+                internet could call this API from a visitor&apos;s browser, including the
                 endpoints that spend model calls.
             </p>
 
             <h3>Vercel, as one worked example</h3>
             <p>
                 <code>vercel.json</code> is in the repository because it is what this
-                site runs on. Only Vercel reads it, so it costs nothing if you deploy elsewhere —
+                site runs on. Only Vercel reads it, so it costs nothing if you deploy elsewhere,
                 and it is worth copying the shape: both halves as services of one project,{' '}
                 <code>/api/*</code> to Python, everything else to Next, one domain, no CORS.
             </p>
@@ -147,8 +147,8 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
             <pre><code>{`EDI_DOCS_ONLY=1`}</code></pre>
             <p>
                 Read by <code>edi-frontend/next.config.ts</code>, not the backend, so it
-                belongs in the frontend&apos;s environment. Unset — which is the default, and
-                what you get by cloning — <code>/app</code> serves the whole application. It
+                belongs in the frontend&apos;s environment. Unset, which is the default and
+                what you get by cloning, <code>/app</code> serves the whole application. It
                 is not inferred from being on Vercel: deploying the real app there is a
                 supported setup, and guessing would break it.
             </p>
@@ -168,7 +168,7 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
             </p>
             <p>
                 <code>backend/limits.py</code> holds the whole policy. Every number is
-                overridable — these defaults were sized for a handful of people trying out
+                overridable. These defaults were sized for a handful of people trying out
                 a link, not for a deployment with real users:
             </p>
             <div className="table-scroll">
@@ -228,7 +228,7 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
                 <strong>They fail open.</strong> If the <code>usage_counters</code> migration
                 has not been applied the app still works, protected only by the per-instance
                 burst limit. <code>GET /api/health</code> reports which of the two you are
-                actually running under — <code>&quot;daily_counters&quot;</code> reads{' '}
+                actually running under. <code>&quot;daily_counters&quot;</code> reads{' '}
                 <code>&quot;unavailable&quot;</code> when the migration is missing, and{' '}
                 <code>&quot;untested&quot;</code> when no question has been asked yet.
             </div>
@@ -243,7 +243,7 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
                 </li>
                 <li>
                     Anyone who knows a workspace UUID can open it. They are unguessable, but
-                    this is not access control — do not put anything sensitive in a deployment
+                    this is not access control. Do not put anything sensitive in a deployment
                     you have shared.
                 </li>
                 <li>

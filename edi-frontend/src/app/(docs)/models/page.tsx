@@ -15,7 +15,7 @@ export default function Models() {
                 EDI is a harness. It supplies the spreadsheet, the prompts and the
                 plumbing; the model is yours to pick, and the answers you get are a
                 property of that choice rather than of this code. The default is{' '}
-                <code>ollama</code>, on your own hardware — everything below is what to
+                <code>ollama</code>, on your own hardware. Everything below is what to
                 run there, and what the hosted alternatives cost you in exchange for being
                 easier.
             </p>
@@ -24,7 +24,7 @@ export default function Models() {
             <p>
                 The first time you open a new install, EDI asks which model should answer
                 your questions and shows what it found on the machine. Pick one and that
-                is the end of it — the choice is written next to your workspaces, so it
+                is the end of it: the choice is written next to your workspaces, so it
                 survives a restart, a cleared browser and a different browser. The dialog
                 only appears while nothing has been chosen.
             </p>
@@ -33,7 +33,7 @@ export default function Models() {
                 actually reach, asked fresh each time it opens: the models Ollama has
                 pulled, Claude if the CLI is signed in, and any provider whose key is
                 already in your environment, each under the provider it came from.
-                Pick one and it takes effect on the next question — no restart, no{' '}
+                Pick one and it takes effect on the next question. No restart, no{' '}
                 <code>.env</code>.
             </p>
             <p>
@@ -47,7 +47,7 @@ export default function Models() {
             <p>
                 A provider with no key yet offers <strong>Add a key</strong> instead of a
                 model list. What you type goes to a file on the machine running the
-                backend and is never sent back to the browser — there is no endpoint that
+                backend and is never sent back to the browser. There is no endpoint that
                 returns a key, only one that reports whether a key exists. Which is also
                 why the whole control surface is switched off when{' '}
                 <code>EDI_LIMITS_ENABLED=1</code> marks this as a public deployment: there
@@ -114,7 +114,7 @@ export default function Models() {
             </div>
 
             <p>
-                <code>openai-compatible</code> is one entry for the long tail — OpenRouter,
+                <code>openai-compatible</code> is one entry for the long tail: OpenRouter,
                 LM Studio, vLLM, Together, llama.cpp&apos;s server. They all speak the OpenAI
                 wire format, so pointing at a different <code>EDI_LLM_BASE_URL</code> is the
                 whole integration. A local server with no auth needs no key.
@@ -127,27 +127,27 @@ export default function Models() {
                 key and bills per token. <code>claude</code> wants neither: it runs the
                 Claude Code CLI already on your PATH, as you, on the subscription you
                 already pay for. If <code>claude auth status</code> says you are signed
-                in, it appears in the picker with no setup at all — EDI never reads those
+                in, it appears in the picker with no setup at all. EDI never reads those
                 credentials, it runs a binary that is already holding them.
             </p>
             <p>
-                The picker lists the four aliases the CLI accepts —{' '}
+                The picker lists the four aliases the CLI accepts:{' '}
                 <code>sonnet</code>, <code>opus</code>, <code>haiku</code>,{' '}
-                <code>fable</code> — each shown with the model it currently resolves
+                <code>fable</code>, each shown with the model it currently resolves
                 to, so <code>sonnet · claude-sonnet-5</code> rather than{' '}
                 <code>sonnet</code> alone. The alias is what gets sent, which is what
                 keeps you on the current model in that tier; the version is there so you
                 can see which one that is.
             </p>
             <p>
-                There is nothing to read that mapping from — the ids live inside a
+                There is nothing to read that mapping from. The ids live inside a
                 250MB binary, and <code>claude models</code> is not a command, it is a
                 prompt. So EDI asks the CLI the only way that works: one one-word
                 completion per alias, in the background, cached against the CLI version
                 and never repeated. Ordinary answers report their own model id too, so
                 the mapping mostly keeps itself current for free. An alias your account
-                cannot reach — a tier off your plan, or one that has hit its spend
-                limit — simply shows without a version.
+                cannot reach (a tier off your plan, or one that has hit its spend
+                limit) simply shows without a version.
             </p>
 
             <div className="edi-note">
@@ -159,7 +159,7 @@ export default function Models() {
             <p>
                 On timing: about <strong>3.6 seconds per model call</strong> once warm,
                 and EDI makes two per question. The first call after five idle minutes is
-                slower — nearer 25 seconds — because each call is a fresh process and
+                slower, nearer 25 seconds, because each call is a fresh process and
                 pays for the prompt cache again. EDI runs it with the agent tooling
                 disabled, which is what keeps the per-call prefix at ~4,400 tokens
                 instead of ~22,000; the measurements are in{' '}
@@ -176,13 +176,13 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
             <p>
                 Only <code>EDI_LLM_PROVIDER</code> and a key are usually needed; every
                 provider carries a default model. What happens when you set none of it is
-                worth knowing, because it is what a fresh clone does — EDI resolves in
+                worth knowing, because it is what a fresh clone does. EDI resolves in
                 this order:
             </p>
             <ol>
                 <li>a model chosen in the picker, if there is one;</li>
                 <li><code>EDI_LLM_PROVIDER</code>, which is how a deployment is pinned;</li>
-                <li><code>GOOGLE_API_KEY</code> on its own — unchanged from before there
+                <li><code>GOOGLE_API_KEY</code> on its own, unchanged from before there
                     was a registry, so an existing deployment that sets only that keeps
                     resolving to Gemini;</li>
                 <li>whatever on this machine answers first.</li>
@@ -191,13 +191,13 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
                 Step 4 is the one that matters on a clean checkout: it is what makes a
                 fresh clone answer questions without being configured first.{' '}
                 &quot;First&quot; there is the order the provider table declares them,
-                and whatever it lands on is a starting point — the picker changes it in
+                and whatever it lands on is a starting point; the picker changes it in
                 a click. <code>GET /api/health</code> reports which step produced the
                 answer, under <code>llm_config.source</code>.
             </p>
 
             <p>
-                Install only the provider you use — the imports in{' '}
+                Install only the provider you use. The imports in{' '}
                 <code>backend/llm_providers.py</code> are lazy, so an uninstalled one costs
                 nothing:
             </p>
@@ -220,7 +220,7 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
             <ol>
                 <li>
                     <strong>Follow a system message.</strong> Every call is a plain
-                    completion — there is no tool calling and no structured-output binding
+                    completion. There is no tool calling and no structured-output binding
                     anywhere in this app.
                 </li>
                 <li>
@@ -233,7 +233,7 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
                     <strong>Route the question.</strong> Before any SQL is written, EDI
                     decides whether your message is about the data or is ordinary
                     conversation. Get that wrong and even a model that writes flawless SQL
-                    never gets asked for any — it replies that it does not have the
+                    never gets asked for any. It replies that it does not have the
                     information.
                 </li>
                 <li>
@@ -331,7 +331,7 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
                             <td><code>EDI_OLLAMA_NUM_GPU</code></td>
                             <td>
                                 How many layers to put on the GPU. <code>0</code> forces
-                                CPU — worth having when the card is busy with something
+                                CPU, worth having when the card is busy with something
                                 else. Fewer layers than the model has means the rest runs
                                 on the CPU, which is slower but fits.
                             </td>
@@ -343,7 +343,7 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
                         <tr>
                             <td><code>EDI_OLLAMA_NUM_CTX</code></td>
                             <td>
-                                Context window. See below — this one can change answers,
+                                Context window. See below; this one can change answers,
                                 not just speed.
                             </td>
                         </tr>
@@ -367,7 +367,7 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
             <p>
                 There is no switch here for turning thinking off, on purpose. It is the
                 first thing anyone reaches for and it makes the answer worse rather than
-                faster, for the reason in the note above — and{' '}
+                faster, for the reason in the note above, and{' '}
                 <code>langchain-ollama</code> did not accept the argument at all until
                 0.3.4, a release that wants a <code>langchain-core</code> this backend
                 cannot import. If you want a model that does not think, use one.
@@ -377,7 +377,7 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
                 <strong>A context too small does not fail, it truncates.</strong> The SQL
                 prompt carries your sheet&apos;s schema and a few sample rows, so it grows
                 with the width of the sheet. If it does not fit the context, the front of
-                it is dropped — which is the end holding the schema — and the model writes
+                it is dropped (which is the end holding the schema) and the model writes
                 confident SQL against columns it can no longer see. If answers on a wide
                 sheet are wrong in ways that look like the model guessing at column names,
                 raise <code>EDI_OLLAMA_NUM_CTX</code> before blaming the model. A larger
@@ -387,7 +387,7 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
 
             <h3>Is it actually on the GPU?</h3>
             <p>
-                Ollama will quietly fall back to the CPU — an unsupported card, a driver
+                Ollama will quietly fall back to the CPU: an unsupported card, a driver
                 it does not like, a model too big for the memory available. Ask it:
             </p>
             <pre><code>{`curl http://localhost:11434/api/ps`}</code></pre>
@@ -422,7 +422,7 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
                 <strong>A pass is a floor, not a guarantee.</strong> These prompts are short
                 and unambiguous; the app&apos;s real ones are much longer and carry
                 conversation history. A model can clear every check and still lose the
-                thread in use — we have seen exactly that. Treat a failure as decisive and a
+                thread in use, and we have seen exactly that. Treat a failure as decisive and a
                 pass as &ldquo;worth trying&rdquo;.
             </div>
 

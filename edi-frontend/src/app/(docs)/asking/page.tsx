@@ -21,7 +21,7 @@ export default function Asking() {
                 from a list of intents, and the ones that failed were fixed rather than
                 written up. Answer quality still depends on the model you configured, so
                 a weaker one will do worse on the questions even where the plumbing is
-                identical — see <Link href="/models">Choosing a model</Link>.
+                identical. See <Link href="/models">Choosing a model</Link>.
             </div>
 
             <h2>Questions about the data</h2>
@@ -59,7 +59,7 @@ export default function Asking() {
                 </table>
             </div>
             <p>
-                Column names do not need to be quoted or spelled exactly as the header —
+                Column names do not need to be quoted or spelled exactly as the header.
                 the model is reading the sheet, so &ldquo;revenue&rdquo; finds a column
                 called <code>Revenue</code>.
             </p>
@@ -67,7 +67,7 @@ export default function Asking() {
             <h2>Charts</h2>
             <p>
                 When an answer is shaped like a chart, you get one. The backend returns a
-                spec — chart type, axis, series, rows — and the browser draws it, so what
+                spec (chart type, axis, series, rows) and the browser draws it, so what
                 arrives is data rather than a picture.
             </p>
             <pre><code>{`Chart total revenue by month
@@ -152,7 +152,7 @@ plot total revenue by region as a bar chart`}</code></pre>
                 Which way a sort runs is read from your sentence, not decided by the
                 model. That matters on a small local model: one was asked to sort
                 &ldquo;descending&rdquo; and sorted ascending, then reported success. The
-                word is in the sentence, so there is nothing to infer — the model is only
+                word is in the sentence, so there is nothing to infer. The model is only
                 consulted when the sentence does not say, and then the default is
                 ascending.
             </p>
@@ -240,7 +240,7 @@ plot total revenue by region as a bar chart`}</code></pre>
 
             <h2>Formulas</h2>
             <p>
-                Ask for a formula and you get the formula, not the answer — with an{' '}
+                Ask for a formula and you get the formula, not the answer, with an{' '}
                 <strong>Apply</strong> button under it. Nothing changes in the sheet
                 until you press it, which is the point: a formula lands in cells you
                 picked, so a wrong one should be something you read and ignore rather
@@ -250,11 +250,11 @@ plot total revenue by region as a bar chart`}</code></pre>
 add a column called unit_price that is revenue divided by units
 give me a formula for the average units per order`}</code></pre>
             <p>
-                Two things can come back. An <strong>aggregate</strong> —{' '}
-                <code>=SUMIF(B:B,&quot;South&quot;,E:E)</code> — goes into one cell, and
+                Two things can come back. An <strong>aggregate</strong>,{' '}
+                <code>=SUMIF(B:B,&quot;South&quot;,E:E)</code>, goes into one cell, and
                 the button names which: click a cell in the sheet first and it goes
-                there. A <strong>per-row calculation</strong> —{' '}
-                <code>=E2/D2</code> — becomes a new column at the end, headed with the
+                there. A <strong>per-row calculation</strong>,{' '}
+                <code>=E2/D2</code>, becomes a new column at the end, headed with the
                 name you gave, filled down every row with the references shifted as a
                 spreadsheet would shift them.
             </p>
@@ -269,9 +269,9 @@ give me a formula for the average units per order`}</code></pre>
                 Anywhere a column is called for, three ways of naming it all work: the
                 spreadsheet letter (<code>C</code>, and <code>AA</code> past Z), the
                 position (<code>column 3</code>), or the header itself
-                (<code>the Rep column</code>). They used to differ per operation —
+                (<code>the Rep column</code>). They used to differ per operation:
                 sorting and filtering took names while deleting and hiding took a single
-                letter — which meant <code>delete the Rep column</code> failed for no
+                letter, which meant <code>delete the Rep column</code> failed for no
                 reason a reader could see.
             </p>
             <p>
@@ -292,7 +292,7 @@ give me a formula for the average units per order`}</code></pre>
             </p>
             <p>
                 For those, and anything else the chat does not cover, the sheet is a real
-                spreadsheet — Univer, with its own toolbar — so you can do it by hand.
+                spreadsheet (Univer, with its own toolbar) so you can do it by hand.
             </p>
 
             <h2>How it decides</h2>

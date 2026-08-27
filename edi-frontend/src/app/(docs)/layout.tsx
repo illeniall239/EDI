@@ -5,7 +5,7 @@ import DocsNav from '@/components/docs/DocsNav';
 
 export const metadata: Metadata = {
     title: {
-        template: '%s — EDI.ai',
+        template: '%s · EDI.ai',
         default: 'EDI.ai',
     },
 };

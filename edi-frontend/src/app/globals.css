@@ -470,7 +470,7 @@ body.modal-open .visualization-modal-overlay * {
   }
 }
 /* ══════════════════════════════════════════════════════════════════
-   AI sidebar — "analyst's instrument"
+   AI sidebar: "analyst's instrument"
 
    The panel sits against a bright white spreadsheet, so it is built as
    a dark *material* rather than a void: layered light, a hairline

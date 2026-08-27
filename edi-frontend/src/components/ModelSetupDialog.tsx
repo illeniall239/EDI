@@ -33,7 +33,7 @@ import { ProviderState } from '@/utils/api';
 const BLURBS: Record<string, string> = {
     ollama: 'Models running on this computer. Nothing you ask or upload leaves it, and there is no bill.',
     claude: 'Claude, through the Claude Code CLI you are already signed in to. No key to paste; uses your existing subscription.',
-    'openai-compatible': 'Any server speaking the OpenAI format — LM Studio, vLLM, llama.cpp, OpenRouter. Local if you point it at localhost.',
+    'openai-compatible': 'Any server speaking the OpenAI format: LM Studio, vLLM, llama.cpp, OpenRouter. Local if you point it at localhost.',
     google: 'Gemini, with an API key from Google AI Studio.',
     openai: 'GPT models, with an API key from OpenAI.',
     anthropic: 'Claude, billed per token against an Anthropic API key rather than a subscription.',
@@ -188,7 +188,7 @@ export default function ModelSetupDialog() {
                         EDI is the spreadsheet and the plumbing; the model that answers your
                         questions is yours to pick. Here is what this computer can reach right
                         now. You can change it any time from the dropdown next to the message
-                        box — this asks once.
+                        box, so this asks once.
                     </p>
                 </div>
 
@@ -242,7 +242,7 @@ export default function ModelSetupDialog() {
                             <a href="https://ollama.com" className="underline">Ollama</a> and run{' '}
                             <code className="text-white/70">ollama pull qwen2.5-coder:7b</code>, sign
                             in with <code className="text-white/70">claude auth login</code>, or add
-                            an API key below — then press Rescan.
+                            an API key below, then press Rescan.
                         </p>
                     )}
                     {providers.map(renderProvider)}

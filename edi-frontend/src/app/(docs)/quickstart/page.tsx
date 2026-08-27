@@ -92,12 +92,12 @@ npm run dev`}</code></pre>
                 Two long-running processes and a way for the browser to reach both. On a
                 server with a disk that is the same two commands as above plus a reverse
                 proxy sending <code>/api/*</code> to the backend and everything else to
-                Next — one origin, so no CORS, and <code>EDI_STORE</code> can stay on
+                Next. One origin, so no CORS, and <code>EDI_STORE</code> can stay on
                 SQLite.
             </p>
             <p>
-                On a platform without a persistent disk — serverless, or anything running
-                more than one instance — add a Supabase project and run{' '}
+                On a platform without a persistent disk (serverless, or anything running
+                more than one instance) add a Supabase project and run{' '}
                 <code>supabase db push</code>, because the workspace has to live somewhere
                 every instance can see. Set a model key and{' '}
                 <code>SUPABASE_SERVICE_ROLE_KEY</code> in the environment.
