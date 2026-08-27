@@ -30,6 +30,9 @@ import workspace_store
 from intelligent_analysis import IntelligentAnalyzer
 from smart_formatter import SmartFormatter
 import limits
+import llm_providers
+import model_catalog
+import model_prefs
 import settings
 from llm_text import content_of
 
@@ -191,6 +194,33 @@ else:
         logger.error(f"Failed to initialize LLM services: {str(e)}")
         logger.error("See /api/health for the resolved provider and model")
         agent_services = None
+
+def use_model(config):
+    """
+    Point the whole app at a different model.
+
+    Two things have to move together. settings.apply() rebuilds the model and
+    raises if it cannot, and then the agents have to be rebuilt on top of it:
+    AgentServices hands `llm` to a SQL toolkit and a cleaning agent at
+    initialize_agents() time, so leaving those alone would switch the model
+    for direct .invoke() calls and silently keep the old one everywhere else.
+
+    Also covers the case where there was no model at startup at all, which is
+    the normal state of a fresh clone with nothing configured and no Ollama
+    running yet -- agent_services is None then, and picking a model in the UI
+    is what brings the app to life without a restart.
+    """
+    global agent_services
+
+    settings.apply(config)
+
+    if agent_services is None:
+        agent_services = AgentServices(llm=settings.LLM)
+    else:
+        agent_services.llm = settings.LLM
+    agent_services.initialize_agents(data_handler)
+    return settings.llm_status()
+
 
 # --- Request/Response Models ---
 class QueryRequest(BaseModel):
@@ -778,6 +808,137 @@ async def health_check():
         # discovered from a bill.
         "limits": limits.status()
     }
+
+
+class ModelSelection(BaseModel):
+    provider: str
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+
+
+class ProviderKey(BaseModel):
+    provider: str
+    api_key: str
+
+
+def _require_model_control():
+    """
+    Refuse to let a visitor reconfigure somebody else's server.
+
+    On a laptop the person using the app and the person running it are the
+    same, and letting the browser pick a model is just a settings screen. On a
+    public URL they are strangers: a key pasted into the dropdown would be
+    written to the operator's disk, and a base URL pointed anywhere would turn
+    the deployment into a proxy for it. So this is off there, and the message
+    says which switch turns it back on.
+    """
+    if not model_prefs.control_allowed():
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Choosing the model from the app is disabled on this "
+                "deployment. Set it with EDI_LLM_PROVIDER and EDI_LLM_MODEL, "
+                "or allow it with EDI_ALLOW_MODEL_SWITCHING=1."
+            ),
+        )
+
+
+@app.get("/api/models")
+async def list_models(refresh: bool = False):
+    """
+    Every provider, what it can offer, and which model is in use.
+
+    Never returns an API key, only whether one exists and where it came from.
+    That is the whole contract the picker is written against: a key typed in
+    here goes to a file on this machine and is never read back out over HTTP,
+    not even by the page that set it.
+    """
+    return {
+        "active": settings.llm_status(),
+        "can_change": model_prefs.control_allowed(),
+        "providers": model_catalog.catalog(refresh=refresh),
+    }
+
+
+@app.post("/api/models/select")
+async def select_model(selection: ModelSelection):
+    """Switch to a model, and remember the choice for next start."""
+    _require_model_control()
+    try:
+        config = llm_providers.build_config(
+            selection.provider,
+            (selection.model or "").strip(),
+            (selection.base_url or "").strip() or None,
+            source="saved",
+        )
+        status = use_model(config)
+    except llm_providers.ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Could not switch to %s: %s", selection.provider, exc)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not use that model: {exc}",
+        ) from exc
+
+    # Written only after the model has actually been built, so a failed
+    # attempt cannot leave the next start pointing at something broken.
+    model_prefs.save_choice(config.provider, config.model, config.base_url)
+    model_catalog.invalidate()
+    return {"active": status}
+
+
+@app.post("/api/models/key")
+async def save_provider_key(entry: ProviderKey):
+    """
+    Store an API key for a provider, on this machine.
+
+    It goes in the same directory as the workspaces and is never sent back.
+    The response says what the key unlocked -- the provider's model list --
+    which is also the check that it works.
+    """
+    _require_model_control()
+    if entry.provider not in llm_providers.PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"No such provider: {entry.provider}")
+    if not entry.api_key.strip():
+        raise HTTPException(status_code=400, detail="That key is empty.")
+
+    model_prefs.save_key(entry.provider, entry.api_key)
+    model_catalog.invalidate()
+
+    updated = next(
+        (e for e in model_catalog.catalog(refresh=True) if e["id"] == entry.provider),
+        None,
+    )
+    if updated and not updated["reachable"]:
+        # Kept rather than discarded: a provider can be unreachable because
+        # the key is wrong or because the network is, and this cannot tell
+        # those apart. The detail line says what happened; throwing the key
+        # away on a flaky connection would be worse.
+        logger.info("Key stored for %s but the provider did not answer.", entry.provider)
+    return {"provider": entry.provider, "stored_at": model_prefs.location(), "state": updated}
+
+
+@app.delete("/api/models/key/{provider}")
+async def forget_provider_key(provider: str):
+    """Remove a stored key. Does not touch anything set in the environment."""
+    _require_model_control()
+    removed = model_prefs.forget_key(provider)
+    model_catalog.invalidate()
+    return {"provider": provider, "removed": removed}
+
+
+@app.post("/api/models/reset")
+async def reset_model_choice():
+    """Forget the picked model and go back to what the environment says."""
+    _require_model_control()
+    model_prefs.clear_choice()
+    model_catalog.invalidate()
+    try:
+        status = use_model(llm_providers.resolve())
+    except llm_providers.ProviderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"active": status}
 
 # The intents and target types the classifier is allowed to return. Kept in
 # step with CommandClassification in

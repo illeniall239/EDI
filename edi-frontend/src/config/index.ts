@@ -26,7 +26,15 @@ export const API_ENDPOINTS = {
     workspace: (id: string) => `${API_BASE_URL}/api/workspace/${id}`,
     workspaces: `${API_BASE_URL}/api/workspaces`,
     chats: (workspaceId: string) => `${API_BASE_URL}/api/workspace/${workspaceId}/chats`,
-    chat: (chatId: string) => `${API_BASE_URL}/api/chats/${chatId}`
+    chat: (chatId: string) => `${API_BASE_URL}/api/chats/${chatId}`,
+    // The model picker. `models` reports what this machine can reach and
+    // never returns a key -- only whether one exists. See backend/model_prefs.py
+    // for why a key posted to `providerKey` stays on the machine it was typed on.
+    models: `${API_BASE_URL}/api/models`,
+    selectModel: `${API_BASE_URL}/api/models/select`,
+    resetModel: `${API_BASE_URL}/api/models/reset`,
+    providerKey: `${API_BASE_URL}/api/models/key`,
+    forgetProviderKey: (provider: string) => `${API_BASE_URL}/api/models/key/${provider}`
 };
 
 // File upload configuration

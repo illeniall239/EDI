@@ -110,6 +110,95 @@ export async function sendQuery(query: string, chatId: string, options?: { mode?
     return data;
 }
 
+export interface ProviderState {
+    id: string;
+    label: string;
+    /** True only when the model runs on this machine -- see the backend's
+     *  runs_on_this_machine(). Claude Code is deliberately false: the binary
+     *  is local, the rows still go to Anthropic. */
+    local: boolean;
+    installed: boolean;
+    needs_key: boolean;
+    has_key: boolean;
+    key_source: 'saved' | 'environment' | null;
+    base_url: string | null;
+    default_model: string;
+    reachable: boolean;
+    models: string[];
+    detail: string | null;
+}
+
+export interface ActiveModel {
+    provider: string;
+    model: string | null;
+    configured: boolean;
+    detail: string | null;
+    source: 'saved' | 'environment' | 'detected' | 'default';
+}
+
+export interface ModelCatalog {
+    active: ActiveModel;
+    /** False on a public deployment, where visitors must not be able to
+     *  repoint somebody else's server or store a key on their disk. */
+    can_change: boolean;
+    providers: ProviderState[];
+}
+
+export async function fetchModelCatalog(refresh = false): Promise<ModelCatalog> {
+    const response = await fetch(`${API_ENDPOINTS.models}${refresh ? '?refresh=true' : ''}`);
+    if (!response.ok) {
+        throw new Error('Could not read the model list');
+    }
+    return response.json();
+}
+
+export async function selectModel(
+    provider: string,
+    model: string,
+    baseUrl?: string,
+): Promise<ActiveModel> {
+    const response = await fetch(API_ENDPOINTS.selectModel, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, model, base_url: baseUrl }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.detail || 'Could not switch to that model');
+    }
+    return data.active;
+}
+
+export async function resetModelChoice(): Promise<ActiveModel> {
+    const response = await fetch(API_ENDPOINTS.resetModel, { method: 'POST' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.detail || 'Could not reset the model');
+    }
+    return data.active;
+}
+
+export async function saveProviderKey(provider: string, apiKey: string): Promise<ProviderState | null> {
+    const response = await fetch(API_ENDPOINTS.providerKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, api_key: apiKey }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.detail || 'Could not save that key');
+    }
+    return data.state ?? null;
+}
+
+export async function forgetProviderKey(provider: string): Promise<void> {
+    const response = await fetch(API_ENDPOINTS.forgetProviderKey(provider), { method: 'DELETE' });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || 'Could not remove that key');
+    }
+}
+
 export async function cancelOperation(operationId?: string): Promise<void> {
     const response = await fetch(API_ENDPOINTS.cancelOperation, {
         method: 'POST',

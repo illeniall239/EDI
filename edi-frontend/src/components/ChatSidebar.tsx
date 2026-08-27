@@ -21,6 +21,7 @@ import { ChartRenderer, LegacyChartImage } from '@/components/charts/ChartRender
 import remarkGfm from 'remark-gfm';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import AIPrompt from '@/components/AIPrompt';
+import ModelPicker from '@/components/ModelPicker';
 import { UniverAdapter } from '@/utils/univerAdapter';
 import { findDuplicateRows, parseColumnSpec } from '@/utils/duplicateDetector';
 
@@ -5246,6 +5247,12 @@ export default function ChatSidebar({
                         placeholder={isDataLoaded ? "Ask about your data..." : "Upload data first..."}
                         selectedMode={queryMode === 'complex' ? 'Complex' : 'Simple'}
                         onModeChange={(mode) => setQueryMode(mode === 'Complex' ? 'complex' : 'simple')}
+                        /* Not disabled with the rest of the box when no data
+                           is loaded: choosing a model is exactly what someone
+                           does before uploading anything, and a picker that
+                           greys out until you have a sheet is a picker nobody
+                           finds. */
+                        modelPicker={<ModelPicker />}
                         additionalButtons={(
                             <>
                                 {/* Reset chat button */}

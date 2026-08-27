@@ -29,9 +29,9 @@ cannot use a tool like this at all.
 
 **The cloud is still there if you want it.** EDI is a harness: it talks to
 Ollama, to anything speaking the OpenAI-compatible wire format (LM Studio,
-vLLM, llama.cpp, OpenRouter), or to Google, OpenAI, Anthropic and Groq when you
-want the biggest model going. That is a choice you make, not a default you have
-to undo.
+vLLM, llama.cpp, OpenRouter), to the Claude Code CLI you are already signed in
+to, or to Google, OpenAI, Anthropic and Groq when you want the biggest model
+going. That is a choice you make, not a default you have to undo.
 
 If you do point it at a hosted model, here is what travels per question, which
 is more than just the question: the text you typed and the last few messages of
@@ -40,6 +40,25 @@ columns when it draws a chart; up to 200 rows of that query's results; and, on
 the pandas path, the first five rows of the sheet. All of it avoidable by
 staying local -- written down because "your data stays private" is a claim
 worth being precise about in both directions.
+
+## Nothing to configure
+
+The dropdown in the chat box lists what your machine can actually reach --
+asked fresh each time it opens, not read from a config file. Models Ollama has
+pulled. The Claude Code CLI, if `claude auth status` says you are signed in.
+Any provider whose key is already in your environment. Pick one and the next
+question uses it; there is no restart and no `.env` to edit.
+
+With nothing configured at all, EDI makes that choice for you at startup and
+tells you which it made in `GET /api/health`. Ollama goes first, because it is
+the only option that costs nothing and sends nothing.
+
+A provider you have no key for offers **Add a key** instead of a model list.
+That key is written to `.edi-data/model.json` on the machine running the
+backend and is never sent back to the browser -- there is no endpoint that
+returns one, only one that reports whether one exists. On a public deployment
+the whole thing is switched off, because there the disk belongs to somebody
+else.
 
 ## Documentation
 

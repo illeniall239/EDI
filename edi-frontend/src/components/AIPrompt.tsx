@@ -26,6 +26,10 @@ interface AIPromptProps {
     onModeChange?: (mode: string) => void;
     // Additional action buttons
     additionalButtons?: React.ReactNode;
+    /** Sits to the left of the mode dropdown. A slot rather than a prop pair
+     *  because which model is in use is the backend's business, and AIPrompt
+     *  has no reason to learn how to ask. */
+    modelPicker?: React.ReactNode;
     minimal?: boolean;
     /** Bump to move the cursor into the box -- see the effect below. */
     focusToken?: number;
@@ -52,6 +56,7 @@ export default function AIPrompt({
     selectedMode = "Simple",
     onModeChange,
     additionalButtons,
+    modelPicker,
     minimal = false,
     focusToken = 0,
 }: AIPromptProps) {
@@ -118,6 +123,10 @@ export default function AIPrompt({
                     <div className="h-14 bg-transparent rounded-b-lg flex items-center">
                         <div className="absolute left-3 right-3 bottom-3 flex items-center justify-between w-[calc(100%-24px)]">
                             <div className="flex items-center gap-2">
+                                {!minimal && modelPicker}
+                                {!minimal && modelPicker && (
+                                    <div className="h-4 w-px bg-white/10 mx-0.5" />
+                                )}
                                 {!minimal && (
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>

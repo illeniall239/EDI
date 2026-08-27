@@ -20,6 +20,33 @@ export default function Models() {
                 easier.
             </p>
 
+            <h2>You probably do not have to configure this</h2>
+            <p>
+                The dropdown at the bottom of the chat box lists what this machine can
+                actually reach, asked fresh each time it opens: the models Ollama has
+                pulled, the Claude Code CLI if it is signed in, and any provider whose
+                key is already in your environment. Pick one and it takes effect on the
+                next question — no restart, no <code>.env</code>.
+            </p>
+            <p>
+                The choice is written to <code>.edi-data/model.json</code> next to your
+                workspaces and survives a restart. It also <em>overrides</em> the
+                environment variables below, on the grounds that a person clicking a menu
+                is being more deliberate than a file they edited last month. There is a{' '}
+                <strong>Reset</strong> in the same dropdown that forgets it and goes back
+                to the environment.
+            </p>
+            <p>
+                A provider with no key yet offers <strong>Add a key</strong> instead of a
+                model list. What you type goes to a file on the machine running the
+                backend and is never sent back to the browser — there is no endpoint that
+                returns a key, only one that reports whether a key exists. Which is also
+                why the whole control surface is switched off when{' '}
+                <code>EDI_LIMITS_ENABLED=1</code> marks this as a public deployment: there
+                the disk belongs to somebody else. <code>EDI_ALLOW_MODEL_SWITCHING</code>{' '}
+                overrides that guess either way.
+            </p>
+
             <h2>Providers</h2>
             <div className="table-scroll">
                 <table>
@@ -63,6 +90,12 @@ export default function Models() {
                             <td>none</td>
                         </tr>
                         <tr>
+                            <td><code>claude-code</code></td>
+                            <td>the <code>claude</code> CLI</td>
+                            <td><code>sonnet</code></td>
+                            <td>your own login</td>
+                        </tr>
+                        <tr>
                             <td><code>openai-compatible</code></td>
                             <td><code>langchain-openai</code></td>
                             <td>you name one</td>
@@ -79,6 +112,31 @@ export default function Models() {
                 whole integration. A local server with no auth needs no key.
             </p>
 
+            <h3>Claude Code, if you already use it</h3>
+            <p>
+                <code>claude-code</code> is the odd one: not a Python package and not an
+                API key, but the CLI on your PATH, run as you, on the Claude subscription
+                you already pay for. If <code>claude auth status</code> says you are
+                signed in, it appears in the picker with no setup at all. EDI never reads
+                those credentials — it runs a binary that is already holding them.
+            </p>
+            <div className="edi-note">
+                <strong>It is not the private option.</strong> The binary is local; the
+                spreadsheet is not. Your question and up to 200 result rows go to
+                Anthropic exactly as they would with an API key, which is why the picker
+                files it under <em>sends your data off this machine</em> rather than
+                next to Ollama. Choose it for capability, not for privacy.
+            </div>
+            <p>
+                Expect about <strong>3.6 seconds per model call</strong> once warm, and
+                EDI makes two per question. The first call after five idle minutes is
+                slower — nearer 25 seconds — because each call is a fresh process and
+                pays for the prompt cache again. EDI runs it with the agent tooling
+                disabled, which is what keeps the per-call prefix at ~4,400 tokens
+                instead of ~22,000; the reasoning is in{' '}
+                <code>backend/claude_code_llm.py</code>.
+            </p>
+
             <h2>Configuring</h2>
             <pre><code>{`EDI_LLM_PROVIDER=ollama
 EDI_LLM_MODEL=llama3.1:8b
@@ -88,9 +146,25 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
 
             <p>
                 Only <code>EDI_LLM_PROVIDER</code> and a key are usually needed; every
-                provider carries a default model. Leave the provider unset and EDI behaves
-                exactly as it did before it had a registry: Gemini, via{' '}
-                <code>GOOGLE_API_KEY</code>.
+                provider carries a default model. What happens when you set none of it is
+                worth knowing, because it is what a fresh clone does — EDI resolves in
+                this order:
+            </p>
+            <ol>
+                <li>a model chosen in the picker, if there is one;</li>
+                <li><code>EDI_LLM_PROVIDER</code>, which is how a deployment is pinned;</li>
+                <li><code>GOOGLE_API_KEY</code> on its own — unchanged from before there
+                    was a registry, so an existing deployment that sets only that keeps
+                    resolving to Gemini;</li>
+                <li>whatever is running on this machine: Ollama first, then a
+                    self-hosted endpoint, then a signed-in Claude Code.</li>
+            </ol>
+            <p>
+                Step 4 is the one that matters on a clean checkout. Ollama comes first
+                there deliberately — it is the only option that costs nothing and sends
+                nothing, and starting someone&apos;s paid subscription without their
+                asking would be a poor default. <code>GET /api/health</code> reports which
+                step produced the answer, under <code>llm_config.source</code>.
             </p>
 
             <p>

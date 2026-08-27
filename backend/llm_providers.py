@@ -15,10 +15,13 @@ deployment carry five SDKs to use one.
 """
 
 import importlib
+import importlib.util
 import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
+
+import model_prefs
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,10 @@ class Provider:
     base_url_kwarg: Optional[str] = None
     default_base_url: Optional[str] = None
     needs_base_url: bool = False
+    # What to tell someone who has not got it. Defaults to the pip line, which
+    # is right for every provider that is a Python package and wrong for the
+    # one that is a CLI.
+    install_hint: Optional[str] = None
 
 
 PROVIDERS: Dict[str, Provider] = {
@@ -90,6 +97,21 @@ PROVIDERS: Dict[str, Provider] = {
         base_url_kwarg="base_url",
         default_base_url="http://localhost:11434",
     ),
+    # Not a package and not an API: a binary that is already signed in as the
+    # person running this. If they use Claude Code, the model is on the
+    # machine and the subscription is theirs -- see claude_code_llm.py, which
+    # is careful about what that does and does not mean.
+    "claude-code": Provider(
+        package="",
+        module="claude_code_llm",
+        class_name="ChatClaudeCode",
+        default_model="sonnet",
+        max_tokens_kwarg="max_tokens",
+        install_hint=(
+            "Install the Claude Code CLI (npm install -g "
+            "@anthropic-ai/claude-code) and sign in with `claude auth login`."
+        ),
+    ),
     # One entry for the long tail -- OpenRouter, LM Studio, vLLM, Together,
     # llama.cpp's server. They all speak the OpenAI wire format, so pointing
     # ChatOpenAI at a different base URL is the whole integration.
@@ -127,6 +149,11 @@ class Config:
     api_key: Optional[str]
     base_url: Optional[str]
     max_tokens: int
+    # Which of the four ways this was arrived at: a choice saved from the
+    # picker, the environment, a probe of the machine, or the fallback. Only
+    # reported -- nothing branches on it -- but it is the difference between
+    # "why is it using that model" having an answer and not.
+    source: str = "environment"
     # Constructor arguments that only make sense for one provider. Ollama is
     # the only one that runs on your own hardware, so it is the only one with
     # anything to say about GPUs, threads and how long weights stay resident.
@@ -141,6 +168,41 @@ class Config:
         if spec.needs_base_url and not self.base_url:
             return False
         return bool(self.model)
+
+
+def package_available(provider: str) -> bool:
+    """Is the module this provider needs importable, without importing it?"""
+    spec = PROVIDERS[provider]
+    try:
+        return importlib.util.find_spec(spec.module) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def install_hint(provider: str) -> str:
+    spec = PROVIDERS[provider]
+    return spec.install_hint or f"pip install {spec.package}"
+
+
+def key_for(provider: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    This provider's API key and where it came from.
+
+    A key typed into the picker beats one in the environment: it was set
+    later, and by the person actually sitting there. Both beat nothing.
+    """
+    spec = PROVIDERS[provider]
+    stored = model_prefs.key_for(provider)
+    if stored:
+        return stored, "saved"
+    generic = (os.getenv("EDI_LLM_API_KEY") or "").strip()
+    if generic:
+        return generic, "environment"
+    for name in spec.key_env:
+        value = (os.getenv(name) or "").strip()
+        if value:
+            return value, "environment"
+    return None, None
 
 
 def _int_env(name: str, default: int) -> int:
@@ -214,39 +276,35 @@ def _ollama_runtime() -> Dict[str, Any]:
     return runtime
 
 
-def resolve() -> Config:
-    """
-    Work out which model to use from the environment.
-
-    Back-compatibility matters more than tidiness here: an existing deployment
-    sets GOOGLE_API_KEY and nothing else, and must keep working untouched. So
-    an unset EDI_LLM_PROVIDER means exactly what it meant before -- Gemini,
-    with GEMINI_MODEL choosing the variant.
-    """
-    provider = (os.getenv("EDI_LLM_PROVIDER") or DEFAULT_PROVIDER).strip().lower()
+def build_config(
+    provider: str,
+    model: str = "",
+    base_url: Optional[str] = None,
+    source: str = "environment",
+) -> Config:
+    """Fill in everything the caller did not name, for one provider."""
     if provider not in PROVIDERS:
         known = ", ".join(sorted(PROVIDERS))
         raise ProviderError(
-            f"EDI_LLM_PROVIDER is set to '{provider}', which is not a provider. "
-            f"Choose one of: {known}."
+            f"'{provider}' is not a provider. Choose one of: {known}."
         )
-
     spec = PROVIDERS[provider]
 
-    model = (os.getenv("EDI_LLM_MODEL") or "").strip()
+    model = (model or "").strip()
+    if not model:
+        model = (os.getenv("EDI_LLM_MODEL") or "").strip()
     if not model and provider == "google":
         model = (os.getenv("GEMINI_MODEL") or "").strip()
     if not model:
         model = spec.default_model
 
-    api_key = (os.getenv("EDI_LLM_API_KEY") or "").strip()
-    if not api_key:
-        for name in spec.key_env:
-            api_key = (os.getenv(name) or "").strip()
-            if api_key:
-                break
+    api_key, _ = key_for(provider)
 
-    base_url = (os.getenv("EDI_LLM_BASE_URL") or "").strip() or spec.default_base_url
+    base_url = (base_url or "").strip()
+    if not base_url and (os.getenv("EDI_LLM_PROVIDER") or "").strip().lower() == provider:
+        base_url = (os.getenv("EDI_LLM_BASE_URL") or "").strip()
+    if not base_url:
+        base_url = spec.default_base_url or ""
 
     return Config(
         provider=provider,
@@ -255,12 +313,84 @@ def resolve() -> Config:
         base_url=base_url or None,
         max_tokens=_int_env("EDI_LLM_MAX_TOKENS", DEFAULT_MAX_TOKENS),
         runtime=_ollama_runtime() if provider == "ollama" else {},
+        source=source,
     )
+
+
+def resolve() -> Config:
+    """
+    Work out which model to use, in four steps and in this order.
+
+    1. **A choice saved from the picker.** It wins over the environment
+       because it was made later and by the person at the keyboard -- and
+       because it can only ever have been written on an install where that is
+       allowed. See model_prefs.control_allowed().
+    2. **EDI_LLM_PROVIDER**, which is how a deployment is configured.
+    3. **GOOGLE_API_KEY on its own**, which is what this looked like before it
+       had a registry. An existing deployment that sets only that must keep
+       resolving to exactly what it resolved to then: Gemini, GEMINI_MODEL.
+    4. **Whatever is running on this machine.** A fresh clone with no .env
+       finds Ollama or a signed-in Claude Code rather than reporting a missing
+       Google key, which is the difference between the app working out of the
+       box and not.
+    """
+    saved = model_prefs.choice()
+    if saved and saved["provider"] in PROVIDERS:
+        return build_config(
+            saved["provider"], saved["model"], saved["base_url"], source="saved",
+        )
+
+    provider = (os.getenv("EDI_LLM_PROVIDER") or "").strip().lower()
+    if provider:
+        if provider not in PROVIDERS:
+            known = ", ".join(sorted(PROVIDERS))
+            raise ProviderError(
+                f"EDI_LLM_PROVIDER is set to '{provider}', which is not a "
+                f"provider. Choose one of: {known}."
+            )
+        return build_config(provider, source="environment")
+
+    if (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or "").strip():
+        return build_config("google", source="environment")
+
+    # Imported here rather than at the top because model_catalog imports this
+    # module. It only reaches the network for providers that already have a
+    # key, so an unconfigured install pays for one look at localhost and one
+    # `claude auth status`, not six timeouts.
+    try:
+        import model_catalog
+
+        detected = model_catalog.detect()
+    except Exception as exc:  # noqa: BLE001 - detection is a convenience
+        logger.debug("Model detection failed: %s", exc)
+        detected = None
+
+    if detected:
+        logger.info(
+            "No model configured; using the %s found on this machine (%s).",
+            detected["provider"], detected["model"],
+        )
+        return build_config(
+            detected["provider"], detected["model"], detected.get("base_url"),
+            source="detected",
+        )
+
+    return build_config(DEFAULT_PROVIDER, source="default")
 
 
 def describe(config: Config) -> str:
     """Why a config is not usable, or an empty string when it is."""
     spec = PROVIDERS[config.provider]
+    if config.provider == "claude-code":
+        # Checked here because it is the one provider whose availability is a
+        # property of the machine rather than of the configuration. Only the
+        # binary, not the login: `claude auth status` costs 400ms and this
+        # runs on every model construction, so being signed out surfaces from
+        # the first call instead.
+        import claude_code_llm
+
+        if not claude_code_llm.binary_path():
+            return install_hint("claude-code")
     if not config.model:
         return (
             f"No model set for provider '{config.provider}'. "
@@ -306,8 +436,8 @@ def build(config: Config, temperature: float = 0.4):
         module = importlib.import_module(spec.module)
     except ImportError as exc:
         raise ProviderError(
-            f"Provider '{config.provider}' needs the {spec.package} package. "
-            f"Install it with: pip install {spec.package}"
+            f"Provider '{config.provider}' is not installed. "
+            f"{install_hint(config.provider)}"
         ) from exc
 
     kwargs = {"model": config.model}

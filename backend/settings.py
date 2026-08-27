@@ -51,6 +51,32 @@ def _build_llm(temperature=0.4):
     return llm_providers.build(LLM_CONFIG, temperature=temperature)
 
 
+def apply(config):
+    """
+    Move this process onto a different model.
+
+    Builds first and rebinds afterwards, so a configuration that cannot be
+    constructed -- a key that is wrong, a package that is missing -- leaves
+    the working model in place and raises instead of taking the app down.
+
+    Like hydrate() in main.py, this writes module globals and so assumes an
+    instance serves one request at a time. That is already the assumption the
+    data handler makes, and switching models is a thing a person does between
+    questions rather than during one.
+    """
+    global LLM, LLM_CONFIG, LLM_PROVIDER, LLM_MODEL, GEMINI_MODEL
+
+    llm = llm_providers.build(config)
+
+    LLM_CONFIG = config
+    LLM_PROVIDER = config.provider
+    LLM_MODEL = config.model
+    GEMINI_MODEL = config.model if config.provider == "google" else None
+    LLM = llm
+    logger.info("LLM switched to %s via %s", config.model, config.provider)
+    return llm
+
+
 def llm_status():
     """
     What /api/health should say about the model.
@@ -64,6 +90,11 @@ def llm_status():
         "model": LLM_CONFIG.model or None,
         "configured": LLM is not None,
         "detail": llm_providers.describe(LLM_CONFIG) or None,
+        # How this model came to be the one in use: picked in the app, set in
+        # the environment, found on the machine, or fallen back to. Worth
+        # reporting because "why is it using that" is otherwise unanswerable
+        # from outside, and the answer changed when the picker was added.
+        "source": LLM_CONFIG.source,
         # Only Ollama has these, and only when they were set. Empty means
         # every choice was left to Ollama, which is the default and usually
         # right -- but if someone has pinned the model to the CPU or given it

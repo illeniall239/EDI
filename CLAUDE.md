@@ -19,6 +19,12 @@ writing anything that assumes a specific provider or model.
 - `main.py` — every FastAPI route, plus the demo-limits middleware
 - `llm_providers.py` — the provider table; adding a provider is adding a row
 - `settings.py` — resolves provider, model and store from the environment
+- `model_catalog.py` — probes what this machine can reach: Ollama's pulled
+  models, a signed-in Claude Code CLI, a keyed provider's own model list
+- `model_prefs.py` — the model chosen in the app, and any keys typed into it,
+  in `.edi-data/model.json`. Never returned over HTTP, and writable only when
+  `control_allowed()` says this is not a public deployment
+- `claude_code_llm.py` — the `claude` CLI as a LangChain chat model
 - `check_model.py` — tests whether the configured model can do the job
 - `agent_services.py` — SQL generation, chart specs, conversation memory
 - `data_handler.py` — file parsing into pandas and an in-memory SQLite database
@@ -73,8 +79,12 @@ Nothing is required. With no configuration, workspaces go in a local SQLite
 file and the model is looked for on `localhost:11434` (Ollama). See
 `sample.env` for the full surface. The ones that matter:
 
-- `EDI_LLM_PROVIDER` — `google` (default) | `openai` | `anthropic` | `groq` |
-  `ollama` | `openai-compatible`
+- `EDI_LLM_PROVIDER` — `google` | `openai` | `anthropic` | `groq` | `ollama` |
+  `claude-code` | `openai-compatible`. Unset means resolve in order: a choice
+  saved from the picker, this variable, `GOOGLE_API_KEY` alone, then whatever
+  is detected on the machine
+- `EDI_ALLOW_MODEL_SWITCHING` — may the app's dropdown change the model and
+  store keys. Defaults to on unless `EDI_LIMITS_ENABLED=1`
 - `EDI_LLM_MODEL`, `EDI_LLM_API_KEY`, `EDI_LLM_BASE_URL` — or the provider's
   conventional key name (`GOOGLE_API_KEY`, `OPENAI_API_KEY`, …)
 - `EDI_STORE` — `sqlite` | `supabase`. Guessed from
@@ -95,6 +105,13 @@ something is misconfigured.
   something from a model, add a backend endpoint.
 - **Anything that spends a model call** belongs in `_METERED_PREFIXES` or
   `_METERED_SUFFIXES` in `limits.py`. Anything that does not, does not.
+- **No endpoint may return an API key.** `/api/models` reports `has_key` and
+  `key_source` and nothing more. A key reaches the backend once, going in.
+- **"Runs on this machine" is a claim about the endpoint, not the provider.**
+  `model_catalog.runs_on_this_machine()` decides it from the base URL, so
+  `openai-compatible` pointed at LM Studio counts and the same provider
+  pointed at OpenRouter does not. `claude-code` never counts: local binary,
+  remote model.
 - **Keep provider imports lazy** in `llm_providers.py` so nobody installs an
   SDK they do not use.
 - **Stay on the 0.3.x line** of every `langchain-*` package. The 1.x releases
