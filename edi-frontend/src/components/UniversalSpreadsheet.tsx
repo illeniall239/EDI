@@ -424,6 +424,17 @@ export default function UniversalSpreadsheet({
       const extractedData = getCurrentData();
       const dataString = JSON.stringify(extractedData);
 
+      // getAllData() reads a fixed window and trims it, and it has been seen
+      // to come back empty on a sheet that plainly had rows. That was
+      // harmless while this only called setData; now that it writes to the
+      // store, an empty read would overwrite the workspace with nothing.
+      // A sheet genuinely emptied goes through handleClearData, not here.
+      if (!extractedData.length && lastSavedDataRef.current && lastSavedDataRef.current !== '[]') {
+        console.warn('[Univer] Skipping save: the sheet read back empty but had data.');
+        setSaveStatus('idle');
+        return false;
+      }
+
       // Get workbook snapshot for full fidelity
       let sheetState: any = undefined;
       let sheetString = '';

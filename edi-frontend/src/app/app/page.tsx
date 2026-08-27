@@ -208,6 +208,24 @@ export default function HomePage() {
         return () => window.removeEventListener('dataUpdate', handleDataUpdate);
     }, [saveDataToWorkspace, currentFilename]);
 
+    /**
+     * An edit made in the grid itself.
+     *
+     * This is the other half of the pair above. The sidebar announces its
+     * changes through a window event and that path saves; the spreadsheet
+     * announces its own through this prop, and this prop used to be
+     * `setData` -- so anything done in the grid updated React state and was
+     * never written anywhere. A formula applied to a column, a sort, an edited
+     * cell: all of it survived until reload and no further.
+     *
+     * UniversalSpreadsheet already debounces and drops no-op saves, so by the
+     * time this fires there is a real change worth a round trip.
+     */
+    const handleSheetEdit = useCallback((newData: unknown[]) => {
+        setData(newData);
+        void saveDataToWorkspace(newData, currentFilename);
+    }, [saveDataToWorkspace, currentFilename]);
+
     const handleAdapterReady = (adapter: any) => {
         univerAdapterRef.current = adapter;
     };
@@ -423,7 +441,7 @@ export default function HomePage() {
                     success: true,
                     message: `Processed command: "${command}"`
                 })}
-                onDataUpdate={setData}
+                onDataUpdate={handleSheetEdit}
                 onFileUploadFromSpreadsheet={handleFileUploadFromSpreadsheet}
                 currentFilename={currentFilename}
                 initialSheets={initialSheets}
