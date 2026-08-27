@@ -475,14 +475,17 @@ export default function UniversalSpreadsheet({
         return true;
       }
 
+      // Recorded before the parent is told, not after. Telling the parent
+      // sets state, which comes back down as a new `data` prop, and the
+      // effect that watches that prop needs this ref already updated to
+      // recognise the value as its own echo.
+      lastSavedDataRef.current = dataString;
+      lastSavedSheetRef.current = sheetString;
+
       // Notify parent to save (parent will call saveWorkspaceData)
       if (onDataUpdate) {
         onDataUpdate(extractedData);
       }
-
-      // Update refs
-      lastSavedDataRef.current = dataString;
-      lastSavedSheetRef.current = sheetString;
       setSaveStatus('saved');
 
       // Reset status after 3 seconds
@@ -558,6 +561,37 @@ export default function UniversalSpreadsheet({
       }
       // Handle data loaded
       else {
+        // Not when the rows are the ones this sheet just handed upwards.
+        //
+        // Every edit runs autosave, autosave calls onDataUpdate, the parent
+        // puts those rows in state, and they arrive back here as a new prop.
+        // Reloading then rebuilds the grid out of values -- which is fine for
+        // anything the values carry, and fatal for everything they do not.
+        // Bold, fills, column widths and number formats were being applied
+        // correctly and then wiped a second later by the echo of their own
+        // save, which is why the commands looked like they did nothing while
+        // sorting and formulas worked: those live in the values.
+        const incoming = JSON.stringify(data);
+        if (incoming === lastSavedDataRef.current) {
+          return;
+        }
+
+        // And not when the grid already shows exactly these rows.
+        //
+        // That is the state on first load: the workbook has just been built
+        // from the stored snapshot, which carries the formatting, and the
+        // rows arrive immediately afterwards as a prop. They match what is on
+        // screen, so reloading changes no value and costs every style the
+        // snapshot just restored.
+        try {
+          if (incoming === JSON.stringify(getCurrentData())) {
+            lastSavedDataRef.current = incoming;
+            return;
+          }
+        } catch {
+          // Unreadable grid: fall through and load, which is the safe way to
+          // be wrong here.
+        }
 
         // Convert object array to 2D array if needed
         if (typeof data[0] === 'object' && !Array.isArray(data[0])) {
@@ -572,7 +606,7 @@ export default function UniversalSpreadsheet({
         setCurrentData(data);
       }
     }
-  }, [data, univerInitialized]);
+  }, [data, univerInitialized, getCurrentData]);
 
   // Listen for dataUpdate events from ChatSidebar and other components
   useEffect(() => {

@@ -24,6 +24,7 @@ import AIPrompt from '@/components/AIPrompt';
 import ModelPicker from '@/components/ModelPicker';
 import FormulaCard from '@/components/FormulaCard';
 import { parseFormulaRequest } from '@/utils/formulaRequest';
+import { resolveFormatTarget } from '@/utils/formatTarget';
 import { shiftFormulaRows } from '@/utils/formulaFill';
 import { UniverAdapter } from '@/utils/univerAdapter';
 import { findDuplicateRows, parseColumnSpec } from '@/utils/duplicateDetector';
@@ -2788,7 +2789,8 @@ export default function ChatSidebar({
                         return cellRefMatch ? cellRefMatch[1].toUpperCase() : null;
                     };
 
-                    // Helper: Get range (from cell ref or current selection)
+                    // Helper: Get range (from cell ref, from the words, or
+                    // from the current selection -- in that order).
                     const getRange = (cellRef: string | null) => {
                         if (cellRef) {
                             const range = parseCellReference(cellRef);
@@ -2796,13 +2798,26 @@ export default function ChatSidebar({
                                 throw new Error(`Invalid cell reference: ${cellRef}`);
                             }
                             return range;
-                        } else {
-                            const range = univerAdapter.getCurrentActiveRange();
-                            if (!range) {
-                                throw new Error('No cell selection and no cell reference provided');
-                            }
-                            return range;
                         }
+
+                        // "the header row", "the revenue column". Without this
+                        // these fell through to the selection, and with
+                        // nothing selected the selection is cell A1 -- so
+                        // "make the header row bold" bolded one cell.
+                        const named = resolveFormatTarget(
+                            userMessage,
+                            univerAdapter.getHeaders() || [],
+                            Math.max((univerAdapter.getAllData() || []).length - 1, 0),
+                        );
+                        if (named) {
+                            return named;
+                        }
+
+                        const range = univerAdapter.getCurrentActiveRange();
+                        if (!range) {
+                            throw new Error('No cell selection and no cell reference provided');
+                        }
+                        return range;
                     };
 
                     // ===================================================================
