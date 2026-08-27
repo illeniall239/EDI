@@ -1,9 +1,11 @@
 """
-The Claude Code CLI, used as a chat model.
+Claude, reached through the Claude Code CLI.
 
-Someone who already uses Claude Code has a model on this machine that is
-authenticated, paid for, and theirs. This wraps `claude -p` so that setup is
-one of the options in the picker without anybody configuring anything.
+The model here is Claude -- the same Sonnet, Opus, Haiku and Fable the
+`anthropic` provider serves. What is different is only the door: instead of an
+API key, this goes through the `claude` binary already on the user's PATH and
+already signed in as them. Someone who uses Claude Code therefore has a
+working model in the picker with nothing to configure.
 
 Be exact about what it is, because it is easy to oversell: this is not a free
 path and not a credential-less one. It runs on that person's own Claude
@@ -180,7 +182,7 @@ def _render(messages: List[BaseMessage]) -> tuple:
 
 
 class ChatClaudeCode(BaseChatModel):
-    """A chat model backed by the locally installed Claude Code CLI."""
+    """Claude, run through the locally installed Claude Code CLI."""
 
     model: str = DEFAULT_MODEL
     # Accepted so the provider table can construct this the same way it

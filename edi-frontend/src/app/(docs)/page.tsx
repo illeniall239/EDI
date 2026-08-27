@@ -106,18 +106,19 @@ export default function DocsHome() {
                 Local is the default, not the limit. EDI is a harness: it talks to a local
                 model through <strong>Ollama</strong>, to anything speaking the
                 OpenAI-compatible wire format — LM Studio, vLLM, llama.cpp, OpenRouter —
-                to the <strong>Claude Code</strong> CLI you are already signed in to, or
-                to Google, OpenAI, Anthropic and Groq when you want the biggest model
-                going. Pick one, and the quality of the answers follows from that choice
-                rather than from anything in this repo.
+                to <strong>Claude</strong> through the CLI you are already signed in
+                to, or to Google, OpenAI, Anthropic and Groq. Pick one, and the quality
+                of the answers follows from that choice rather than from anything in this
+                repo.
             </p>
             <p>
                 Picking is a dropdown in the chat box, not a config file. It lists what
-                your machine can actually reach — the models Ollama has pulled, a
-                signed-in Claude Code, any provider whose key is already in your
-                environment — and switches between them without a restart. A key typed in
-                there is written to a file next to your workspaces and never sent back to
-                the browser. <Link href="/models">Choosing a model</Link> has the rest.
+                your machine can actually reach — the models Ollama has pulled, Claude if
+                the CLI is signed in, any provider whose key is already in your
+                environment — and switches between them without a restart. Nothing in it
+                is marked recommended. A key typed in there is written to a file next to
+                your workspaces and never sent back to the browser.{' '}
+                <Link href="/models">Choosing a model</Link> has the rest.
             </p>
             <div className="edi-note">
                 <strong>That cuts both ways.</strong> A weak model does not error — it

@@ -114,8 +114,8 @@ export interface ProviderState {
     id: string;
     label: string;
     /** True only when the model runs on this machine -- see the backend's
-     *  runs_on_this_machine(). Claude Code is deliberately false: the binary
-     *  is local, the rows still go to Anthropic. */
+     *  runs_on_this_machine(). Claude is false here: the binary is local, the
+     *  rows still go to Anthropic. */
     local: boolean;
     installed: boolean;
     needs_key: boolean;

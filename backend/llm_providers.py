@@ -97,19 +97,19 @@ PROVIDERS: Dict[str, Provider] = {
         base_url_kwarg="base_url",
         default_base_url="http://localhost:11434",
     ),
-    # Not a package and not an API: a binary that is already signed in as the
-    # person running this. If they use Claude Code, the model is on the
-    # machine and the subscription is theirs -- see claude_code_llm.py, which
-    # is careful about what that does and does not mean.
-    "claude-code": Provider(
+    # Claude, reached through the Claude Code CLI rather than through an API
+    # key: no package to install and no key to paste, because the binary on
+    # the user's PATH is already signed in as them. Separate from "anthropic"
+    # only in how it authenticates -- the models are the same Claude models.
+    "claude": Provider(
         package="",
         module="claude_code_llm",
         class_name="ChatClaudeCode",
         default_model="sonnet",
         max_tokens_kwarg="max_tokens",
         install_hint=(
-            "Install the Claude Code CLI (npm install -g "
-            "@anthropic-ai/claude-code) and sign in with `claude auth login`."
+            "Needs the Claude Code CLI: npm install -g "
+            "@anthropic-ai/claude-code, then `claude auth login`."
         ),
     ),
     # One entry for the long tail -- OpenRouter, LM Studio, vLLM, Together,
@@ -330,9 +330,10 @@ def resolve() -> Config:
        had a registry. An existing deployment that sets only that must keep
        resolving to exactly what it resolved to then: Gemini, GEMINI_MODEL.
     4. **Whatever is running on this machine.** A fresh clone with no .env
-       finds Ollama or a signed-in Claude Code rather than reporting a missing
-       Google key, which is the difference between the app working out of the
-       box and not.
+       finds a model that answers rather than reporting a missing Google key,
+       which is the difference between the app working out of the box and not.
+       Whichever it lands on is a starting point, not a suggestion: the
+       picker exists so nobody has to live with this function's guess.
     """
     saved = model_prefs.choice()
     if saved and saved["provider"] in PROVIDERS:
@@ -381,7 +382,7 @@ def resolve() -> Config:
 def describe(config: Config) -> str:
     """Why a config is not usable, or an empty string when it is."""
     spec = PROVIDERS[config.provider]
-    if config.provider == "claude-code":
+    if config.provider == "claude":
         # Checked here because it is the one provider whose availability is a
         # property of the machine rather than of the configuration. Only the
         # binary, not the login: `claude auth status` costs 400ms and this
@@ -390,7 +391,7 @@ def describe(config: Config) -> str:
         import claude_code_llm
 
         if not claude_code_llm.binary_path():
-            return install_hint("claude-code")
+            return install_hint("claude")
     if not config.model:
         return (
             f"No model set for provider '{config.provider}'. "

@@ -24,9 +24,11 @@ export default function Models() {
             <p>
                 The dropdown at the bottom of the chat box lists what this machine can
                 actually reach, asked fresh each time it opens: the models Ollama has
-                pulled, the Claude Code CLI if it is signed in, and any provider whose
-                key is already in your environment. Pick one and it takes effect on the
-                next question — no restart, no <code>.env</code>.
+                pulled, Claude if the CLI is signed in, and any provider whose key is
+                already in your environment. Pick one and it takes effect on the next
+                question — no restart, no <code>.env</code>. Nothing in the list is
+                marked recommended, because which one suits your sheet is not something
+                this app is in a position to know.
             </p>
             <p>
                 The choice is written to <code>.edi-data/model.json</code> next to your
@@ -90,7 +92,7 @@ export default function Models() {
                             <td>none</td>
                         </tr>
                         <tr>
-                            <td><code>claude-code</code></td>
+                            <td><code>claude</code></td>
                             <td>the <code>claude</code> CLI</td>
                             <td><code>sonnet</code></td>
                             <td>your own login</td>
@@ -112,28 +114,29 @@ export default function Models() {
                 whole integration. A local server with no auth needs no key.
             </p>
 
-            <h3>Claude Code, if you already use it</h3>
+            <h3>Two ways to Claude</h3>
             <p>
-                <code>claude-code</code> is the odd one: not a Python package and not an
-                API key, but the CLI on your PATH, run as you, on the Claude subscription
-                you already pay for. If <code>claude auth status</code> says you are
-                signed in, it appears in the picker with no setup at all. EDI never reads
-                those credentials — it runs a binary that is already holding them.
+                <code>anthropic</code> and <code>claude</code> reach the same models and
+                differ only in how they authenticate. <code>anthropic</code> wants an API
+                key and bills per token. <code>claude</code> wants neither: it runs the
+                Claude Code CLI already on your PATH, as you, on the subscription you
+                already pay for. If <code>claude auth status</code> says you are signed
+                in, it appears in the picker with no setup at all — EDI never reads those
+                credentials, it runs a binary that is already holding them.
             </p>
             <div className="edi-note">
-                <strong>It is not the private option.</strong> The binary is local; the
-                spreadsheet is not. Your question and up to 200 result rows go to
-                Anthropic exactly as they would with an API key, which is why the picker
-                files it under <em>sends your data off this machine</em> rather than
-                next to Ollama. Choose it for capability, not for privacy.
+                <strong>Local binary, remote model.</strong> Your question and up to 200
+                result rows go to Anthropic exactly as they would with an API key, so
+                this is not one of the options that keeps the sheet on your machine. The
+                picker marks the ones that do, and does not mark this one.
             </div>
             <p>
-                Expect about <strong>3.6 seconds per model call</strong> once warm, and
-                EDI makes two per question. The first call after five idle minutes is
+                On timing: about <strong>3.6 seconds per model call</strong> once warm,
+                and EDI makes two per question. The first call after five idle minutes is
                 slower — nearer 25 seconds — because each call is a fresh process and
                 pays for the prompt cache again. EDI runs it with the agent tooling
                 disabled, which is what keeps the per-call prefix at ~4,400 tokens
-                instead of ~22,000; the reasoning is in{' '}
+                instead of ~22,000; the measurements are in{' '}
                 <code>backend/claude_code_llm.py</code>.
             </p>
 
@@ -156,15 +159,16 @@ EDI_LLM_MAX_TOKENS=8192`}</code></pre>
                 <li><code>GOOGLE_API_KEY</code> on its own — unchanged from before there
                     was a registry, so an existing deployment that sets only that keeps
                     resolving to Gemini;</li>
-                <li>whatever is running on this machine: Ollama first, then a
-                    self-hosted endpoint, then a signed-in Claude Code.</li>
+                <li>whatever on this machine answers first.</li>
             </ol>
             <p>
-                Step 4 is the one that matters on a clean checkout. Ollama comes first
-                there deliberately — it is the only option that costs nothing and sends
-                nothing, and starting someone&apos;s paid subscription without their
-                asking would be a poor default. <code>GET /api/health</code> reports which
-                step produced the answer, under <code>llm_config.source</code>.
+                Step 4 is the one that matters on a clean checkout, and &quot;first&quot;
+                there means the order the provider table declares them — not a ranking.
+                Something has to be tried first when three of them answer, and any rule
+                for choosing would be a guess about your hardware, your bill and your
+                data. It is a starting point; the picker is one click away.{' '}
+                <code>GET /api/health</code> reports which step produced the answer, under{' '}
+                <code>llm_config.source</code>.
             </p>
 
             <p>

@@ -2,10 +2,14 @@
 What models this machine can actually reach, right now.
 
 The picker is only worth having if it knows the answer without being told. So
-rather than listing the six providers and hoping, this asks: Ollama for the
+rather than listing the providers and hoping, this asks: Ollama for the
 models it has pulled, the Claude Code CLI whether it is signed in, and every
 hosted provider with a key present for its own model list. What comes back is
 what a person can click on.
+
+It reports; it does not advise. Which model is the right one depends on the
+sheet, the question, the hardware and whose bill it is, and this module knows
+none of that.
 
 Everything here is a read. Nothing in this module spends a model call, and
 nothing here can change what the app is configured to do -- that is
@@ -42,25 +46,26 @@ CACHE_SECONDS = 20
 
 LABELS = {
     "ollama": "Ollama",
-    "claude-code": "Claude Code",
+    # Two ways to the same models, so the labels name the difference: one
+    # authenticates with an API key, the other with the CLI login already on
+    # this machine.
+    "claude": "Claude",
+    "anthropic": "Anthropic API",
     "google": "Google",
     "openai": "OpenAI",
-    "anthropic": "Anthropic",
     "groq": "Groq",
     "openai-compatible": "OpenAI-compatible",
 }
 
-# Which provider to settle on when nobody has chosen, most preferred first.
+# The order providers are tried in when nobody has chosen yet, and the order
+# they are listed in.
 #
-# Ollama leads because it is the only one that costs nothing and sends
-# nothing. Claude Code sits below the self-hosted endpoints deliberately: it
-# is the most capable thing most people will have detected, but picking it
-# automatically would start spending someone's subscription on questions they
-# did not know were leaving the machine.
-DETECT_ORDER = (
-    "ollama", "openai-compatible", "claude-code",
-    "google", "openai", "anthropic", "groq",
-)
+# It is the order PROVIDERS declares them, not a ranking. Something has to go
+# first when three of them answer, and any rule for that would be this
+# module's opinion about somebody else's hardware, bill and data -- so the
+# rule is "the order they were written down", which at least does not pretend
+# to be advice. The picker is one click away regardless.
+TRY_ORDER = tuple(llm_providers.PROVIDERS)
 
 # Hosts that mean the model is running on this machine. Everything else is
 # somebody's server, however the request gets there.
@@ -107,9 +112,11 @@ def runs_on_this_machine(provider: str, base_url: Optional[str]) -> bool:
     opposite answers to the only question the front page makes a promise
     about.
 
-    Claude Code is the case worth being careful with: the binary is local,
-    the login is the user's own, and the rows still go to Anthropic. It is a
-    convenience, not a privacy story, and it is not counted as one here.
+    Claude is the case worth being careful with: the binary is local, the
+    login is the user's own, and the rows still go to Anthropic. So it
+    answers False here -- not as a mark against it, but because the front
+    page makes a specific promise about where the data goes and this is the
+    function that has to be right about it.
     """
     if provider not in ("ollama", "openai-compatible"):
         return False
@@ -209,8 +216,8 @@ def probe_claude_code() -> Dict[str, Any]:
         "models": list(claude_code_llm.MODEL_ALIASES),
         # Both halves of this are load-bearing. The credentials are the
         # user's and stay on their machine; the spreadsheet rows do not.
-        "detail": f"Signed in{f' on the {plan} plan' if plan else ''}, on your own "
-                  "subscription. Your question and result rows go to Anthropic.",
+        "detail": f"Signed in{f' on the {plan} plan' if plan else ''} through the "
+                  "Claude Code CLI. Your question and result rows go to Anthropic.",
     }
 
 
@@ -253,7 +260,7 @@ def _probe(provider: str) -> Dict[str, Any]:
         return entry
 
     try:
-        if provider == "claude-code":
+        if provider == "claude":
             entry.update(probe_claude_code())
         elif provider == "ollama":
             entry.update(probe_ollama(base_url))
@@ -305,13 +312,12 @@ def catalog(refresh: bool = False) -> List[Dict[str, Any]]:
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(names)) as pool:
         entries = list(pool.map(_probe, names))
 
-    # Runs-here first, then usable, then the rest -- the order is the
-    # recommendation, and DETECT_ORDER breaks ties so it matches what an
-    # unconfigured install would have picked for itself.
-    rank = {name: i for i, name in enumerate(DETECT_ORDER)}
-    entries.sort(key=lambda e: (
-        not e["local"], not e["reachable"], rank.get(e["id"], len(rank)),
-    ))
+    # Ones that can actually answer first, then declaration order. Sorting on
+    # reachability is a usability call rather than a preference -- a provider
+    # with no key has nothing to click -- and nothing below that reorders the
+    # working ones.
+    rank = {name: i for i, name in enumerate(TRY_ORDER)}
+    entries.sort(key=lambda e: (not e["reachable"], rank.get(e["id"], len(rank))))
     _cache["at"] = now
     _cache["value"] = entries
     return entries
@@ -324,9 +330,10 @@ def invalidate() -> None:
 
 
 # Names that suggest a model can write SQL, which is the one genuinely
-# demanding thing this app asks of one. A heuristic, and stated as such: it
-# picks a starting point for someone who has not chosen, and `check_model.py`
-# is what actually answers whether the pick was any good.
+# demanding thing this app asks of one. Only ever used to pick a starting
+# point for an install nobody has configured -- it never reorders the list
+# anyone sees, and `check_model.py` is what actually answers whether a model
+# is any good.
 _PROMISING = ("coder", "code", "qwen", "instruct", "llama", "mistral", "gemma", "phi")
 
 
@@ -347,12 +354,12 @@ def detect() -> Optional[Dict[str, str]]:
     Something that will work, for an install nobody has configured.
 
     This is what makes the app usable on a fresh clone: with no .env and no
-    saved choice, it finds the model already on the machine instead of
-    reporting that GOOGLE_API_KEY is missing. Local first, because that is
-    the promise on the front page.
+    saved choice, it finds a model that answers instead of reporting that
+    GOOGLE_API_KEY is missing. First one that works, in declaration order --
+    see TRY_ORDER for why that is not a ranking.
     """
     entries = {entry["id"]: entry for entry in catalog()}
-    for name in DETECT_ORDER:
+    for name in TRY_ORDER:
         entry = entries.get(name)
         if not entry or not entry["reachable"] or not entry["models"]:
             continue

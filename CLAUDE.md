@@ -20,7 +20,8 @@ writing anything that assumes a specific provider or model.
 - `llm_providers.py` — the provider table; adding a provider is adding a row
 - `settings.py` — resolves provider, model and store from the environment
 - `model_catalog.py` — probes what this machine can reach: Ollama's pulled
-  models, a signed-in Claude Code CLI, a keyed provider's own model list
+  models, a signed-in Claude Code CLI, a keyed provider's own model list. It
+  reports and does not rank; `TRY_ORDER` is declaration order, not preference
 - `model_prefs.py` — the model chosen in the app, and any keys typed into it,
   in `.edi-data/model.json`. Never returned over HTTP, and writable only when
   `control_allowed()` says this is not a public deployment
@@ -80,9 +81,10 @@ file and the model is looked for on `localhost:11434` (Ollama). See
 `sample.env` for the full surface. The ones that matter:
 
 - `EDI_LLM_PROVIDER` — `google` | `openai` | `anthropic` | `groq` | `ollama` |
-  `claude-code` | `openai-compatible`. Unset means resolve in order: a choice
-  saved from the picker, this variable, `GOOGLE_API_KEY` alone, then whatever
-  is detected on the machine
+  `claude` | `openai-compatible`. `anthropic` and `claude` are the same models
+  authenticated differently — API key versus the signed-in CLI. Unset means
+  resolve in order: a choice saved from the picker, this variable,
+  `GOOGLE_API_KEY` alone, then the first detected provider that answers
 - `EDI_ALLOW_MODEL_SWITCHING` — may the app's dropdown change the model and
   store keys. Defaults to on unless `EDI_LIMITS_ENABLED=1`
 - `EDI_LLM_MODEL`, `EDI_LLM_API_KEY`, `EDI_LLM_BASE_URL` — or the provider's
@@ -110,8 +112,12 @@ something is misconfigured.
 - **"Runs on this machine" is a claim about the endpoint, not the provider.**
   `model_catalog.runs_on_this_machine()` decides it from the base URL, so
   `openai-compatible` pointed at LM Studio counts and the same provider
-  pointed at OpenRouter does not. `claude-code` never counts: local binary,
-  remote model.
+  pointed at OpenRouter does not. `claude` never counts: local binary, remote
+  model.
+- **The picker reports; it does not advise.** No recommended option, no
+  ranking. Ordering is declaration order with unreachable providers last, and
+  that is a usability call rather than an opinion about somebody else's
+  hardware, bill or data.
 - **Keep provider imports lazy** in `llm_providers.py` so nobody installs an
   SDK they do not use.
 - **Stay on the 0.3.x line** of every `langchain-*` package. The 1.x releases

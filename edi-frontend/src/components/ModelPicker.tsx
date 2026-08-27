@@ -10,13 +10,19 @@
  * common case is that someone opens this and their own setup is already in
  * it, selected, working.
  *
+ * It lists; it does not rank. Providers appear in the order the backend
+ * declares them, with the ones that can actually answer first, and there is
+ * no recommended option and no default anybody has to undo. Which model suits
+ * a sheet depends on the sheet, the question, the hardware and whose bill it
+ * is, none of which a dropdown is in a position to know.
+ *
  * Two things it is careful about:
  *
- * - **"On this machine" means the rows stay here**, and it is computed from
- *   the endpoint rather than the provider's name. Claude Code is listed under
- *   the hosted models despite running through a local binary, because the
- *   spreadsheet still goes to Anthropic. The front page makes a promise about
- *   this and the picker is where it would quietly stop being true.
+ * - **"On this machine" is a fact, not a nudge.** It is computed from the
+ *   endpoint rather than the provider's name, so it is right about LM Studio
+ *   on localhost versus the same provider pointed at OpenRouter. Claude does
+ *   not carry it -- local binary, remote model -- because the front page
+ *   makes a specific promise about where the rows go.
  * - **A key typed in here goes to the machine running the backend and is
  *   never read back.** The component can ask whether a key exists; there is
  *   no endpoint that would return one. On a public deployment the whole
@@ -207,7 +213,7 @@ export default function ModelPicker({ disabled = false, onModelChange }: ModelPi
                     </p>
                 )}
 
-                {provider.models.length > 0 && provider.detail && !provider.local && (
+                {provider.models.length > 0 && provider.detail && (
                     <p className="px-2 pt-1 text-[10px] leading-snug text-white/35">
                         {provider.detail}
                     </p>
@@ -266,8 +272,6 @@ export default function ModelPicker({ disabled = false, onModelChange }: ModelPi
         .filter((provider) => !needle || provider.models.length > 0
             || provider.label.toLowerCase().includes(needle));
 
-    const local = matching.filter((p) => p.local);
-    const hosted = matching.filter((p) => !p.local);
     const activeIsLocal = catalog?.providers.some((p) => p.id === active?.provider && p.local);
 
     return (
@@ -339,24 +343,13 @@ export default function ModelPicker({ disabled = false, onModelChange }: ModelPi
                     <p className="px-3 py-4 text-[12px] text-white/40">Looking for models…</p>
                 )}
 
-                {catalog && local.length === 0 && hosted.length === 0 && (
+                {catalog && matching.length === 0 && (
                     <p className="px-3 py-4 text-[12px] text-white/40">
-                        {needle ? 'No model matches that.' : 'No models found on this machine.'}
+                        {needle ? 'No model matches that.' : 'No models found.'}
                     </p>
                 )}
 
-                {local.length > 0 && local.map(renderProvider)}
-
-                {hosted.length > 0 && (
-                    <>
-                        <div className="border-t border-white/10 px-3 pb-1 pt-2">
-                            <span className="text-[10px] uppercase tracking-wide text-white/35">
-                                Sends your data off this machine
-                            </span>
-                        </div>
-                        {hosted.map(renderProvider)}
-                    </>
-                )}
+                {matching.map(renderProvider)}
             </DropdownMenuContent>
         </DropdownMenu>
     );

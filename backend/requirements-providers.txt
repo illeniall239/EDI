@@ -29,9 +29,10 @@
 #   Runs against a local Ollama daemon. No API key, no account, no bill.
 # langchain-ollama==0.3.3
 
-# EDI_LLM_PROVIDER=claude-code
+# EDI_LLM_PROVIDER=claude
 #   Nothing to install here: it runs the Claude Code CLI already on your PATH,
 #   on your own Claude subscription. `npm install -g @anthropic-ai/claude-code`
 #   and `claude auth login` are the whole setup, and EDI never reads the
-#   credentials -- it runs a binary that is already signed in. Note that the
-#   sheet still goes to Anthropic, unlike the Ollama path.
+#   credentials -- it runs a binary that is already signed in. Same models as
+#   the `anthropic` provider above, authenticated differently; either way the
+#   sheet goes to Anthropic, unlike the Ollama path.
