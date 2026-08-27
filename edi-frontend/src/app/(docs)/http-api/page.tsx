@@ -134,8 +134,10 @@ export default function Api() {
             <h2>Errors</h2>
             <p>
                 Refusals come back as JSON with a <code>detail</code> string written for the
-                person who will read it. <code>413</code> means the sheet is more data
-                than the grid can hold, which <code>EDI_MAX_DATA_MB</code> sets;{' '}
+                person who will read it. <code>413</code> means the parsed sheet is more
+                data than the grid can hold, which <code>EDI_MAX_DATA_MB</code> sets and{' '}
+                <Link href="/self-hosting">Self-hosting</Link> explains -- the upload itself
+                is not capped;{' '}
                 <code>503</code> means no model is configured; <code>502</code> means the
                 model was reached but returned something unusable; <code>403</code> means the
                 model picker was switched off with{' '}

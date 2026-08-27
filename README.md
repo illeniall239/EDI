@@ -238,12 +238,20 @@ offer, and it is the one this project expects you to use.
 
 - **Sheets are capped at 11 MB of data**, and a bigger one is refused with a
   message saying what would fit. That is about 100,000 rows six columns wide,
-  50,000 at twelve columns, 13,000 at forty. The ceiling is the browser,
-  not the server: the grid holds an object per cell and runs out of memory,
-  while the backend parsed and stored 200,000 rows in three seconds. It is a
-  cliff rather than a slope, and past it you get a spinner that never stops,
-  so it says no instead. `EDI_MAX_DATA_MB` moves the cap;
-  `EDI_MAX_DATA_MB=0` removes it.
+  50,000 at twelve columns, 13,000 at forty.
+
+  *Of data, not of file.* Nothing caps the upload. The same 100,000-row sheet
+  is 3.18 MB as a CSV, 2.57 MB as an `.xlsx` and 10.05 MB as rows in the
+  browser, and only the last of those is measured. An `.xlsx` is a zip, so a
+  small file can be a large sheet; a workbook of twenty tabs can be the
+  opposite, since only the first tab is read.
+
+  The ceiling is the browser, not the server: the grid holds a JavaScript
+  object per cell and runs out of memory, while the backend parsed and stored
+  200,000 rows in three seconds. It is a cliff rather than a slope, and past
+  it you get a spinner that never stops, so it says no instead.
+  `EDI_MAX_DATA_MB` moves the cap and `EDI_MAX_DATA_MB=0` removes it. The
+  Self-hosting page in the docs has the fifteen measurements it came from.
 - The backend is stateless. Every request that touches the data re-reads it
   from the store and rebuilds an in-memory SQLite database, with a per-process
   cache keyed on a hash of the rows so a warm process skips the rebuild.
