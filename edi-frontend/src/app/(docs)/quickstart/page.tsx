@@ -100,13 +100,9 @@ npm run dev`}</code></pre>
                 their instances share one, so the app does not run there.
             </p>
             <p>
-                <Link href="/self-hosting">Self-hosting</Link> goes through both,
-                including the Vercel configuration the demo runs on.
-            </p>
-
-            <p>
-                <Link href="/self-hosting">Self-hosting</Link> covers storage, the
-                usage limits, and what to change for a deployment that is not a demo.
+                <Link href="/self-hosting">Self-hosting</Link> goes through both: where
+                workspaces live, what a public URL needs in front of it, and the Vercel
+                configuration this documentation site is served by.
             </p>
         </>
     );

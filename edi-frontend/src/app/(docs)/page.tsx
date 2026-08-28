@@ -61,9 +61,11 @@ export default function DocsHome() {
                 what that covers today, and what it does not.
             </p>
             <p>
-                Nothing is written to disk while it runs, and charts are returned as data
-                rather than images, which is what lets the whole thing work on serverless
-                functions.
+                Charts come back as data rather than images: the backend sends a spec and
+                the browser draws it, so no file is written and nothing has to be served
+                back. What does reach the disk is your workspaces, in one local SQLite
+                file, which is why this wants a host with real storage rather than a
+                serverless function.
             </p>
 
             <h2>Local sheet, local model</h2>
@@ -90,11 +92,13 @@ export default function DocsHome() {
             </p>
             <ul>
                 <li>the question you typed, and the last few messages of the conversation;</li>
-                <li>your column names, plus the distinct values of small text columns
-                    when it draws a chart, so it does not invent categories;</li>
+                <li>your column names on every question;</li>
+                <li>when it draws a chart, the values inside your text columns: all of
+                    them for a column with twelve or fewer, three examples for anything
+                    wider. That is what stops it inventing categories that are not
+                    there;</li>
                 <li>up to 200 rows of that query&apos;s results, with totals computed
-                    locally over all of them;</li>
-                <li>on the pandas path, the first five rows of the sheet.</li>
+                    locally over all of them.</li>
             </ul>
             <p>
                 None of that is unusual for a tool like this, and all of it is avoidable by

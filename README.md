@@ -41,11 +41,11 @@ a default you have to undo.
 
 If you do point it at a hosted model, here is what travels per question, which
 is more than just the question: the text you typed and the last few messages of
-the conversation; your column names, plus the distinct values of small text
-columns when it draws a chart; up to 200 rows of that query's results; and, on
-the pandas path, the first five rows of the sheet. All of it avoidable by
-staying local -- written down because "your data stays private" is a claim
-worth being precise about in both directions.
+the conversation; your column names; when it draws a chart, the values inside
+your text columns, all of them for a column with twelve or fewer and three
+examples for anything wider; and up to 200 rows of that query's results. All of
+it avoidable by staying local -- written down because "your data stays private"
+is a claim worth being precise about in both directions.
 
 ## Nothing to configure
 
@@ -95,14 +95,15 @@ model. You can keep several workbooks, and the browser holds the list of them
 would hand every visitor everyone else's sheets. Clearing site data or opening
 a different browser gets you a fresh, empty sheet.
 
-The browser never talks to the database. Every read and write goes through the
-backend using the service-role key, which lets row-level security stay closed
-against the public anon key.
+The browser never talks to the store. Every read and write goes through the
+backend, so the SQLite file stays on the machine running it and there is no
+second set of credentials for the browser to hold.
 
 Charts are returned as data, not images. The backend asks the model for
 read-only SQL, runs it, and sends back a spec (chart type, axis key, series,
-rows) that the client renders with Recharts. Nothing is written to disk, which
-is what lets the whole thing run on serverless functions.
+rows) that the client renders with Recharts, so no image file is written or
+served. Workspaces are written, though: one local SQLite file, which is why
+this wants a host with a real disk rather than a serverless function.
 
 ## Running it
 
@@ -183,7 +184,8 @@ cd edi-frontend && npm run build && npm start      # BACKEND_ORIGIN unset if pro
 
 ### Vercel, as one worked example
 
-`vercel.json` is in the repository because it is what the demo runs on. It is
+`vercel.json` is in the repository because it is what this project's
+documentation site is served by. It is
 read only by Vercel and ignored everywhere else, so it costs nothing if you
 deploy elsewhere, and it is a reasonable thing to copy if you want the same
 shape: both halves as services of one project, `/api/*` to Python, everything

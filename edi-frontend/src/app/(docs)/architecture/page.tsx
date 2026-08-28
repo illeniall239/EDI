@@ -41,9 +41,10 @@ export default function Architecture() {
             </p>
 
             <p>
-                The browser never talks to the database. Every read and write goes through
-                the backend, which is what lets row-level security stay closed against the
-                public anon key.
+                The browser never talks to the store. Every read and write goes through
+                the backend, so the SQLite file stays on the machine running it and is
+                reachable only through the endpoints above. There is no second set of
+                credentials, and nothing for the browser to hold.
             </p>
 
             <h2>A question, end to end</h2>

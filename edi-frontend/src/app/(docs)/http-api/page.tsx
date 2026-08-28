@@ -17,6 +17,17 @@ const CORE: Row[] = [
 const MODEL: Row[] = [
     { method: 'POST', path: '/api/classify-command', note: 'Classify a spreadsheet command. Returns only a validated classification object.', metered: true },
     { method: 'POST', path: '/api/orchestrate', note: 'Decompose a compound request into steps.', metered: true },
+    { method: 'POST', path: '/api/formula', note: 'Write a spreadsheet formula from a description. Returns the formula; nothing is applied to the sheet.', metered: true },
+];
+
+// The picker's own endpoints. None of them returns a key: /api/models reports
+// whether one is present and where it came from, and that is all.
+const MODELS: Row[] = [
+    { method: 'GET', path: '/api/models', note: 'What this machine can reach: pulled Ollama models, a signed-in Claude CLI, any provider whose key is already set. Pass refresh=true to probe again rather than reuse the last answer.' },
+    { method: 'POST', path: '/api/models/select', note: 'Choose the provider and model. Saved next to the workspaces, and it outranks EDI_LLM_PROVIDER.' },
+    { method: 'POST', path: '/api/models/key', note: 'Store a provider key. It reaches the backend once, going in, and is never returned.' },
+    { method: 'DELETE', path: '/api/models/key/{provider}', note: 'Forget a stored key.' },
+    { method: 'POST', path: '/api/models/reset', note: 'Drop the saved choice and fall back to the environment.' },
 ];
 
 const WORKSPACE: Row[] = [
@@ -103,6 +114,14 @@ export default function Api() {
 
             <h2>Model-backed</h2>
             <Table rows={MODEL} />
+
+            <h2>The model picker</h2>
+            <p>
+                Writable only where <code>control_allowed()</code> says this is not a
+                public deployment, which is what{' '}
+                <code>EDI_ALLOW_MODEL_SWITCHING=0</code> turns off.
+            </p>
+            <Table rows={MODELS} />
 
             <h2>Workspaces and chats</h2>
             <Table rows={WORKSPACE} />
