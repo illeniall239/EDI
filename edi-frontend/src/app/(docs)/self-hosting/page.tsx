@@ -20,29 +20,25 @@ export default function SelfHosting() {
 
             <h2>Storage</h2>
             <p>
-                A SQLite file, holding workspaces, chats and the usage counters. It
+                A SQLite file, holding workspaces and chats. It
                 writes to <code>EDI_DATA_DIR</code>, <code>./.edi-data/</code> by
                 default. There is nothing to provision, no migration to run and no
                 second set of credentials to keep out of the browser bundle.
             </p>
 
             <div className="edi-note">
-                <strong>Which means the host needs a disk.</strong> Vercel Functions, as
-                one example, have a read-only filesystem apart from <code>/tmp</code>,
-                which does not survive between invocations, and two consecutive requests
-                are not guaranteed to reach the same instance. Whichever one handled your
+                <strong>Which means the host needs a disk.</strong> Serverless function
+                platforms generally give you a read-only filesystem apart from{' '}
+                <code>/tmp</code>, which does not survive between invocations, and two
+                consecutive requests are not guaranteed to reach the same instance. Whichever one handled your
                 upload is rarely the one handling your next question, so there is nowhere
                 for a workspace to live. A VPS, a container with a volume, or any host
                 that gives you persistent storage is fine.
             </div>
 
             <p>
-                There used to be a Postgres backend beside this one, through Supabase,
-                for exactly that case. It went with the hosted app it existed to serve.
-                What it cost was a schema to provision, a service-role key to keep
-                server-side, a row-level-security posture to explain, and a setup path
-                that was never verified end to end. The seam it left is still in{' '}
-                <code>backend/stores/</code>, so a second store is one module and one
+                If a file is the wrong shape for where you are putting this, the seam is
+                in <code>backend/stores/</code>: a second store is one module and one
                 import rather than a hunt through the app.
             </p>
 
@@ -83,21 +79,6 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
                 endpoints that spend model calls.
             </p>
 
-            <h3>Vercel, as one worked example</h3>
-            <p>
-                <code>vercel.json</code> is in the repository because it is what this
-                site runs on. Only Vercel reads it, so it costs nothing if you deploy elsewhere,
-                and it is worth copying the shape: both halves as services of one project,{' '}
-                <code>/api/*</code> to Python, everything else to Next, one domain, no CORS.
-            </p>
-
-            <div className="edi-note">
-                <strong>Root Directory must be the repository root.</strong> Vercel only reads{' '}
-                <code>vercel.json</code> from the directory it is given. Pointed at{' '}
-                <code>edi-frontend/</code> it ignores the file, serves the frontend alone, and
-                every API call hits Next&apos;s 404 page.
-            </div>
-
             <h3>Deploying the documentation without the app</h3>
             <p>
                 This site is that deployment. The app is at <code>/app</code>, and it is
@@ -110,8 +91,9 @@ cd edi-frontend && npm run build && npm start`}</code></pre>
                 Read by <code>edi-frontend/next.config.ts</code>, not the backend, so it
                 belongs in the frontend&apos;s environment. Unset, which is the default and
                 what you get by cloning, <code>/app</code> serves the whole application. It
-                is not inferred from being on Vercel: deploying the real app there is a
-                supported setup, and guessing would break it.
+                is not inferred from anything about the host, because a deployment that
+                looks from the outside like somewhere you would put documentation may be
+                exactly where you want the whole app.
             </p>
 
             <h2>Putting it on a public URL</h2>

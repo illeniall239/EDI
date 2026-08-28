@@ -150,8 +150,8 @@ Open http://localhost:3000.
 the backend so development is same-origin too. It is deliberately not a
 `NEXT_PUBLIC_` variable: those are inlined into the browser bundle at build
 time, so a stale one keeps redirecting a deployed site to a host nobody
-remembers configuring. In production the two halves are one Vercel project on
-one domain, so `BACKEND_ORIGIN` is left unset there.
+remembers configuring. Behind a proxy that already puts both halves on one
+domain, leave `BACKEND_ORIGIN` unset.
 
 ## Deploying
 
@@ -182,28 +182,14 @@ uvicorn main:app --host 127.0.0.1 --port 8000 --app-dir backend
 cd edi-frontend && npm run build && npm start      # BACKEND_ORIGIN unset if proxied
 ```
 
-### Vercel, as one worked example
+### Serverless
 
-`vercel.json` is in the repository because it is what this project's
-documentation site is served by. It is
-read only by Vercel and ignored everywhere else, so it costs nothing if you
-deploy elsewhere, and it is a reasonable thing to copy if you want the same
-shape: both halves as services of one project, `/api/*` to Python, everything
-else to Next, one domain, no CORS.
-
-Two things about that platform specifically, both of which fail in ways that
-look like something else:
-
-- **Root Directory must be the repository root**, not `edi-frontend/`. Vercel
-  only reads `vercel.json` from the directory it is given. Pointed at the
-  subdirectory it ignores the file, serves the frontend alone, and every
-  `/api/*` call lands on Next's 404 page.
-- **The app itself will not run there**, only the documentation. The
-  filesystem is read-only apart from `/tmp`, that does not survive between
-  invocations, and two consecutive requests are not guaranteed to reach the
-  same instance, so there is nowhere to keep a workspace. This is a property
-  of serverless, not of EDI. Set `EDI_DOCS_ONLY=1` and host the app somewhere
-  with a disk.
+The app will not run on it. The filesystem is read-only apart from `/tmp`,
+that does not survive between invocations, and two consecutive requests are
+not guaranteed to reach the same instance, so there is nowhere to keep a
+workspace. That is a property of serverless, not of EDI. The documentation
+alone is fine there: set `EDI_DOCS_ONLY=1`, and host the app somewhere with a
+disk.
 
 ## Simple and Complex
 

@@ -101,8 +101,8 @@ npm run dev`}</code></pre>
             </p>
             <p>
                 <Link href="/self-hosting">Self-hosting</Link> goes through both: where
-                workspaces live, what a public URL needs in front of it, and the Vercel
-                configuration this documentation site is served by.
+                workspaces live, what a public URL needs in front of it, and how big a
+                sheet the grid will open.
             </p>
         </>
     );
