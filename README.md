@@ -11,7 +11,7 @@ There is no sign-up because there is nothing to sign up to. Clone it, point it
 at a model, and the whole thing runs on localhost.
 
 <p align="center">
-  <img src="assets/edi-demo.gif" alt="Asking a spreadsheet which region earned most, following that up, adding a formula column, charting revenue by product and sorting the rows: all from the chat, answered by a model on the same machine">
+  <img src="assets/edi-demo.gif" alt="Asking a spreadsheet which region earned most, following that up, adding a formula column, charting revenue by product, sorting the rows and pivoting revenue by region and product onto a new sheet: all from the chat, answered by a model on the same machine">
 </p>
 
 <p align="center">

@@ -38,15 +38,15 @@ export default function DocsHome() {
                 controls
                 preload="metadata"
                 poster="/edi-demo-poster.jpg"
-                aria-label="Asking a spreadsheet which region earned most, following that up, adding a formula column, charting revenue by product and sorting the rows -- all from the chat, answered by a model on the same machine"
+                aria-label="Asking a spreadsheet which region earned most, following that up, adding a formula column, charting revenue by product, sorting the rows and pivoting revenue by region and product onto a new sheet -- all from the chat, answered by a model on the same machine"
             >
                 {/* WebM first, which is the usual order but was not always
-                    the right one here. On the previous recording VP9 came
+                    the right one here. On an earlier recording VP9 came
                     out larger than H.264 however it was tuned, so the mp4
-                    led. On this one -- more static dialog, fewer canvas
-                    frames -- VP9 wins again: 5.63MB against 6.99MB at the
-                    settings in the build script. Measured per recording,
-                    because the answer has now changed once. */}
+                    led. It has won on every take since: 5.75MB against
+                    7.32MB on this one, at the settings in the build script.
+                    Measured per recording, because the answer changed once
+                    and could change again. */}
                 <source src="/edi-demo.webm" type="video/webm" />
                 <source src="/edi-demo.mp4" type="video/mp4" />
             </video>
