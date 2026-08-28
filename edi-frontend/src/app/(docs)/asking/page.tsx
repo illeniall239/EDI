@@ -313,6 +313,30 @@ give me a formula for the average units per order`}</code></pre>
                 message says so.
             </p>
 
+            <h3>Changing one you already have</h3>
+            <p>
+                A follow-up names only what moved, and the rest of the last pivot carries
+                over. <code>change it to average</code> keeps the fields and swaps the
+                aggregate. <code>same pivot but by month</code> keeps the aggregate and
+                regroups. <code>add product as a column to that pivot</code> keeps
+                everything and widens it. Each of these rewrites the sheet the pivot is
+                already on rather than making another, because one pivot should be one
+                sheet: the whole sheet is cleared first, so a narrower result leaves no
+                stale Total column behind.
+            </p>
+            <p>
+                <code>another pivot right below this one but by rep and product</code>{' '}
+                keeps the first and puts the second underneath it, one blank row apart, on
+                the same sheet. Where it goes is measured at the time rather than
+                remembered, so inserting or deleting rows by hand in between does not
+                misplace it.
+            </p>
+            <p>
+                A follow-up that names no fields at all gets asked which ones, and told
+                what the last pivot was, rather than being guessed at. A follow-up before
+                there is any pivot says so.
+            </p>
+
             <h2>What is not there</h2>
             <p>
                 Images and drawings. The classifier recognises the request and there is
