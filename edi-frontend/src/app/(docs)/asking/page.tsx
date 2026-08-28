@@ -290,12 +290,35 @@ give me a formula for the average units per order`}</code></pre>
                 remove either. Number-range and date validation are there too.
             </p>
 
+            <h2>Pivots</h2>
+            <p>
+                <code>pivot revenue by region and product</code> puts a cross-tab on a new
+                sheet: the first column down the side, the second across the top, totals on
+                both edges. <code>break down total units by rep</code> and{' '}
+                <code>cross-tab average revenue by month and region</code> work the same
+                way. Name an aggregate and it is used: sum, mean, median, min, max,
+                count, std, var, first or last. Name none and it sums. Name no number at
+                all and it aggregates every numeric column that is not already a heading.
+            </p>
+            <p>
+                The numbers are computed in the backend, where the sheet is already a
+                pandas frame, and written back as cells. Univer&rsquo;s own pivot tables
+                are part of its commercial tier, so this is the pivot an Apache-2.0 build
+                can have: a real sheet you can sort, chart and export, rather than a live
+                object you drag fields onto. Re-slicing means asking again.
+            </p>
+            <p>
+                A pivot wider than 200 columns is refused rather than drawn. That is what
+                pivoting across a column with a distinct value per row produces, and the
+                message says so.
+            </p>
+
             <h2>What is not there</h2>
             <p>
-                Images and drawings. The classifier does not recognise a request for one,
-                and there is nothing behind it if it did: inserting a picture goes through
-                Univer&rsquo;s drawing system rather than a cell, which this has not been
-                wired to.
+                Images and drawings. The classifier recognises the request and there is
+                nothing behind it: inserting a picture goes through Univer&rsquo;s drawing
+                system rather than a cell, which this has not been wired to. Asking gets
+                you a failure, not a picture.
             </p>
             <p>
                 For that, and anything else the chat does not cover, the sheet is a real

@@ -35,6 +35,7 @@ const SHEET: Row[] = [
     { method: 'POST', path: '/api/workspace/{id}/analyze-insights', note: 'Profile the data. Mostly computed; asks the model only for the written summary.', metered: true },
     { method: 'POST', path: '/api/workspace/{id}/smart-format', note: 'Detect column types and derive formats. Pure Python, no model call.' },
     { method: 'POST', path: '/api/workspace/{id}/quick-data-entry', note: 'Generate rows to fill a sheet.', metered: true },
+    { method: 'POST', path: '/api/workspace/{id}/pivot', note: 'Cross-tabulate the sheet. Returns the whole table as a grid, header row first. Pure pandas, no model call.' },
     { method: 'POST', path: '/api/cancel-operation', note: 'Cancel an in-flight operation.' },
     { method: 'POST', path: '/api/reset-state', note: 'Clear server-side state.' },
 ];
