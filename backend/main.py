@@ -1039,7 +1039,7 @@ _CLASSIFIER_INTENTS = {
     "column_operation", "row_operation", "cell_operation", "range_operation",
     "freeze_operation", "table_operation", "hyperlink_operation",
     "data_validation", "comment_operation", "image_operation",
-    "named_range_operation", "intelligent_analysis", "smart_format",
+    "named_range_operation", "pivot_operation", "intelligent_analysis", "smart_format",
     "data_entry", "formula", "general_query", "compound_operation", "unknown",
 }
 _CLASSIFIER_TARGETS = {
@@ -1729,6 +1729,164 @@ async def quick_data_entry(
             status_code=500,
             detail=f"Error processing data entry: {str(e)}"
         )
+
+class PivotRequest(BaseModel):
+    rows: List[str]                       # columns whose values become the row headers
+    columns: List[str] = []               # columns whose values become the column headers
+    values: List[str] = []                # numeric columns to aggregate
+    aggfunc: str = "sum"
+    workspace_id: str
+
+
+# What an aggregate may be. pivot_table happily takes a callable, so the name
+# has to be checked against a list rather than passed through: a string that
+# reaches pandas unvalidated is a string that decides what code runs.
+_PIVOT_AGGS = {"sum", "mean", "median", "min", "max", "count", "std", "var", "first", "last"}
+
+# A cross-tab that does not fit on a screen is not a summary of anything, and
+# a high-cardinality column pivoted by mistake -- an id, a timestamp -- makes
+# one with a column per row of the original. Refuse rather than draw it.
+_PIVOT_MAX_COLS = 200
+_PIVOT_MAX_ROWS = 10000
+
+
+def _resolve_column(df: pd.DataFrame, name: str) -> str:
+    """
+    Match a column the way the rest of the app does: exact first, then
+    case-insensitively, then a unique substring. Ambiguity is an error, not a
+    coin flip -- see the same rule in the frontend's column naming.
+    """
+    if name in df.columns:
+        return name
+    lowered = {str(c).lower(): c for c in df.columns}
+    if name.lower() in lowered:
+        return lowered[name.lower()]
+    hits = [c for c in df.columns if name.lower() in str(c).lower()]
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{name}' matches more than one column: {', '.join(map(str, hits))}",
+        )
+    raise HTTPException(
+        status_code=400,
+        detail=f"There is no column called '{name}'. This sheet has: {', '.join(map(str, df.columns))}",
+    )
+
+
+@app.post("/api/workspace/{workspace_id}/pivot")
+async def pivot(workspace_id: str, request: PivotRequest):
+    """
+    Cross-tabulate the sheet and return it as a grid.
+
+    The rows come back as a plain 2D array, header row included, because the
+    caller writes them straight into a new sheet. Univer's own pivot tables
+    are a commercial add-on, so this is the pivot the Apache-2.0 build can
+    have: computed here, rendered as cells. Re-slicing means asking again,
+    which is this app's interaction model anyway.
+    """
+    try:
+        hydrate(workspace_id)
+        df = data_handler.get_df()
+
+        if df is None or df.empty:
+            raise HTTPException(status_code=404, detail="No data found in workspace.")
+
+        agg = (request.aggfunc or "sum").strip().lower()
+        if agg == "average":
+            agg = "mean"
+        if agg not in _PIVOT_AGGS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{request.aggfunc}' is not an aggregate this understands. "
+                       f"Try one of: {', '.join(sorted(_PIVOT_AGGS))}.",
+            )
+
+        index = [_resolve_column(df, c) for c in request.rows]
+        cols = [_resolve_column(df, c) for c in request.columns]
+        vals = [_resolve_column(df, c) for c in request.values]
+
+        if not index:
+            raise HTTPException(status_code=400, detail="A pivot needs at least one column to group the rows by.")
+
+        # With no value column named, aggregate every numeric column that is
+        # not already being grouped by -- which is what somebody who said
+        # "pivot revenue by region" and then only named the region meant.
+        if not vals:
+            grouping = set(index) | set(cols)
+            vals = [c for c in df.select_dtypes(include="number").columns if c not in grouping]
+            if not vals:
+                raise HTTPException(
+                    status_code=400,
+                    detail="There is nothing numeric left to aggregate once those columns are used as headers.",
+                )
+
+        table = pd.pivot_table(
+            df, index=index, columns=cols or None, values=vals,
+            aggfunc=agg, margins=True, margins_name="Total",
+        )
+
+        if table.shape[1] + len(index) > _PIVOT_MAX_COLS:
+            raise HTTPException(
+                status_code=413,
+                detail=f"That pivot comes to {table.shape[1] + len(index)} columns, and this draws up to "
+                       f"{_PIVOT_MAX_COLS}. Pivoting on a column with a distinct value per row does this; "
+                       f"pick one with fewer.",
+            )
+        if len(table) > _PIVOT_MAX_ROWS:
+            raise HTTPException(
+                status_code=413,
+                detail=f"That pivot comes to {len(table):,} rows, and this draws up to {_PIVOT_MAX_ROWS:,}.",
+            )
+
+        # Flatten both axes into a header row and body rows. A MultiIndex on
+        # either axis is joined with a space rather than kept as tiers,
+        # because the destination is a flat grid of cells.
+        # With one value column pandas still tiers every heading under its
+        # name, so "revenue Widget" where "Widget" is the whole heading.
+        drop = vals[0] if len(vals) == 1 else None
+
+        def flatten(label) -> str:
+            if isinstance(label, tuple):
+                parts = [str(p) for p in label if str(p) != ""]
+                if drop is not None and len(parts) > 1 and parts[0] == str(drop):
+                    parts = parts[1:]
+                return " ".join(parts)
+            return str(label)
+
+        header = [flatten(c) for c in index] + [flatten(c) for c in table.columns]
+        body = []
+        for label, row in zip(table.index, table.to_numpy()):
+            left = list(label) if isinstance(label, tuple) else [label]
+            cells = []
+            for v in row:
+                if pd.isna(v):
+                    cells.append(None)
+                    continue
+                v = v.item() if hasattr(v, "item") else v
+                # A mean lands on 573.5294117647059, and the sheet has no number
+                # format to hide that -- addSheet writes bare values. Four places
+                # is past anything a summary is read to, and keeps sums exact.
+                cells.append(round(v, 4) if isinstance(v, float) else v)
+            
+            body.append([str(x) for x in left] + cells)
+
+        return {
+            "success": True,
+            "grid": [header] + body,
+            "rows": index,
+            "columns": cols,
+            "values": vals,
+            "aggfunc": agg,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Pivot error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Could not build that pivot: {str(e)}")
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))

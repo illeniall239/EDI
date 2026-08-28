@@ -4,7 +4,7 @@ import React from 'react';
 import { Plus, RefreshCw, PanelLeftClose, PanelLeftOpen, Upload } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, generateFormula, LimitError } from '@/utils/api';
+import { sendQuery, cancelOperation, resetState, createNewChat, loadChats, saveChatMessages, loadChatMessages, uploadFile, analyzeWorkspaceInsights, smartFormatWorkspace, quickDataEntryWorkspace, generateFormula, pivotWorkspace, LimitError } from '@/utils/api';
 import { commandService } from '@/services/commandService';
 import { llmCommandClassifier, CommandClassification } from '@/services/llmCommandClassifier';
 // NEW: Universal Query Router for intelligent routing
@@ -737,6 +737,85 @@ export default function ChatSidebar({
     };
 
     // Comment/note handler
+    /**
+     * Cross-tabulate the sheet into a new one.
+     *
+     * The numbers are computed in the backend, where pandas already holds the
+     * dataframe, and come back as a grid. Univer's own pivot tables are a
+     * commercial add-on; this writes cells instead, so re-slicing means asking
+     * again rather than dragging a field. That matches how the rest of the
+     * chat works.
+     */
+    const handlePivotOperation = async (
+        classification: CommandClassification
+    ): Promise<boolean> => {
+
+        const workspaceId = currentWorkspace?.id;
+
+        const say = (content: string) => {
+            setMessages(prev => {
+                const next = [...prev.filter(m => !m.isAnalyzing), {
+                    role: 'assistant' as const,
+                    content,
+                    isTyping: true
+                }];
+                saveChatMessagesToActiveChat(next);
+                return next;
+            });
+            setIsProcessing(false);
+        };
+
+        try {
+            if (!univerAdapter || !univerAdapter.isReady()) {
+                throw new Error('Univer is not available');
+            }
+            if (!workspaceId) {
+                say('❌ Save this sheet to a workspace before pivoting it.');
+                return true;
+            }
+
+            const { parameters } = classification;
+            const asList = (v: unknown): string[] =>
+                Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+                    : typeof v === 'string' && v.trim() !== '' ? [v.trim()]
+                    : [];
+
+            const rows = asList(parameters?.pivot_rows);
+            const columns = asList(parameters?.pivot_columns);
+            const values = asList(parameters?.pivot_values);
+            const aggfunc = typeof parameters?.aggfunc === 'string' ? parameters.aggfunc : 'sum';
+
+            if (rows.length === 0) {
+                say('❌ Say which column to group the rows by, e.g. "pivot revenue by region and product".');
+                return true;
+            }
+
+            const result = await pivotWorkspace(workspaceId, { rows, columns, values, aggfunc });
+
+            // Name the sheet after what was asked for, so several pivots of the
+            // same sheet do not all land on "Pivot".
+            const across = result.columns.length ? ` x ${result.columns.join(', ')}` : '';
+            const name = `Pivot: ${result.values.join(', ')} by ${result.rows.join(', ')}${across}`.slice(0, 31);
+
+            const written = univerAdapter.addSheet(name, result.grid as unknown[][]);
+            if (!written) {
+                say('❌ Built the pivot but could not add a sheet for it.');
+                return true;
+            }
+
+            const bodyRows = Math.max(result.grid.length - 1, 0);
+            say(`✅ Pivoted ${result.aggfunc} of ${result.values.join(', ')} by ${result.rows.join(', ')}`
+                + `${across}, on a new sheet: ${bodyRows} rows.`);
+            return true;
+
+        } catch (error) {
+            // The backend's refusals say what to do about them, so they are
+            // shown as written rather than replaced with a generic failure.
+            say(`❌ ${error instanceof Error ? error.message : 'Could not build that pivot'}`);
+            return true;
+        }
+    };
+
     const handleCommentOperation = async (
         classification: CommandClassification
     ): Promise<boolean> => {
@@ -2240,6 +2319,12 @@ export default function ChatSidebar({
 
             // data_modification removed - now handled by handleSubmit for proper dataUpdate dispatch
 
+            case 'pivot_operation':
+                if (await handlePivotOperation(classification)) {
+                    return;
+                }
+                break;
+
             case 'named_range_operation':
                 const namedRangeSuccess = await handleNamedRangeOperation(classification);
                 if (namedRangeSuccess) {
@@ -3525,7 +3610,7 @@ export default function ChatSidebar({
             // into that whitelist because these run before the router, not after.
             const newFeatureIntents: Array<CommandClassification['intent']> = [
                 'hyperlink_operation', 'data_validation', 'comment_operation',
-                'named_range_operation'
+                'named_range_operation', 'pivot_operation'
             ];
             // image_operation is deliberately absent: UniverAdapter.insertImage
             // is a stub that logs and returns false, so routing it here would

@@ -573,3 +573,43 @@ export async function quickDataEntryWorkspace(
         throw error;
     }
 }
+export interface PivotResult {
+    success: boolean;
+    grid: (string | number | null)[][];
+    rows: string[];
+    columns: string[];
+    values: string[];
+    aggfunc: string;
+}
+
+/**
+ * Cross-tabulate the workspace's sheet.
+ *
+ * Returns the whole table as a grid, header row included, for writing into a
+ * new sheet. A refusal (an unknown column, an aggregate that is not one, a
+ * pivot too wide to draw) comes back as the message the backend wrote, which
+ * says what to do about it -- so it is shown rather than replaced.
+ */
+export async function pivotWorkspace(
+    workspaceId: string,
+    spec: { rows: string[]; columns?: string[]; values?: string[]; aggfunc?: string }
+): Promise<PivotResult> {
+    const response = await fetch(`${API_BASE_URL}/api/workspace/${workspaceId}/pivot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            rows: spec.rows,
+            columns: spec.columns ?? [],
+            values: spec.values ?? [],
+            aggfunc: spec.aggfunc ?? 'sum',
+            workspace_id: workspaceId,
+        }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Could not build that pivot');
+    }
+
+    return response.json();
+}
