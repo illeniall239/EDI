@@ -8,7 +8,7 @@
 import { API_ENDPOINTS } from '@/config';
 
 export interface CommandClassification {
-  intent: 'conditional_format' | 'data_modification' | 'find_replace' | 'filter' | 'sort' | 'column_operation' | 'row_operation' | 'cell_operation' | 'range_operation' | 'freeze_operation' | 'table_operation' | 'hyperlink_operation' | 'data_validation' | 'comment_operation' | 'image_operation' | 'named_range_operation' | 'intelligent_analysis' | 'smart_format' | 'data_entry' | 'formula' | 'general_query' | 'compound_operation' | 'unknown';
+  intent: 'conditional_format' | 'data_modification' | 'find_replace' | 'filter' | 'sort' | 'column_operation' | 'row_operation' | 'cell_operation' | 'range_operation' | 'freeze_operation' | 'table_operation' | 'hyperlink_operation' | 'data_validation' | 'comment_operation' | 'image_operation' | 'named_range_operation' | 'pivot_operation' | 'intelligent_analysis' | 'smart_format' | 'data_entry' | 'formula' | 'general_query' | 'compound_operation' | 'unknown';
   action: string;
   target: {
     type: 'cell' | 'column' | 'row' | 'range' | 'all_data' | 'specific_value' | 'table' | 'compound';
@@ -884,6 +884,7 @@ INTENTS
 - data_validation: add/remove validation rules on cells/ranges (dropdown, number range, date validation)
 - comment_operation: add/remove/get comments/notes on cells (add note, remove note, show note)
 - image_operation: insert images or create drawings (insert image, create rectangle, create circle)
+- pivot_operation: cross-tabulate the sheet into a new one (pivot, cross-tab, summarise X by Y and Z, break down X by Y)
 - intelligent_analysis: automated data insights (show what matters, analyze data, detect anomalies)
 - smart_format: apply professional formatting (auto-format, format as financial report, make professional)
 - general_query: analysis, charts, insights, questions
@@ -902,6 +903,12 @@ CRITICAL DISAMBIGUATION RULES
 - "add/set VALIDATION/DROPDOWN" → data_validation (NOT cell_operation)
 - "add/set NOTE/COMMENT" → comment_operation (NOT cell_operation)
 - "insert/add IMAGE/DRAWING" → image_operation (NOT cell_operation)
+- "PIVOT/CROSS-TAB/BREAK DOWN by" → pivot_operation (NOT filter, NOT general_query)
+- pivot_operation puts the grouping columns in "pivot_rows", the ones that
+  become headings across the top in "pivot_columns", and the numbers in
+  "pivot_values". Leave "pivot_values" empty when the request names no number;
+  leave "pivot_columns" empty when it names only one dimension. "aggfunc" is
+  one of sum|mean|median|min|max|count|std|var|first|last, default sum.
 - "merge cells/range" → range_operation
 - "freeze/unfreeze" → freeze_operation
 - "format/auto-format THIS/DATA/SHEET" → smart_format (NOT conditional_format)
@@ -912,10 +919,10 @@ CRITICAL DISAMBIGUATION RULES
 
 SCHEMA
 {
-  "intent": "conditional_format|data_modification|filter|sort|column_operation|row_operation|cell_operation|range_operation|freeze_operation|hyperlink_operation|data_validation|comment_operation|image_operation|general_query|unknown",
+  "intent": "conditional_format|data_modification|filter|sort|column_operation|row_operation|cell_operation|range_operation|freeze_operation|hyperlink_operation|data_validation|comment_operation|image_operation|pivot_operation|general_query|unknown",
   "action": "string",
   "target": { "type": "cell|column|row|range|all_data|specific_value", "identifier": "string" },
-  "parameters": { "condition?": "string", "value?": "string|number", "column?": "string", "row?": "string|number", "direction?": "asc|desc", "scope?": "all|column|range", "filter_type?": "exact|contains", "action?": "open|close", "height?": "number", "width?": "number", "freeze_type?": "horizontal|vertical|both", "url?": "string", "label?": "string", "values?": "string", "min?": "number", "max?": "number", "note?": "string", "image_url?": "string", "shape?": "string" },
+  "parameters": { "condition?": "string", "value?": "string|number", "column?": "string", "row?": "string|number", "direction?": "asc|desc", "scope?": "all|column|range", "filter_type?": "exact|contains", "action?": "open|close", "height?": "number", "width?": "number", "freeze_type?": "horizontal|vertical|both", "url?": "string", "label?": "string", "values?": "string", "min?": "number", "max?": "number", "note?": "string", "image_url?": "string", "shape?": "string", "pivot_rows?": "string[]", "pivot_columns?": "string[]", "pivot_values?": "string[]", "aggfunc?": "string" },
   "confidence": 0.0-1.0,
   "reasoning": "string"
 }
@@ -1149,27 +1156,43 @@ Output: {"intent":"named_range_operation","action":"rename_named_range","target"
 Input: "update named range Sales to A1:E10"
 Output: {"intent":"named_range_operation","action":"update_named_range","target":{"type":"range","identifier":"Sales"},"parameters":{"name":"Sales","newRange":"A1:E10"},"confidence":0.89}
 
-58) Smart auto-format (professional)
+58) Pivot, two dimensions
+Input: "pivot revenue by region and product"
+Output: {"intent":"pivot_operation","action":"build_pivot","target":{"type":"all_data","identifier":"*"},"parameters":{"pivot_rows":["region"],"pivot_columns":["product"],"pivot_values":["revenue"],"aggfunc":"sum"},"confidence":0.95}
+
+59) Pivot, one dimension
+Input: "break down total units by rep"
+Output: {"intent":"pivot_operation","action":"build_pivot","target":{"type":"all_data","identifier":"*"},"parameters":{"pivot_rows":["rep"],"pivot_columns":[],"pivot_values":["units"],"aggfunc":"sum"},"confidence":0.93}
+
+60) Pivot with an average
+Input: "cross-tab average revenue by month and region"
+Output: {"intent":"pivot_operation","action":"build_pivot","target":{"type":"all_data","identifier":"*"},"parameters":{"pivot_rows":["month"],"pivot_columns":["region"],"pivot_values":["revenue"],"aggfunc":"mean"},"confidence":0.94}
+
+61) Pivot with no number named
+Input: "pivot table by region"
+Output: {"intent":"pivot_operation","action":"build_pivot","target":{"type":"all_data","identifier":"*"},"parameters":{"pivot_rows":["region"],"pivot_columns":[],"pivot_values":[],"aggfunc":"sum"},"confidence":0.90}
+
+62) Smart auto-format (professional)
 Input: "format this data professionally"
 Output: {"intent":"smart_format","action":"auto_format","target":{"type":"all_data","identifier":"*"},"parameters":{"template":"professional"},"confidence":0.95}
 
-59) Smart auto-format (financial)
+63) Smart auto-format (financial)
 Input: "make this look like a financial report"
 Output: {"intent":"smart_format","action":"auto_format","target":{"type":"all_data","identifier":"*"},"parameters":{"template":"financial"},"confidence":0.95}
 
-60) Smart auto-format (minimal)
+64) Smart auto-format (minimal)
 Input: "apply clean minimal formatting"
 Output: {"intent":"smart_format","action":"auto_format","target":{"type":"all_data","identifier":"*"},"parameters":{"template":"minimal"},"confidence":0.9}
 
-61) Add single row with data
+65) Add single row with data
 Input: "add a row with Product: iPhone, Price: 999, Quantity: 5"
 Output: {"intent":"data_entry","action":"add_single_row","target":{"type":"row","identifier":"bottom"},"parameters":{"row_data_string":"Product: iPhone, Price: 999, Quantity: 5","position":"bottom","operation":"insert_row"},"confidence":0.95}
 
-62) Generate multiple sample rows
+66) Generate multiple sample rows
 Input: "add 10 sample customers with names and emails"
 Output: {"intent":"data_entry","action":"generate_multiple_rows","target":{"type":"all_data","identifier":"*"},"parameters":{"count":10,"entity_type":"customers","fields_hint":"names and emails","operation":"generate_rows"},"confidence":0.9}
 
-63) Create column headers
+67) Create column headers
 Input: "create headers: Date, Product, Quantity, Total"
 Output: {"intent":"data_entry","action":"create_headers","target":{"type":"row","identifier":"0"},"parameters":{"headers":["Date","Product","Quantity","Total"],"operation":"create_headers"},"confidence":0.95}
 
@@ -1726,31 +1749,36 @@ Return ONLY JSON for the current input.`;
  *
  * Err towards listing a word. A question that trips this is merely as slow as
  * it used to be; a command that does not trip it goes somewhere wrong.
+ *
+ * The backslashes are doubled because these are string literals, not regex
+ * literals: '\s' in a JS string is just 's', and '\b' is a backspace. Written
+ * singly, "clean up" and "named range" never matched, and the cell-reference
+ * pattern could not match anything at all.
  */
 const NOT_A_QUESTION = new RegExp([
   // Cell and text formatting
   'bold', 'italic', 'underline', 'strike', 'font', 'colou?r', 'highlight',
   'format', 'style', 'align', 'wrap', 'border', 'currency', 'decimal',
-  'beautify', 'tidy', 'clean\s*up', 'pretty',
+  'beautify', 'tidy', 'clean\\s*up', 'pretty',
   // Structure
   'column', 'row', 'cell', 'range', 'sheet', 'table', 'header',
   'insert', 'delete', 'remove', 'add', 'append', 'clear', 'merge', 'split',
-  'resize', 'widen', 'narrow', 'autofit', 'auto\s*fit', 'freeze', 'unfreeze',
+  'resize', 'widen', 'narrow', 'autofit', 'auto\\s*fit', 'freeze', 'unfreeze',
   'hide', 'unhide', 'rename',
   // Operations on the view
-  'sort', 'filter', 'group', 'pivot', 'transpose',
+  'sort', 'filter', 'group', 'pivot', 'cross.?tab', 'break\\s*down', 'transpose',
   // Named features
   'hyperlink', 'validation', 'comment', 'note', 'image', 'picture',
-  'named\s*range', 'conditional',
+  'named\\s*range', 'conditional',
   // Data modification -- the two the sidebar handles itself
-  'duplicate', 'dedup', 'find\s*(and|&)\s*replace', 'replace',
+  'duplicate', 'dedup', 'find\\s*(and|&)\\s*replace', 'replace',
   // Intelligent analysis and smart formatting
   'analy[sz]', 'summar[iy]', 'insight', 'anomal', 'outlier', 'trend',
-  'pattern', 'what\s+matters', 'junk', 'spam', 'gibberish',
+  'pattern', 'what\\s+matters', 'junk', 'spam', 'gibberish',
   // Data entry
-  'enter\s+data', 'fill\s+in', 'set\s+.*\bto\b', 'update\s+.*\bto\b',
+  'enter\\s+data', 'fill\\s+in', 'set\\s+.*\\bto\\b', 'update\\s+.*\\bto\\b',
   // Anything addressing a cell by reference, e.g. "A2", "B10:C12"
-  '\b[a-z]{1,2}\d{1,4}\b',
+  '\\b[a-z]{1,2}\\d{1,4}\\b',
   // Translation
   'translat',
 ].join('|'), 'i');
