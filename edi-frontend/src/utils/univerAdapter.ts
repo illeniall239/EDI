@@ -2192,6 +2192,103 @@ export class UniverAdapter {
   }
 
   /**
+   * Make a named sheet the active one.
+   *
+   * Needed because everything else here works on whatever sheet is active,
+   * and a follow-up ("another pivot below that one") has to land on the sheet
+   * the first one went to rather than wherever the user has since clicked.
+   *
+   * @param sheetName Name of the sheet to activate
+   * @returns Success boolean
+   */
+  activateSheet(sheetName: string): boolean {
+    try {
+      this.refresh();
+
+      const fWorkbook = this.univerAPI?.getActiveWorkbook();
+      const sheet = fWorkbook?.getSheetByName(sheetName);
+      if (!sheet) {
+        console.warn('[UniverAdapter] No sheet named', sheetName);
+        return false;
+      }
+
+      fWorkbook.setActiveSheet(sheet);
+      this.refresh();
+      return true;
+    } catch (error) {
+      console.error('[UniverAdapter] Error activating sheet:', error);
+      return false;
+    }
+  }
+
+  /**
+   * The row after the last one holding anything, on a named sheet.
+   *
+   * Scanned rather than remembered: a caller that tracked where it last wrote
+   * would be wrong the moment somebody inserted or deleted a row by hand.
+   *
+   * @param sheetName Name of the sheet to measure
+   * @returns 0-based row index of the first empty row, or -1 if unreadable
+   */
+  firstEmptyRow(sheetName: string): number {
+    try {
+      if (!this.activateSheet(sheetName)) return -1;
+
+      const used = this.worksheet?.getDataRange();
+      if (!used) return 0;
+
+      // getLastRow is the last row with content, 0-based, or -1 when empty.
+      const last = used.getLastRow();
+      return typeof last === 'number' ? last + 1 : 0;
+    } catch (error) {
+      console.error('[UniverAdapter] Error measuring sheet:', error);
+      return -1;
+    }
+  }
+
+  /**
+   * Write a grid into a named sheet at a row offset, leaving the rest alone.
+   *
+   * @param sheetName Name of the sheet to write into
+   * @param startRow 0-based row to start at
+   * @param grid 2D array to write
+   * @returns Success boolean
+   */
+  writeGridAt(sheetName: string, startRow: number, grid: unknown[][]): boolean {
+    try {
+      if (!grid.length) return false;
+      if (!this.activateSheet(sheetName)) return false;
+      return this.setRangeValues(startRow, 0, grid as any[][]);
+    } catch (error) {
+      console.error('[UniverAdapter] Error writing grid:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Replace everything on a named sheet with a grid.
+   *
+   * The whole sheet is cleared first, not just the cells the new grid covers:
+   * a pivot rebuilt with fewer rows or columns than before would otherwise
+   * leave the old edges behind, and a stale Total column reads as real.
+   *
+   * @param sheetName Name of the sheet to rewrite
+   * @param grid 2D array to write
+   * @returns Success boolean
+   */
+  rewriteSheet(sheetName: string, grid: unknown[][]): boolean {
+    try {
+      if (!grid.length) return false;
+      if (!this.activateSheet(sheetName)) return false;
+      this.worksheet?.clear();
+      return this.setRangeValues(0, 0, grid as any[][]);
+    } catch (error) {
+      console.error('[UniverAdapter] Error rewriting sheet:', error);
+      return false;
+    }
+  }
+
+  /**
    * Add a new sheet to the workbook
    * @param sheetName Name of the new sheet
    * @param data Array data for the new sheet (2D array)

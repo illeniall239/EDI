@@ -24,6 +24,117 @@ const PIVOT_AGGS: Record<string, string> = {
   count: 'count', number: 'count',
 };
 
+/**
+ * A follow-up to a pivot that already exists: "another one below this",
+ * "same but by month", "change it to average".
+ *
+ * These name a change, not a whole pivot, so they are parsed into a delta and
+ * merged onto the last one by the handler -- which is the only place that
+ * knows whether there is a last one. The classifier stays stateless.
+ */
+const PIVOT_APPEND =
+  /\b(?:another|second|a\s+second|one\s+more|extra)\s+(?:pivot|cross[-\s]?tab)\b|\b(?:pivot|cross[-\s]?tab)\b[\s\S]*\b(?:below|under|underneath|beneath)\b/i;
+
+/** "same pivot but by month", "now do the same but with an average". */
+const PIVOT_SAME =
+  /^(?:now\s+)?(?:do\s+|make\s+|redo\s+)?(?:it\s+)?(?:the\s+)?same(?:\s+(?:pivot|cross[-\s]?tab|thing|one))?\s*,?\s*(?:but|except|only)\s+(.+)$/i;
+
+/** "change it to average", "make the pivot a median". */
+const PIVOT_CHANGE =
+  /^(?:now\s+)?(?:change|make|redo|switch|set)\s+(?:it|that|this|the\s+pivot|the\s+cross[-\s]?tab)\s+(?:to|as|into|with|using|a)\s+(.+)$/i;
+
+/** "add product as a column to that pivot". */
+const PIVOT_ADD_FIELD =
+  /\badd\s+(.+?)\s+as\s+(?:a\s+|an\s+)?(column|heading|row|grouping)\b/i;
+
+/** Wording that points at a pivot already on screen rather than a new one. */
+const PIVOT_REFERS_BACK =
+  /\b(?:that|this|the|same|it|previous|last)\b[\s\S]{0,20}\b(?:pivot|cross[-\s]?tab)\b|\b(?:pivot|cross[-\s]?tab)\b[\s\S]{0,20}\b(?:again|instead)\b/i;
+
+/** Words that stand in for a field rather than naming one. */
+const PIVOT_VAGUE =
+  /\b(?:different|other|another|some|new|various|several)\b|\b(?:fields?|columns?|things?|stuff|data)\s*$/i;
+
+/** Everything a fragment says about a pivot: fields, and an aggregate. */
+function parsePivotDelta(fragment: string): Record<string, unknown> {
+  const delta: Record<string, unknown> = {};
+
+  // "average instead of sum" names one aggregate, not two.
+  let text = fragment.replace(/\s+instead\s+of\s+.*$/i, '').trim();
+
+  // A trailing "under it" is placement, not a column name. Without this,
+  // "pivot of units by rep under it" groups by a column called "rep under it".
+  text = text
+    .replace(/\s+(?:right\s+)?(?:below|under|underneath|beneath)(?:\s+(?:it|this|that|the\s+\w+|this\s+one|that\s+one))?\s*$/i, '')
+    .trim();
+
+  const by = text.match(/\bby\s+(.+?)\s*$/i);
+  if (by) {
+    const dims = by[1]
+      .split(/\s*,\s*|\s+and\s+/i)
+      .map(d => d.replace(/^(?:the|each|every)\s+/i, '').replace(/\s+(?:column|field)$/i, '').trim())
+      .filter(Boolean);
+    if (dims.length) {
+      delta.pivot_rows = [dims[0]];
+      delta.pivot_columns = dims.slice(1);
+    }
+    text = text.slice(0, by.index).trim();
+  }
+
+  const of = text.match(/\bof\s+([\w ]+?)\s*$/i);
+  if (of) {
+    // "of different fields" is a placeholder, not a column. Passing it on gets
+    // "there is no column called 'different fields'", which is true and
+    // unhelpful; leaving it unset lets the handler ask which fields instead.
+    if (!PIVOT_VAGUE.test(of[1])) {
+      delta.pivot_values = [of[1].trim()];
+    }
+    text = text.slice(0, of.index).trim();
+  }
+
+  for (const word of text.toLowerCase().split(/\W+/)) {
+    if (PIVOT_AGGS[word]) { delta.aggfunc = PIVOT_AGGS[word]; break; }
+  }
+  return delta;
+}
+
+/**
+ * Is this a change to the pivot already on screen, and which kind?
+ *
+ * `replace` rewrites that pivot where it is; `append` leaves it and puts a
+ * second one underneath. Returns null when the sentence is not about an
+ * existing pivot at all.
+ */
+function parsePivotFollowup(
+  input: string
+): { mode: 'append' | 'replace'; delta: Record<string, unknown> } | null {
+  const text = input.trim();
+
+  const field = text.match(PIVOT_ADD_FIELD);
+  if (field && PIVOT_REFERS_BACK.test(text)) {
+    const where = field[2].toLowerCase();
+    return {
+      mode: 'replace',
+      delta: where === 'column' || where === 'heading'
+        ? { add_column: field[1].trim() }
+        : { add_row: field[1].trim() },
+    };
+  }
+
+  const append = PIVOT_APPEND.test(text);
+
+  const changed = text.match(PIVOT_SAME) || text.match(PIVOT_CHANGE);
+  if (changed) return { mode: append ? 'append' : 'replace', delta: parsePivotDelta(changed[1]) };
+
+  if (append) return { mode: 'append', delta: parsePivotDelta(text) };
+
+  // A bare "by month" can mean the same pivot regrouped, but only when the
+  // sentence points back at one -- otherwise it swallows ordinary questions.
+  if (PIVOT_REFERS_BACK.test(text)) return { mode: 'replace', delta: parsePivotDelta(text) };
+
+  return null;
+}
+
 export interface CommandClassification {
   intent: 'conditional_format' | 'data_modification' | 'find_replace' | 'filter' | 'sort' | 'column_operation' | 'row_operation' | 'cell_operation' | 'range_operation' | 'freeze_operation' | 'table_operation' | 'hyperlink_operation' | 'data_validation' | 'comment_operation' | 'image_operation' | 'named_range_operation' | 'pivot_operation' | 'intelligent_analysis' | 'smart_format' | 'data_entry' | 'formula' | 'general_query' | 'compound_operation' | 'unknown';
   action: string;
@@ -62,6 +173,25 @@ export class LLMCommandClassifier {
 
     // PRIORITY PATTERNS: Check multi-column operations BEFORE LLM to prevent mis-classification
     const lowerInput = userInput.toLowerCase().trim();
+
+    // A change to the pivot already on screen.
+    //
+    // Checked before the full-spec pattern because a follow-up names only what
+    // moved. The handler merges it onto the pivot it remembers, and says so if
+    // there is nothing to merge onto -- this cannot know that from here.
+    const followup = parsePivotFollowup(userInput);
+    if (followup) {
+      const result = {
+        intent: 'pivot_operation' as const,
+        action: 'build_pivot',
+        target: { type: 'all_data' as const, identifier: '*' },
+        parameters: { ...followup.delta, pivot_followup: followup.mode },
+        confidence: 0.95,
+        reasoning: `Pivot follow-up (${followup.mode})`
+      };
+      this.cache.set(cacheKey, result);
+      return result;
+    }
 
     // A pivot, read here rather than asked about.
     //

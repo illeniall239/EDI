@@ -746,6 +746,29 @@ export default function ChatSidebar({
      * again rather than dragging a field. That matches how the rest of the
      * chat works.
      */
+    /**
+     * The pivot this chat last built, so a follow-up has something to change.
+     *
+     * A ref rather than state: nothing renders from it, and a follow-up typed
+     * straight after the pivot would otherwise read a stale value.
+     */
+    const lastPivot = useRef<{
+        spec: { rows: string[]; columns: string[]; values: string[]; aggfunc: string };
+        sheetName: string;
+    } | null>(null);
+
+    /**
+     * Cross-tabulate the sheet into a new one, or change the last one.
+     *
+     * The numbers are computed in the backend, where pandas already holds the
+     * dataframe, and come back as a grid. Univer's own pivot tables are a
+     * commercial add-on; this writes cells instead.
+     *
+     * A follow-up ("change it to average", "another below this one by month")
+     * arrives as a delta rather than a whole spec, because that is all the
+     * sentence said. It is merged onto the remembered pivot here, since this
+     * is the only place that knows what the last one was.
+     */
     const handlePivotOperation = async (
         classification: CommandClassification
     ): Promise<boolean> => {
@@ -780,10 +803,60 @@ export default function ChatSidebar({
                     : typeof v === 'string' && v.trim() !== '' ? [v.trim()]
                     : [];
 
-            const rows = asList(parameters?.pivot_rows);
-            const columns = asList(parameters?.pivot_columns);
-            const values = asList(parameters?.pivot_values);
-            const aggfunc = typeof parameters?.aggfunc === 'string' ? parameters.aggfunc : 'sum';
+            const followup = parameters?.pivot_followup === 'append' ? 'append'
+                : parameters?.pivot_followup === 'replace' ? 'replace'
+                : null;
+
+            let rows = asList(parameters?.pivot_rows);
+            let columns = asList(parameters?.pivot_columns);
+            let values = asList(parameters?.pivot_values);
+            let aggfunc = typeof parameters?.aggfunc === 'string' ? parameters.aggfunc : 'sum';
+
+            const previous = lastPivot.current;
+
+            if (followup) {
+                if (!previous) {
+                    say('❌ There is no pivot to change yet. Ask for one first, e.g. "pivot revenue by region and product".');
+                    return true;
+                }
+
+                // Only what the sentence actually named moves; the rest of the
+                // last pivot carries over. aggfunc has no "unset" to test, so
+                // it is taken from the parameters only when the parser put one
+                // there -- otherwise "another one by month" would silently
+                // reset a median back to sum.
+                const addColumn = typeof parameters?.add_column === 'string' ? parameters.add_column.trim() : '';
+                const addRow = typeof parameters?.add_row === 'string' ? parameters.add_row.trim() : '';
+
+                rows = rows.length ? rows : previous.spec.rows;
+                columns = columns.length ? columns
+                    : (parameters?.pivot_rows ? [] : previous.spec.columns);
+                values = values.length ? values : previous.spec.values;
+                aggfunc = typeof parameters?.aggfunc === 'string' ? parameters.aggfunc : previous.spec.aggfunc;
+
+                // Adding a field keeps everything else exactly as it was.
+                if (addColumn || addRow) {
+                    rows = addRow ? [...previous.spec.rows, addRow] : previous.spec.rows;
+                    columns = addColumn ? [...previous.spec.columns, addColumn] : previous.spec.columns;
+                    values = previous.spec.values;
+                    aggfunc = previous.spec.aggfunc;
+                }
+
+                // "another pivot below this one of different fields" names no
+                // fields at all. Guessing which ones would be worse than asking.
+                const namedSomething = asList(parameters?.pivot_rows).length
+                    || asList(parameters?.pivot_columns).length
+                    || asList(parameters?.pivot_values).length
+                    || typeof parameters?.aggfunc === 'string'
+                    || addColumn || addRow;
+                if (!namedSomething) {
+                    say(`❓ Which fields? The last pivot was ${previous.spec.aggfunc} of `
+                        + `${previous.spec.values.join(', ')} by ${previous.spec.rows.join(', ')}`
+                        + `${previous.spec.columns.length ? ` x ${previous.spec.columns.join(', ')}` : ''}. `
+                        + 'Say something like "another one below by month and rep".');
+                    return true;
+                }
+            }
 
             if (rows.length === 0) {
                 say('❌ Say which column to group the rows by, e.g. "pivot revenue by region and product".');
@@ -792,20 +865,60 @@ export default function ChatSidebar({
 
             const result = await pivotWorkspace(workspaceId, { rows, columns, values, aggfunc });
 
-            // Name the sheet after what was asked for, so several pivots of the
-            // same sheet do not all land on "Pivot".
             const across = result.columns.length ? ` x ${result.columns.join(', ')}` : '';
-            const name = `Pivot: ${result.values.join(', ')} by ${result.rows.join(', ')}${across}`.slice(0, 31);
+            const describe = `${result.aggfunc} of ${result.values.join(', ')} by ${result.rows.join(', ')}${across}`;
+            const grid = result.grid as unknown[][];
 
-            const written = univerAdapter.addSheet(name, result.grid as unknown[][]);
-            if (!written) {
-                say('❌ Built the pivot but could not add a sheet for it.');
-                return true;
+            let sheetName: string;
+            let note: string;
+
+            if (followup === 'replace' && previous) {
+                // The whole sheet is rewritten, not just the cells the new grid
+                // covers: a pivot with fewer rows or columns than before would
+                // otherwise leave the old edges behind, and a stale Total column
+                // reads as a real one.
+                if (!univerAdapter.rewriteSheet(previous.sheetName, grid)) {
+                    say('❌ Built the pivot but could not rewrite that sheet. Was its tab closed?');
+                    return true;
+                }
+                sheetName = previous.sheetName;
+                note = `✅ Rebuilt ${previous.sheetName}: ${describe}. Anything else on that sheet was replaced.`;
+
+            } else if (followup === 'append' && previous) {
+                // Measured rather than remembered: a row inserted or deleted by
+                // hand since the last pivot would make a remembered number wrong.
+                const at = univerAdapter.firstEmptyRow(previous.sheetName);
+                if (at < 0) {
+                    say('❌ Built the pivot but could not find that sheet. Was its tab closed?');
+                    return true;
+                }
+                // One blank row between them, so the two read as two tables.
+                if (!univerAdapter.writeGridAt(previous.sheetName, at + 1, grid)) {
+                    say('❌ Built the pivot but could not write it to that sheet.');
+                    return true;
+                }
+                sheetName = previous.sheetName;
+                note = `✅ Added ${describe} below the last one on ${previous.sheetName}.`;
+
+            } else {
+                // Name the sheet after what was asked for, so several pivots of
+                // the same sheet do not all land on "Pivot". 31 is the limit a
+                // spreadsheet name is conventionally held to.
+                sheetName = `Pivot: ${result.values.join(', ')} by ${result.rows.join(', ')}${across}`.slice(0, 31);
+                if (!univerAdapter.addSheet(sheetName, grid)) {
+                    say('❌ Built the pivot but could not add a sheet for it.');
+                    return true;
+                }
+                const bodyRows = Math.max(grid.length - 1, 0);
+                note = `✅ Pivoted ${describe}, on a new sheet: ${bodyRows} rows.`;
             }
 
-            const bodyRows = Math.max(result.grid.length - 1, 0);
-            say(`✅ Pivoted ${result.aggfunc} of ${result.values.join(', ')} by ${result.rows.join(', ')}`
-                + `${across}, on a new sheet: ${bodyRows} rows.`);
+            lastPivot.current = {
+                spec: { rows: result.rows, columns: result.columns, values: result.values, aggfunc: result.aggfunc },
+                sheetName,
+            };
+
+            say(note);
             return true;
 
         } catch (error) {
