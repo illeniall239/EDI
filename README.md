@@ -11,26 +11,15 @@ There is no sign-up because there is nothing to sign up to. Clone it, point it
 at a model, and the whole thing runs on localhost.
 
 <p align="center">
-  <img src="assets/edi-demo.gif" alt="Asking a spreadsheet which region earned most, following that up, adding a formula column, charting revenue by product, sorting the rows and pivoting revenue by region and product onto a new sheet: all from the chat, answered by a model on the same machine">
+  <img src="assets/edi-demo.gif" alt="Asking a spreadsheet which region earned most, following that up, adding a formula column, charting revenue by product, sorting the rows and pivoting revenue by region and product onto a new sheet: all from the chat, answered by a model on the same machine, with each step named in a caption as it happens">
 </p>
 
 <p align="center">
   <em>A real model on a real machine: qwen3:4b through Ollama, with the
   workspace in a local file. Nothing in this recording talks to a hosted
-  provider. The pauses while it thinks are cut; nothing else is.</em>
-</p>
-
-<p align="center">
-  <a href="assets/edi-demo-captioned.mp4">
-    <img src="assets/edi-demo-captioned-poster.jpg" width="560" alt="A frame from the full-speed cut: a bar chart of total revenue by product drawn from the sentence that asked for it, beside the sheet it came from, with the step named in a caption underneath">
-  </a>
-</p>
-
-<p align="center">
-  <em><strong><a href="assets/edi-demo-captioned.mp4">The same run at reading speed</a></strong>
-  (1:14, no sound). The loop above is that whole session at about five times
-  speed, which is too fast to read; this is the same questions unhurried, each
-  step named as it happens. GitHub plays it in its own viewer.</em>
+  provider. The pauses while it thinks are cut; nothing else is.
+  <a href="assets/edi-demo.mp4">The same recording as an mp4</a>, if you would
+  rather have it at full frame rate.</em>
 </p>
 
 ## Nothing leaves your machine

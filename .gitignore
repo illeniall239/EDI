@@ -34,7 +34,7 @@ data_exports/
 # Local media. Large, and not used by the app.
 *.mp4
 !edi-frontend/public/edi-demo.mp4
-!assets/edi-demo-captioned.mp4
+!assets/edi-demo.mp4
 
 # The workspace store
 .edi-data/
