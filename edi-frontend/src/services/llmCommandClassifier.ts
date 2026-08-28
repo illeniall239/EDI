@@ -7,6 +7,23 @@
 
 import { API_ENDPOINTS } from '@/config';
 
+/**
+ * The shape of a pivot asked for in words: a verb, optionally an aggregate and
+ * a column to aggregate, then "by" and the columns to group on.
+ */
+const PIVOT_ASK =
+  /^(?:(?:please\s+)?(?:make|create|build|give|show)\s+(?:me\s+)?(?:a\s+|an\s+|the\s+)?)?(?:pivot|cross[-\s]?tab(?:ulate)?|break\s*down)\b\s*(?:table\s+)?(?:of\s+|on\s+)?(?:the\s+sheet\s*[:,]\s*)?(.*?)\s*\bby\s+(.+?)\s*$/i;
+
+/** Words people use for an aggregate, mapped to what pandas calls it. */
+const PIVOT_AGGS: Record<string, string> = {
+  total: 'sum', totals: 'sum', sum: 'sum', summed: 'sum',
+  average: 'mean', avg: 'mean', mean: 'mean',
+  median: 'median',
+  min: 'min', minimum: 'min', lowest: 'min',
+  max: 'max', maximum: 'max', highest: 'max',
+  count: 'count', number: 'count',
+};
+
 export interface CommandClassification {
   intent: 'conditional_format' | 'data_modification' | 'find_replace' | 'filter' | 'sort' | 'column_operation' | 'row_operation' | 'cell_operation' | 'range_operation' | 'freeze_operation' | 'table_operation' | 'hyperlink_operation' | 'data_validation' | 'comment_operation' | 'image_operation' | 'named_range_operation' | 'pivot_operation' | 'intelligent_analysis' | 'smart_format' | 'data_entry' | 'formula' | 'general_query' | 'compound_operation' | 'unknown';
   action: string;
@@ -45,6 +62,57 @@ export class LLMCommandClassifier {
 
     // PRIORITY PATTERNS: Check multi-column operations BEFORE LLM to prevent mis-classification
     const lowerInput = userInput.toLowerCase().trim();
+
+    // A pivot, read here rather than asked about.
+    //
+    // "pivot X by A and B" is not ambiguous, and small models get it badly
+    // wrong: qwen3:4b answered "pivot revenue by region and product" with
+    // data_entry at 0.95 and inserted a row into the sheet. This is a harness
+    // meant to run on whatever model you have, so the unambiguous shape is
+    // parsed rather than delegated. Anything the pattern misses still goes to
+    // the model, which has examples for it.
+    //
+    // Anchored at the verb so a question keeps its meaning: "what is the
+    // average revenue by region" is a question and stays one.
+    const pivotAsk = userInput.trim().match(PIVOT_ASK);
+    if (pivotAsk) {
+      let value = (pivotAsk[1] || '').trim();
+      let aggfunc = 'sum';
+
+      // A leading aggregate word names the function, not a column.
+      const lead = value.match(/^(\w+)\s+(.*)$/);
+      if (lead && PIVOT_AGGS[lead[1].toLowerCase()]) {
+        aggfunc = PIVOT_AGGS[lead[1].toLowerCase()];
+        value = lead[2].trim();
+      } else if (PIVOT_AGGS[value.toLowerCase()]) {
+        aggfunc = PIVOT_AGGS[value.toLowerCase()];
+        value = '';
+      }
+      value = value.replace(/^(?:the|a|an|of)\s+/i, '').replace(/\s+(?:table|sheet)$/i, '').trim();
+
+      const dims = pivotAsk[2]
+        .split(/\s*,\s*|\s+and\s+/i)
+        .map(d => d.replace(/^(?:the|each|every)\s+/i, '').replace(/\s+(?:column|field)$/i, '').trim())
+        .filter(Boolean);
+
+      if (dims.length) {
+        const result = {
+          intent: 'pivot_operation' as const,
+          action: 'build_pivot',
+          target: { type: 'all_data' as const, identifier: '*' },
+          parameters: {
+            pivot_rows: [dims[0]],
+            pivot_columns: dims.slice(1),
+            pivot_values: value ? [value] : [],
+            aggfunc,
+          },
+          confidence: 0.95,
+          reasoning: 'Pivot request'
+        };
+        this.cache.set(cacheKey, result);
+        return result;
+      }
+    }
 
     // Multi-column deletion: "delete column D and E" or "delete columns A and C"
     if (lowerInput.match(/(?:delete|remove)\s+columns?\s+([a-z])\s+and\s+([a-z])/i)) {
@@ -903,7 +971,9 @@ CRITICAL DISAMBIGUATION RULES
 - "add/set VALIDATION/DROPDOWN" → data_validation (NOT cell_operation)
 - "add/set NOTE/COMMENT" → comment_operation (NOT cell_operation)
 - "insert/add IMAGE/DRAWING" → image_operation (NOT cell_operation)
-- "PIVOT/CROSS-TAB/BREAK DOWN by" → pivot_operation (NOT filter, NOT general_query)
+- "PIVOT/CROSS-TAB/BREAK DOWN by" → pivot_operation (NOT data_entry, NOT filter,
+  NOT general_query). A pivot summarises rows that are already there; it never
+  adds one. If the word "pivot" or "cross-tab" appears, it is pivot_operation.
 - pivot_operation puts the grouping columns in "pivot_rows", the ones that
   become headings across the top in "pivot_columns", and the numbers in
   "pivot_values". Leave "pivot_values" empty when the request names no number;
