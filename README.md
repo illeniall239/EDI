@@ -22,14 +22,15 @@ at a model, and the whole thing runs on localhost.
 
 <p align="center">
   <a href="assets/edi-demo-captioned.mp4">
-    <img src="assets/edi-demo-captioned-poster.jpg" width="300" alt="A frame from the captioned cut: a bar chart of total revenue by product drawn from the sentence that asked for it, beside the sheet it came from">
+    <img src="assets/edi-demo-captioned-poster.jpg" width="560" alt="A frame from the full-speed cut: a bar chart of total revenue by product drawn from the sentence that asked for it, beside the sheet it came from, with the step named in a caption underneath">
   </a>
 </p>
 
 <p align="center">
-  <em><strong><a href="assets/edi-demo-captioned.mp4">The same demo, captioned</a></strong>
-  (1:14, no sound). Every step is named as it happens, so it reads without
-  narration. GitHub opens it in its own player.</em>
+  <em><strong><a href="assets/edi-demo-captioned.mp4">The same run at reading speed</a></strong>
+  (1:14, no sound). The loop above is that whole session at about five times
+  speed, which is too fast to read; this is the same questions unhurried, each
+  step named as it happens. GitHub plays it in its own viewer.</em>
 </p>
 
 ## Nothing leaves your machine
